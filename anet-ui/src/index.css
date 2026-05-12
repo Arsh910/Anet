@@ -1,0 +1,42 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+body {
+  background: #0d0f12;
+  color: #e2e4e8;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+}
+
+@keyframes pulse-fast {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.4); }
+}
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.5); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ring-run {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.15); }
+}
+@keyframes ring-async {
+  0%, 100% { opacity: 0.1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(1.2); }
+}
+@keyframes particle-travel {
+  0% { stroke-dashoffset: 100; opacity: 0.8; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+.react-flow__background { background: #0b0d10 !important; }
+.react-flow__controls { background: rgba(255,255,255,0.04) !important; border: 1px solid rgba(255,255,255,0.07) !important; }
+.react-flow__controls button { background: transparent !important; border: none !important; color: rgba(255,255,255,0.4) !important; }
+.react-flow__controls button:hover { background: rgba(255,255,255,0.06) !important; color: #e2e4e8 !important; }

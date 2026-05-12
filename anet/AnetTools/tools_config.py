@@ -1,0 +1,68 @@
+TOOLS = [
+    {
+        "name": "web_search",
+        "path": "anet.AnetTools.web_search",
+        "description": "Searches the web for current information using the Exa API.",
+        "enabled": True,
+    },
+    {
+        "name": "open_app",
+        "path": "anet.AnetTools.open_app",
+        "description": "Full Windows desktop control: open apps, find/focus windows, type text, click UI elements, send keyboard shortcuts, take screenshots, and read screen text.",
+        "enabled": True,
+    },
+    {
+        "name": "checker",
+        "path": "anet.AnetTools.checker.index",
+        "description": "Validates task results: classifies success/failure/partial and diagnoses failures with retry suggestions.",
+        "enabled": True,
+    },
+    {
+        "name": "compare-screenshot",
+        "path": "anet.AnetTools.compare_screenshot.index",
+        "description": "Takes screenshots and uses a vision model to verify whether a desktop automation task produced the expected visual change.",
+        "enabled": False,
+    },
+    {
+        "name": "download_file",
+        "path": "anet.AnetTools.download_file",
+        "description": "Download a file from a URL to local disk. Returns local path and image dimensions for quality checking.",
+        "enabled": True,
+    },
+    {
+        "name": "file_tool",
+        "path": "anet.AnetTools.file_tool",
+        "description": "OS-level file operations: read/write files, create folders, copy/move/delete/rename, list directories, search, parse CSV/JSON, read line ranges, zip/unzip.",
+        "enabled": True,
+    },
+    {
+        "name": "graph_tool",
+        "path": "anet.AnetTools.graph_tool",
+        "description": "Query the project code graph. Returns project structure, file summaries, exports, and dependency chains. Built by: anet graph build.",
+        "enabled": True,
+    },
+    {
+        "name": "shell_tool",
+        "path": "anet.AnetTools.shell_tool",
+        "description": "Run shell commands with a timeout. Use for tests (pytest, npm test), linters (ruff, eslint), and build scripts.",
+        "enabled": True,
+    },
+    {
+        "name": "edit_tool",
+        "path": "anet.AnetTools.edit_tool",
+        "description": "Targeted file editing: replace old_string with new_string. Safer than rewriting whole files. Includes staleness guard and quote normalization.",
+        "enabled": True,
+    },
+    {
+        "name": "grep_tool",
+        "path": "anet.AnetTools.grep_tool",
+        "description": "Search file contents by regex. Uses ripgrep when available, Python fallback otherwise. Supports content/files/count output modes and context lines.",
+        "enabled": True,
+    },
+    {
+        "name": "glob_tool",
+        "path": "anet.AnetTools.glob_tool",
+        "description": "Find files matching a glob pattern, sorted by modification time. Use to locate files before reading or editing.",
+        "enabled": True,
+    },
+]

@@ -1,0 +1,51 @@
+# anet.config.yaml — optional model overrides for ANet
+#
+# Copy this file to anet.config.yaml and edit as needed.
+# Only specify what you want to change — everything else uses the built-in defaults.
+#
+# Supported providers:
+#   google      → Google AI / Gemini    requires: GOOGLE_API_KEY
+#   openrouter  → OpenRouter            requires: OPENROUTER_API_KEY
+#   openai      → OpenAI                requires: OPENAI_API_KEY
+#   claude      → Anthropic             requires: ANTHROPIC_API_KEY
+#
+# Add keys to your .env file as needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Manager (plans and coordinates all requests)
+# Default: gemini-2.5-pro via google
+manager:
+  model: gemini-2.5-pro
+  provider: google
+
+# Per-agent overrides
+# Only model and provider can be changed here.
+agents:
+
+  research_agent:
+    model: gemini-2.5-flash
+    provider: google
+
+  computer_agent:
+    model: gemini-2.5-flash
+    provider: google
+
+  checker_agent:
+    model: gemini-2.5-flash
+    provider: google
+
+  file_agent:
+    model: gemini-2.5-flash
+    provider: google
+
+  code_agent:
+    model: gemini-3.1-pro-preview
+    provider: google
+
+# ── Provider / model reference ────────────────────────────────────────────────
+#
+# Google models:     gemini-2.5-pro  gemini-2.5-flash  gemini-2.0-flash
+# OpenAI models:     gpt-4o  gpt-4o-mini  o3-mini
+# Anthropic models:  claude-opus-4-7  claude-sonnet-4-6  claude-haiku-4-5-20251001
+# OpenRouter:        use full model ID e.g. anthropic/claude-sonnet-4-6
+#                    see https://openrouter.ai/models for full list
