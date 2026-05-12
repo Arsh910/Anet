@@ -1,0 +1,53 @@
+# ── Secrets & config ──────────────────────────────────────────────────────────
+.env
+*.env
+anet.config.yaml          # user-specific model overrides — use anet.config.example.yaml
+
+# ── Session memory ────────────────────────────────────────────────────────────
+memory/                   # all session checkpoints and titles
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Node / frontend ───────────────────────────────────────────────────────────
+node_modules/
+dist/
+.next/
+.nuxt/
+*.tsbuildinfo
+
+# ── Project code graphs ───────────────────────────────────────────────────────
+.anet/                    # graph.json built locally — never commit
+
+# ── Plugin secrets ────────────────────────────────────────────────────────────
+plugins/*/.env            # each plugin has its own .env with credentials
+
+# ── Downloads / generated files ───────────────────────────────────────────────
+anet/agents/3dAgent/tasks/downloads/
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo

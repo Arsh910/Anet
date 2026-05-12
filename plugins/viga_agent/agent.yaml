@@ -1,0 +1,43 @@
+# VIGA 3D Rendering Agent — ANet Plugin
+# ──────────────────────────────────────
+# Reference plugin. Connect with: anet connect --path plugins/viga_agent
+
+identity:
+  name: viga_agent
+  version: 1.0.0
+  description: Controls VIGA 3D rendering — starts background renders, checks status, cancels tasks
+  author: anet
+
+model:
+  name: gemini-2.5-flash
+  provider: google
+  temperature: 0.1
+  max_tokens: 1024
+
+capabilities:
+  task_types:
+    - 3D modeling
+    - 3D generation
+    - Blender rendering
+    - scene generation
+    - 3D asset creation
+    - render status
+    - cancel render
+    - 3D model progress
+
+tools:
+  - name: viga_tool
+    file: tools/viga_tool.py
+    description: Start, stop, and monitor background 3D render tasks
+    async: true
+    poll_path: tasks/registry.json
+    result_key: render_output
+
+prompt:
+  file: prompts/system.txt
+
+behavior:
+  timeout: 7200              # renders can take hours
+  can_be_parallelized: false # one render at a time
+  requires_confirmation: false
+  execution: async           # returns task_id immediately; render runs in background

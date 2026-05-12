@@ -1,0 +1,21 @@
+# Web dashboard (server.py)
+fastapi
+uvicorn[standard]
+pyyaml
+
+# Core runtime
+openai
+anthropic
+python-dotenv
+httpx
+rich
+prompt_toolkit
+
+# LangGraph orchestration
+langgraph
+langchain-core
+
+# Desktop automation (open_app tool) — Windows only
+pywinauto
+pyautogui
+Pillow
