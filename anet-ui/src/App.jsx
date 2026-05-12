@@ -18,9 +18,9 @@ export default function App() {
   }, [])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div className="flex flex-col h-screen overflow-hidden">
       <TopBar />
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+      <div className="flex flex-1 overflow-hidden min-h-0">
         <LeftPanel />
         <CenterGraph />
         <RightPanel />

@@ -68,7 +68,7 @@ def _manager_client() -> tuple[AsyncOpenAI, str]:
     api_key = os.getenv(env_key)
     if not api_key:
         raise RuntimeError(f"{env_key} not set (needed for manager provider='{provider}')")
-    return AsyncOpenAI(api_key=api_key, base_url=base_url), model
+    return AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=120), model
 
 
 # Keep _google_client as a thin alias for any callers that haven't been updated
@@ -245,7 +245,9 @@ def _synthesis_system_prompt(interim: bool = False) -> str:
         "Always include the actual content.\n"
         "- If a step failed after retries, mention it briefly.\n"
         "- IMPORTANT: if any agent output contains a line starting with 'Downloaded:', "
-        "copy that exact line verbatim into your reply."
+        "copy that exact line verbatim into your reply.\n"
+        "- If any agent output starts with '[INCOMPLETE', the agent ran out of steps mid-task. "
+        "Tell the user clearly what was completed so far and that they can ask you to continue."
     )
     if interim:
         base += (
