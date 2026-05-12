@@ -17,16 +17,18 @@ import asyncio
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
@@ -85,19 +87,41 @@ console = Console()
 
 # ── Live spinner display ──────────────────────────────────────────────────────
 
+_LOG_TAIL = 6   # how many past steps to show above the spinner
+
 class _LiveStatus:
-    """Rich renderable: animated spinner that shows the current agent status."""
+    """Rich renderable: rolling step log + animated spinner + elapsed time."""
 
     def __init__(self) -> None:
         self._current = "Thinking..."
         self.log: list[str] = []
+        self._start = time.monotonic()
 
     def update(self, msg: str) -> None:
         self._current = msg
         self.log.append(msg)
 
     def __rich__(self):
-        return Spinner("dots", text=f"  [dim]{self._current}[/dim]")
+        elapsed = time.monotonic() - self._start
+        # Format elapsed: show seconds up to 60s, then mm:ss
+        if elapsed < 60:
+            elapsed_str = f"{elapsed:.0f}s"
+        else:
+            m, s = divmod(int(elapsed), 60)
+            elapsed_str = f"{m}m {s:02d}s"
+
+        parts = []
+
+        # Past steps (all but the current one) — last _LOG_TAIL lines
+        past = self.log[:-1][-_LOG_TAIL:] if len(self.log) > 1 else []
+        for step in past:
+            parts.append(Text.from_markup(f"  [dim]├─ {step}[/dim]"))
+
+        # Current step: spinner + elapsed
+        spinner = Spinner("dots", text=f"  {self._current}  [dim]{elapsed_str}[/dim]")
+        parts.append(spinner)
+
+        return Group(*parts) if len(parts) > 1 else spinner
 
 
 # ── Thinking panel (collapsed block shown after work completes) ───────────────

@@ -209,7 +209,7 @@
             "  glob_tool(pattern='**/*.py', path='C:\\project')         → find by name pattern\n"
             "  glob_tool(pattern='src/**/*.ts', path='C:\\project')     → find in subfolder\n"
             "  grep_tool(pattern='def my_func', path='C:\\project', glob='*.py')  → find by content\n"
-            "  grep_tool(pattern='TODO|FIXME', path='C:\\project', output_mode='content', '-C'=2)\n\n"
+            "  grep_tool(pattern='TODO|FIXME', path='C:\\project', output_mode='content', context=2)\n\n"
             "grep_tool output_mode options:\n"
             "  'files_with_matches' (default) — list of files containing the pattern\n"
             "  'content'                       — matching lines with optional context (-A/-B/-C)\n"

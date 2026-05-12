@@ -45,23 +45,23 @@ SCHEMA = {
                         "count=number of matches per file."
                     ),
                 },
-                "-i": {
+                "case_insensitive": {
                     "type": "boolean",
                     "description": "Case-insensitive search.",
                 },
-                "-n": {
+                "line_numbers": {
                     "type": "boolean",
                     "description": "Show line numbers (default true for content mode).",
                 },
-                "-A": {
+                "after": {
                     "type": "integer",
                     "description": "Lines of context after each match (content mode).",
                 },
-                "-B": {
+                "before": {
                     "type": "integer",
                     "description": "Lines of context before each match (content mode).",
                 },
-                "-C": {
+                "context": {
                     "type": "integer",
                     "description": "Lines of context before and after each match (content mode).",
                 },
@@ -191,11 +191,11 @@ async def run(params: dict) -> dict:
     path_str    = params.get("path", "").strip()
     glob_pat    = params.get("glob", "")
     output_mode = params.get("output_mode", "files_with_matches")
-    case_insens = bool(params.get("-i", False))
-    show_lineno = bool(params.get("-n", True))
-    ctx_after   = int(params.get("-A", 0))
-    ctx_before  = int(params.get("-B", 0))
-    ctx_both    = int(params.get("-C", 0))
+    case_insens = bool(params.get("case_insensitive", params.get("-i", False)))
+    show_lineno = bool(params.get("line_numbers",     params.get("-n", True)))
+    ctx_after   = int(params.get("after",             params.get("-A", 0)))
+    ctx_before  = int(params.get("before",            params.get("-B", 0)))
+    ctx_both    = int(params.get("context",           params.get("-C", 0)))
     head_limit  = int(params.get("head_limit", 250))
     multiline   = bool(params.get("multiline", False))
 

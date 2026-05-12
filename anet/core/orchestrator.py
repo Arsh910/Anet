@@ -1,8 +1,9 @@
 """
 orchestrator.py — the agentic loop.
 
-Drives an agent through as many model ↔ tool-call iterations as needed
-(capped at MAX_ITERATIONS) and returns the final text reply.
+Drives an agent through model ↔ tool-call iterations until the model
+returns a plain-text reply (natural termination), a cycle is detected
+(same tool+args repeated _CYCLE_REPEAT times), or the safety cap fires.
 
 Rules:
   - Never references a specific agent name or tool name.
@@ -11,6 +12,7 @@ Rules:
     every tool result is appended before the next model call.
 """
 
+import hashlib
 import json
 import sys
 from datetime import datetime
@@ -19,7 +21,14 @@ from typing import Callable
 from anet.core import agent_runner
 from anet.core.context import on_confirm as _confirm_var
 
-MAX_ITERATIONS = 10
+# Safety valve — only fires if the model never stops calling tools.
+# Normal tasks end naturally when the model returns a plain-text reply.
+_SAFETY_CAP = 80
+
+# Cycle detection — if the same (tool, args) signature appears this many
+# times in the last _CYCLE_WINDOW calls, the model is stuck in a loop.
+_CYCLE_REPEAT = 3
+_CYCLE_WINDOW = 8
 
 # ── Confirmation policy ───────────────────────────────────────────────────────
 # Maps tool name → set of actions that require user approval.
@@ -141,8 +150,14 @@ async def run(
     last_text: str = ""
     last_tool_result: str = ""
     offloaded: dict | None = None
+    _cycle_window: list[str] = []   # sliding window of recent call signatures
+    _stuck = False
 
-    for iteration in range(1, MAX_ITERATIONS + 1):
+    agent_name = agent.get("name", "agent")
+
+    for iteration in range(1, _SAFETY_CAP + 1):
+        step_label = f"step {iteration}" if iteration > 1 else "thinking"
+        on_status(f"{agent_name}: {step_label}...")
         try:
             response_message = await agent_runner.run(agent, tool_map, messages)
         except Exception as exc:
@@ -150,9 +165,8 @@ async def run(
             text = last_text or f"An error occurred while contacting the model: {exc}"
             return {"text": text, "task_id": None, "poll_path": "", "result_key": ""}
 
-        # ── Plain-text response → done ────────────────────────────────────────
+        # ── Plain-text response → done (natural termination) ──────────────────
         if not response_message.tool_calls:
-            # Fall back to last tool result if the LLM returned no text
             last_text = response_message.content or last_tool_result or ""
             break
 
@@ -168,6 +182,16 @@ async def run(
                 arguments = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError:
                 arguments = {}
+
+            # ── Cycle detection ───────────────────────────────────────────────
+            sig = f"{called_name}:{hashlib.md5(json.dumps(arguments, sort_keys=True).encode()).hexdigest()[:8]}"
+            _cycle_window.append(sig)
+            if len(_cycle_window) > _CYCLE_WINDOW:
+                _cycle_window.pop(0)
+            if _cycle_window.count(sig) >= _CYCLE_REPEAT:
+                on_status(f"[warning] cycle detected — '{called_name}' repeating with same args, stopping")
+                _stuck = True
+                break
 
             # Show tool name + action (if present) so multi-action tools are debuggable
             action_hint = f"[{arguments['action']}]" if "action" in arguments else ""
@@ -254,8 +278,34 @@ async def run(
                     "content": result_str,
                 }
             )
+
+        if _stuck:
+            break
     else:
-        on_status(f"[warning] reached iteration cap ({MAX_ITERATIONS})")
+        # Safety cap hit — model never stopped calling tools
+        on_status(f"[warning] safety cap reached ({_SAFETY_CAP} steps) — stopping")
+        text = (
+            f"[INCOMPLETE — safety cap of {_SAFETY_CAP} steps reached]\n\n"
+            + (last_tool_result or last_text or "")
+        )
+        return {
+            "text":       text,
+            "task_id":    offloaded.get("task_id") if offloaded else None,
+            "poll_path":  offloaded.get("poll_path", "") if offloaded else "",
+            "result_key": offloaded.get("result_key", "") if offloaded else "",
+        }
+
+    if _stuck:
+        text = (
+            f"[INCOMPLETE — stuck in loop, same tool called {_CYCLE_REPEAT}× with identical args]\n\n"
+            + (last_tool_result or last_text or "")
+        )
+        return {
+            "text":       text,
+            "task_id":    offloaded.get("task_id") if offloaded else None,
+            "poll_path":  offloaded.get("poll_path", "") if offloaded else "",
+            "result_key": offloaded.get("result_key", "") if offloaded else "",
+        }
 
     text = last_text or last_tool_result or ""
     return {

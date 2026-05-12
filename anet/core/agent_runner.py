@@ -18,15 +18,19 @@ import json
 import os
 import sys
 
-from openai import AsyncOpenAI, RateLimitError
+from openai import AsyncOpenAI, APITimeoutError, InternalServerError, RateLimitError
 from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall,
     Function,
 )
 
-_RETRY_ATTEMPTS = 3
-_RETRY_DELAY    = 4   # seconds between retries on 429
+_RETRY_ATTEMPTS = 4
+_RETRY_DELAY    = 5    # base seconds between retries (multiplied by attempt number)
+_MODEL_TIMEOUT  = 150  # seconds — abort a hung model call instead of waiting the default 600s
+
+# Errors worth retrying with backoff (transient infrastructure issues)
+_RETRYABLE = (RateLimitError, InternalServerError, APITimeoutError)
 
 # ── OpenAI-compatible provider registry ──────────────────────────────────────
 
@@ -57,7 +61,7 @@ def _build_openai_client(provider: str) -> AsyncOpenAI:
             f"for provider '{provider}'.",
             file=sys.stderr,
         )
-    return AsyncOpenAI(api_key=api_key or "missing", base_url=cfg["base_url"])
+    return AsyncOpenAI(api_key=api_key or "missing", base_url=cfg["base_url"], timeout=_MODEL_TIMEOUT)
 
 
 # ── Anthropic adapter ─────────────────────────────────────────────────────────
@@ -165,7 +169,7 @@ async def _run_anthropic(
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is not set")
 
-    client  = AsyncAnthropic(api_key=api_key)
+    client  = AsyncAnthropic(api_key=api_key, timeout=_MODEL_TIMEOUT)
     system, anthropic_msgs = _convert_to_anthropic_messages(messages)
     tools   = _convert_tools_to_anthropic(tool_schemas) if tool_schemas else []
 
@@ -183,14 +187,16 @@ async def _run_anthropic(
         try:
             response = await client.messages.create(**call_kwargs)
             return _anthropic_response_to_message(response)
-        except AnthropicRateLimitError:
-            if attempt < _RETRY_ATTEMPTS:
+        except Exception as exc:
+            is_retryable = isinstance(exc, AnthropicRateLimitError) or getattr(exc, "status_code", 0) in (429, 500, 503)
+            if is_retryable and attempt < _RETRY_ATTEMPTS:
+                delay = _RETRY_DELAY * attempt
                 print(
-                    f"[agent_runner] rate-limited on '{agent['model']}', "
-                    f"retrying in {_RETRY_DELAY}s (attempt {attempt}/{_RETRY_ATTEMPTS})...",
+                    f"[agent_runner] {type(exc).__name__} on '{agent['model']}', "
+                    f"retrying in {delay}s (attempt {attempt}/{_RETRY_ATTEMPTS})...",
                     file=sys.stderr,
                 )
-                await asyncio.sleep(_RETRY_DELAY)
+                await asyncio.sleep(delay)
             else:
                 raise
 
@@ -247,13 +253,14 @@ async def run(
         try:
             response = await client.chat.completions.create(**call_kwargs)
             return response.choices[0].message
-        except RateLimitError:
+        except _RETRYABLE as exc:
             if attempt < _RETRY_ATTEMPTS:
+                delay = _RETRY_DELAY * attempt  # 5s, 10s, 15s
                 print(
-                    f"[agent_runner] rate-limited on '{agent['model']}', "
-                    f"retrying in {_RETRY_DELAY}s (attempt {attempt}/{_RETRY_ATTEMPTS})...",
+                    f"[agent_runner] {type(exc).__name__} on '{agent['model']}', "
+                    f"retrying in {delay}s (attempt {attempt}/{_RETRY_ATTEMPTS})...",
                     file=sys.stderr,
                 )
-                await asyncio.sleep(_RETRY_DELAY)
+                await asyncio.sleep(delay)
             else:
                 raise
