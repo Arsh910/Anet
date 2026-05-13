@@ -175,10 +175,25 @@ RULES:
 - NEVER use check_path for file search or file read tasks — the exact path is unknown until the
   agent runs. Use check: null and let the LLM classifier verify the result.
 - System auto-injects each step's output into the next step.
-- CONTEXT: The full conversation history is available. For follow-up questions ("explain it",
-  "what does it say", "summarise") that refer to content already returned in a previous step,
-  use {{"type":"simple","reply":"..."}} to answer directly from context. Only plan new agent
-  steps if fresh data or new actions are needed.
+- TASK SPECIFICATION — when writing a task for an agent, include ALL context it needs to act
+  without asking follow-up questions:
+  * Always include the FULL absolute path of any project/folder/file referenced.
+  * For "fix it" / "not working" / "blank page" / "error" requests: scan recent messages for
+    the project path, include it verbatim, and describe the symptom (e.g. "blank page on
+    http://localhost:5173" or "npm run dev fails with error X"). Never write a vague task like
+    "fix the issue" — say exactly: fix WHAT, at WHAT PATH, with WHAT observed symptom.
+  * If the user says "it" / "the app" / "that" without specifying — infer the target from the
+    most recent project/file path mentioned in conversation and include it explicitly.
+- CONTEXT: Use type:"simple" ONLY for pure information requests where no action is needed:
+  greetings, factual questions, "explain it", "what does it say", "summarise what you found" —
+  but ONLY when the answer already exists in conversation context and no agent work is required.
+  NEVER use type:"simple" when the user wants you to DO or BUILD something.
+- CORRECTION RULE (HIGHEST PRIORITY — overrides everything else): If the user indicates the
+  previous result was wrong, incomplete, or not what they wanted — ANY phrasing like "you didn't
+  do X", "you didn't make X", "that's not what I asked", "you only did Y not Z", "you missed X",
+  "do it properly", "complete it", "try again", "still not working", "I asked for X" — you MUST
+  generate a new plan and dispatch to the appropriate agent. NEVER respond with type:"simple" for
+  corrections. The user is demanding action, not an explanation.
 
 CRITICAL — agent routing for code vs desktop:
 - code_agent handles ALL programming and command-line work: writing/editing code, running npm/pip/
@@ -229,6 +244,12 @@ EXAMPLES:
   {{"id":1,"agent":"code_agent","task":"Write a Python script that sorts a CSV file and save it to c:\\data\\sort.py","success_criteria":"File c:\\data\\sort.py exists with correct code","check":null,"depends_on":[],"wait_for_async":false}}
 ]}}
 
+"you didn't make the travel website, you just made the vite project"
+→ {{"type":"plan","steps":[{{"id":1,"agent":"code_agent","task":"Build the full travel website UI inside the existing Vite project — create React components (Header, Hero, Destinations, Footer), add routing with react-router-dom, apply Tailwind CSS styling so it looks like a real travel website","success_criteria":"Travel website with multiple pages and styled components is visible when running npm run dev","check":null,"depends_on":[],"wait_for_async":false}}]}}
+
+"that's not what I asked, do it again"
+→ Replan with the correct agent based on what the original request was.
+
 OUTPUT ONLY JSON."""
 
 
@@ -255,6 +276,27 @@ def _synthesis_system_prompt(interim: bool = False) -> str:
             "Tell the user what started and that they'll be notified when complete."
         )
     return base
+
+
+# ── Reply deduplication (Gemini thinking tokens can double the content) ───────
+
+def _dedup_reply(text: str) -> str:
+    """
+    Remove duplicated content that Gemini 2.5 Pro sometimes returns when its
+    thinking tokens bleed into the main content field.
+
+    Heuristic: if the string length > 100 and the second half starts with the
+    same sentence as the first half, trim at the repeat point.
+    """
+    n = len(text)
+    if n < 100:
+        return text
+    # Search for the start of text appearing again after the first 40% of chars
+    start = text[:80]  # first 80 chars as a fingerprint
+    idx = text.find(start, n // 3)
+    if idx > 0:
+        return text[:idx].rstrip()
+    return text
 
 
 # ── Keyword fallback ──────────────────────────────────────────────────────────
@@ -407,7 +449,7 @@ def make_planner_node(enabled_agents: list[dict], manager_tools: dict | None = N
 
         # Simple direct reply — no agents needed
         if plan.get("type") == "simple":
-            reply = plan.get("reply") or "I'm not sure how to help with that."
+            reply = _dedup_reply(plan.get("reply") or "I'm not sure how to help with that.")
             return {
                 "final_reply":     reply,
                 "plan":            [],
@@ -473,7 +515,9 @@ def make_executor_node(
     def _cache_key(agent_name: str, task: str) -> tuple[str, str]:
         return (agent_name, hashlib.sha256(task.encode()).hexdigest()[:16])
 
-    async def _run_one(step: dict, full_task: str, attempts: int = 0) -> tuple[dict, str, dict | None]:
+    async def _run_one(
+        step: dict, full_task: str, attempts: int = 0, history: list | None = None
+    ) -> tuple[dict, str, dict | None]:
         """Run a single plan step. Returns (step, result_text, offload_info | None)."""
         agent_name = step.get("agent", "")
         agent      = agent_map.get(agent_name)
@@ -489,7 +533,7 @@ def make_executor_node(
             agent=agent,
             tool_map=tool_map,
             user_message=full_task,
-            history=[],
+            history=history or [],
             on_status=_notify,
         )
         text = raw["text"]
@@ -580,8 +624,23 @@ def make_executor_node(
         label  = f"{len(ready)} steps [parallel]" if len(ready) > 1 else "step"
         _notify(f"manager: {label} → {names}{suffix}")
 
+        # Build recent conversation history for agents (so they have context about
+        # what was previously done without relying on vague task descriptions).
+        # Truncate each message to avoid blowing out the agent's context window.
+        conv_history: list[dict] = []
+        for m in state.get("messages", [])[-6:]:
+            if isinstance(m, HumanMessage):
+                conv_history.append({"role": "user", "content": (m.content or "")[:600]})
+            elif isinstance(m, AIMessage):
+                conv_history.append({"role": "assistant", "content": (m.content or "")[:600]})
+            elif isinstance(m, dict) and m.get("role") in ("user", "assistant"):
+                conv_history.append({
+                    "role":    m["role"],
+                    "content": (m.get("content") or "")[:600],
+                })
+
         # Run all ready steps concurrently
-        coros   = [_run_one(s, s.get("task", "") + context_block + adj_block, attempts) for s in ready]
+        coros   = [_run_one(s, s.get("task", "") + context_block + adj_block, attempts, history=conv_history) for s in ready]
         results = await asyncio.gather(*coros)
 
         # Process results
@@ -750,6 +809,7 @@ def make_synthesizer_node() -> Callable:
                 if delta:
                     reply += delta
                     emit_token(delta)
+            reply = _dedup_reply(reply)
         except Exception as exc:
             print(f"[graph] synthesis failed ({exc})", file=sys.stderr)
             reply = results_text

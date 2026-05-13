@@ -27,8 +27,29 @@ _SAFETY_CAP = 80
 
 # Cycle detection — if the same (tool, args) signature appears this many
 # times in the last _CYCLE_WINDOW calls, the model is stuck in a loop.
+# Only WRITE operations are tracked — reads are legitimate verification steps.
 _CYCLE_REPEAT = 3
-_CYCLE_WINDOW = 8
+_CYCLE_WINDOW = 10
+
+# Read-only operations excluded from cycle detection (reading the same file
+# multiple times to verify a change is normal, not a loop).
+_READ_ONLY_OPS: set[str] = {
+    "glob_tool", "grep_tool", "graph_tool", "web_search", "todo_tool",
+}
+_READ_ONLY_ACTIONS: set[str] = {
+    "read_file", "read_lines", "list_directory", "search_files",
+    "get_file_info", "parse_csv", "parse_json",
+    "show", "find", "deps", "summary",
+    "read", "check_window", "check_process", "check_path",
+    "list_windows", "read_window_text", "take_screenshot",
+}
+
+
+def _is_read_only(tool_name: str, arguments: dict) -> bool:
+    if tool_name in _READ_ONLY_OPS:
+        return True
+    action = arguments.get("action", "")
+    return action in _READ_ONLY_ACTIONS
 
 # ── Confirmation policy ───────────────────────────────────────────────────────
 # Maps tool name → set of actions that require user approval.
@@ -183,15 +204,17 @@ async def run(
             except json.JSONDecodeError:
                 arguments = {}
 
-            # ── Cycle detection ───────────────────────────────────────────────
-            sig = f"{called_name}:{hashlib.md5(json.dumps(arguments, sort_keys=True).encode()).hexdigest()[:8]}"
-            _cycle_window.append(sig)
-            if len(_cycle_window) > _CYCLE_WINDOW:
-                _cycle_window.pop(0)
-            if _cycle_window.count(sig) >= _CYCLE_REPEAT:
-                on_status(f"[warning] cycle detected — '{called_name}' repeating with same args, stopping")
-                _stuck = True
-                break
+            # ── Cycle detection (writes only) ─────────────────────────────────
+            # Only track mutating operations — reads are legitimate verification.
+            if not _is_read_only(called_name, arguments):
+                sig = f"{called_name}:{hashlib.md5(json.dumps(arguments, sort_keys=True).encode()).hexdigest()[:8]}"
+                _cycle_window.append(sig)
+                if len(_cycle_window) > _CYCLE_WINDOW:
+                    _cycle_window.pop(0)
+                if _cycle_window.count(sig) >= _CYCLE_REPEAT:
+                    on_status(f"[warning] cycle detected — '{called_name}' write repeating with same args, stopping")
+                    _stuck = True
+                    break
 
             # Show tool name + action (if present) so multi-action tools are debuggable
             action_hint = f"[{arguments['action']}]" if "action" in arguments else ""
