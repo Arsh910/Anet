@@ -64,6 +64,11 @@ def _manager_cfg() -> tuple[str, str]:
 def _manager_client() -> tuple[AsyncOpenAI, str]:
     """Return (AsyncOpenAI client, model_name) for the manager."""
     model, provider = _manager_cfg()
+
+    if provider in ("vertex_google", "vertex_claude"):
+        from anet.core.agent_runner import build_vertex_client
+        return build_vertex_client(), model
+
     base_url, env_key = _MANAGER_PROVIDERS.get(provider, _MANAGER_PROVIDERS["google"])
     api_key = os.getenv(env_key)
     if not api_key:

@@ -15,6 +15,10 @@ prompt_toolkit
 langgraph
 langchain-core
 
+# Vertex AI (optional — only needed for provider='vertex_google' or 'vertex_claude')
+google-auth
+google-auth-httplib2
+
 # Desktop automation (open_app tool) — Windows only
 pywinauto
 pyautogui

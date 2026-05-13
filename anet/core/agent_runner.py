@@ -2,13 +2,20 @@
 agent_runner.py — single model call for one iteration of the agentic loop.
 
 Supported providers (set via agent config or anet.config.yaml):
-  openrouter  → OpenRouter          (OPENROUTER_API_KEY)
-  google      → Google AI / Gemini  (GOOGLE_API_KEY)
-  openai      → OpenAI              (OPENAI_API_KEY)
-  claude      → Anthropic           (ANTHROPIC_API_KEY)
+  openrouter     → OpenRouter               (OPENROUTER_API_KEY)
+  google         → Google AI / Gemini       (GOOGLE_API_KEY)
+  openai         → OpenAI                   (OPENAI_API_KEY)
+  claude         → Anthropic direct         (ANTHROPIC_API_KEY)
+  vertex_google  → Gemini on Vertex AI      (VERTEX_PROJECT_ID + ADC)
+  vertex_claude  → Claude on Vertex AI      (VERTEX_PROJECT_ID + ADC)
 
-To add a new OpenAI-compatible provider: add one entry to _PROVIDERS.
-For Anthropic (non-compatible), the _run_anthropic path handles it.
+Vertex AI notes:
+  - Authenticate once with: gcloud auth application-default login
+  - Set VERTEX_PROJECT_ID in .env to your GCP project ID.
+  - Set VERTEX_LOCATION (default: us-central1). Claude models require us-east5
+    or europe-west1 — check Vertex Model Garden for availability.
+  - Gemini model names:  google/gemini-2.5-pro-preview-06-05
+  - Claude model names:  anthropic/claude-sonnet-4-5@20251101
 """
 
 from __future__ import annotations
@@ -50,6 +57,54 @@ _PROVIDERS: dict[str, dict] = {
 }
 
 _DEFAULT_PROVIDER = "openrouter"
+
+
+# ── Vertex AI auth ─────────────────────────────────────────────────────────────
+
+_vertex_credentials = None  # cached google.auth credentials (refreshed on demand)
+
+
+def _get_vertex_token() -> str:
+    """Return a fresh Vertex AI access token via Application Default Credentials.
+    google.auth.default() reads ADC: service account JSON (GOOGLE_APPLICATION_CREDENTIALS)
+    or the token written by 'gcloud auth application-default login'.
+    Calling credentials.refresh() is a no-op when the cached token is still valid.
+    """
+    global _vertex_credentials
+    try:
+        import google.auth
+        import google.auth.transport.requests
+    except ImportError:
+        raise RuntimeError(
+            "google-auth is required for Vertex AI providers. "
+            "Run: pip install google-auth"
+        )
+    if _vertex_credentials is None:
+        _vertex_credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+    auth_req = google.auth.transport.requests.Request()
+    _vertex_credentials.refresh(auth_req)
+    return _vertex_credentials.token
+
+
+def build_vertex_client() -> AsyncOpenAI:
+    """AsyncOpenAI client targeting Vertex AI's unified OpenAI-compatible endpoint.
+    Supports both Gemini (google/...) and Claude (anthropic/...) model names.
+    """
+    project_id = os.getenv("VERTEX_PROJECT_ID")
+    location   = os.getenv("VERTEX_LOCATION", "us-central1")
+    if not project_id:
+        raise RuntimeError(
+            "VERTEX_PROJECT_ID is not set. "
+            "Add it to .env or set as an environment variable."
+        )
+    base_url = (
+        f"https://{location}-aiplatform.googleapis.com/v1beta1/"
+        f"projects/{project_id}/locations/{location}/endpoints/openapi/"
+    )
+    token = _get_vertex_token()
+    return AsyncOpenAI(api_key=token, base_url=base_url, timeout=_MODEL_TIMEOUT)
 
 
 def _build_openai_client(provider: str) -> AsyncOpenAI:
@@ -226,9 +281,32 @@ async def run(
                 file=sys.stderr,
             )
 
-    # Anthropic uses a separate non-OpenAI-compatible path
+    # Anthropic direct API (non-OpenAI-compatible)
     if provider == "claude":
         return await _run_anthropic(agent, tool_schemas, messages)
+
+    # Vertex AI (Gemini or Claude via Vertex's unified OpenAI-compat endpoint)
+    if provider in ("vertex_google", "vertex_claude"):
+        client = build_vertex_client()
+        call_kwargs: dict = {"model": agent["model"], "messages": messages}
+        if tool_schemas:
+            call_kwargs["tools"]       = tool_schemas
+            call_kwargs["tool_choice"] = "auto"
+        for attempt in range(1, _RETRY_ATTEMPTS + 1):
+            try:
+                response = await client.chat.completions.create(**call_kwargs)
+                return response.choices[0].message
+            except _RETRYABLE as exc:
+                if attempt < _RETRY_ATTEMPTS:
+                    delay = _RETRY_DELAY * attempt
+                    print(
+                        f"[agent_runner] {type(exc).__name__} on '{agent['model']}' (vertex), "
+                        f"retrying in {delay}s (attempt {attempt}/{_RETRY_ATTEMPTS})...",
+                        file=sys.stderr,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    raise
 
     # All other providers: OpenAI-compatible
     if provider not in _PROVIDERS:
