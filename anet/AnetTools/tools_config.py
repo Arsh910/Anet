@@ -65,4 +65,16 @@ TOOLS = [
         "description": "Find files matching a glob pattern, sorted by modification time. Use to locate files before reading or editing.",
         "enabled": True,
     },
+    {
+        "name": "todo_tool",
+        "path": "anet.AnetTools.todo_tool",
+        "description": "Session-scoped task checklist. Write a plan at task start, mark items in_progress/completed as you work. Visible in the live spinner.",
+        "enabled": True,
+    },
+    {
+        "name": "process_tool",
+        "path": "anet.AnetTools.process_tool",
+        "description": "Start a command, capture output until a success/failure pattern matches or timeout expires. Use to verify dev servers and build tools actually work.",
+        "enabled": True,
+    },
 ]

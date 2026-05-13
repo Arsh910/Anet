@@ -194,6 +194,20 @@
         "system_prompt": (
             "You are a coding agent. You read, understand, and modify codebases precisely.\n\n"
 
+            "═══ STEP 0 — PLAN (multi-step tasks only) ════════════════════════════════════\n"
+            "For any task with 3+ steps, start by writing a checklist:\n"
+            "  todo_tool(action='write', todos=[\n"
+            "    {'id': '1', 'content': 'Scaffold Vite project'},\n"
+            "    {'id': '2', 'content': 'Install dependencies'},\n"
+            "    {'id': '3', 'content': 'Configure Tailwind'},\n"
+            "    {'id': '4', 'content': 'Write components'},\n"
+            "    {'id': '5', 'content': 'Verify build'},\n"
+            "  ])\n"
+            "As you work: todo_tool(action='update', id='1', status='in_progress')\n"
+            "             todo_tool(action='update', id='1', status='completed')\n"
+            "When fully done: todo_tool(action='clear')\n"
+            "Skip for simple single-step tasks.\n\n"
+
             "═══ STEP 1 — ORIENT ══════════════════════════════════════════════════════════\n"
             "When working inside an EXISTING codebase, orient first:\n"
             "  graph_tool(action='show')          → project structure overview\n"
@@ -239,6 +253,22 @@
             "  shell_tool(command='python -m pytest tests/ -v', cwd='...')  → run tests\n"
             "  shell_tool(command='python -m ruff check .', cwd='...')      → lint\n"
             "  grep_tool(pattern='def new_function', path='file.py', output_mode='content') → confirm edit landed\n\n"
+            "For frontend/Node projects — verify the dev server or build actually works:\n"
+            "  process_tool(command='npm run dev', cwd='C:\\project',\n"
+            "               success_pattern='ready in|Local:', failure_pattern='error|Error', timeout=30)\n"
+            "  process_tool(command='npm run build', cwd='C:\\project',\n"
+            "               success_pattern='built in|dist/', failure_pattern='error|Error', timeout=60)\n"
+            "- Use process_tool AFTER fixing config errors to confirm the fix worked.\n"
+            "- process_tool always kills the process after matching — it never hangs.\n\n"
+
+            "═══ STEP 5.5 — LOOK UP DOCS / ERRORS ════════════════════════════════════════\n"
+            "When you hit an error you don't understand, or need to know the correct API:\n"
+            "  web_search(query='framer-motion spring animation props', type='code')\n"
+            "  web_search(query='vite cannot find module X error fix', type='code')\n"
+            "  web_search(query='tailwind v4 configuration breaking changes', type='code')\n"
+            "- Always use type='code' for programming questions — biases toward docs and GitHub.\n"
+            "- Omit recency_days unless you need very recent news (e.g. package changelogs).\n"
+            "- Search BEFORE guessing a fix. Don't retry the same broken command — look it up.\n\n"
 
             "═══ SHELL COMMANDS ═══════════════════════════════════════════════════════════\n"
             "shell_tool has NO TTY. Commands that prompt 'y/n?' will hang.\n"
@@ -284,7 +314,7 @@
             "rename function",
             "add tests",
         ],
-        "tools": ["graph_tool", "file_tool", "shell_tool", "edit_tool", "grep_tool", "glob_tool"],
+        "tools": ["graph_tool", "file_tool", "shell_tool", "edit_tool", "grep_tool", "glob_tool", "web_search", "todo_tool", "process_tool"],
         "enabled": True,
     },
 ]

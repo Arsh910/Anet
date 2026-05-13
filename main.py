@@ -103,7 +103,6 @@ class _LiveStatus:
 
     def __rich__(self):
         elapsed = time.monotonic() - self._start
-        # Format elapsed: show seconds up to 60s, then mm:ss
         if elapsed < 60:
             elapsed_str = f"{elapsed:.0f}s"
         else:
@@ -112,12 +111,36 @@ class _LiveStatus:
 
         parts = []
 
-        # Past steps (all but the current one) — last _LOG_TAIL lines
+        # ── Todo checklist (if the agent wrote one) ───────────────────────────
+        try:
+            from anet.core.todo_state import get_todos
+            todos = get_todos()
+        except Exception:
+            todos = []
+
+        if todos:
+            _icon = {"pending": "☐", "in_progress": "●", "completed": "✓", "failed": "✗"}
+            _style = {
+                "pending":     "dim",
+                "in_progress": "bold cyan",
+                "completed":   "dim green",
+                "failed":      "red",
+            }
+            done = sum(1 for t in todos if t.get("status") == "completed")
+            parts.append(Text.from_markup(f"  [dim]Tasks {done}/{len(todos)}[/dim]"))
+            for t in todos:
+                st   = t.get("status", "pending")
+                icon = _icon.get(st, "?")
+                sty  = _style.get(st, "dim")
+                parts.append(Text.from_markup(f"  [{sty}]{icon} {t['content']}[/{sty}]"))
+            parts.append(Text(""))   # blank line separator
+
+        # ── Rolling step log ──────────────────────────────────────────────────
         past = self.log[:-1][-_LOG_TAIL:] if len(self.log) > 1 else []
         for step in past:
             parts.append(Text.from_markup(f"  [dim]├─ {step}[/dim]"))
 
-        # Current step: spinner + elapsed
+        # ── Current step: spinner + elapsed ───────────────────────────────────
         spinner = Spinner("dots", text=f"  {self._current}  [dim]{elapsed_str}[/dim]")
         parts.append(spinner)
 

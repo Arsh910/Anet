@@ -1,1 +1,0 @@
-make a react vite app with beautiful ui and animations in folder c:\thinkbig\Anet\repo\testing , for a travel company named "travello"
