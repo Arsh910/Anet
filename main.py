@@ -58,10 +58,12 @@ _MEMORY_DIR = Path(__file__).parent / "memory"
 # Only warn for providers actually referenced by the current config.
 
 _PROVIDER_KEYS = {
-    "google":      ("GOOGLE_API_KEY",      "Google AI / Gemini"),
-    "openrouter":  ("OPENROUTER_API_KEY",  "OpenRouter"),
-    "openai":      ("OPENAI_API_KEY",      "OpenAI"),
-    "claude":      ("ANTHROPIC_API_KEY",   "Anthropic / Claude"),
+    "google":        ("GOOGLE_API_KEY",      "Google AI / Gemini"),
+    "openrouter":    ("OPENROUTER_API_KEY",  "OpenRouter"),
+    "openai":        ("OPENAI_API_KEY",      "OpenAI"),
+    "claude":        ("ANTHROPIC_API_KEY",   "Anthropic / Claude"),
+    "vertex_google": ("VERTEX_PROJECT_ID",   "Google Vertex AI / Gemini"),
+    "vertex_claude": ("VERTEX_PROJECT_ID",   "Google Vertex AI / Claude"),
 }
 
 def _check_api_keys() -> None:
