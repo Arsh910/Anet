@@ -10,3 +10,10 @@ Rules:
 - Use Markdown formatting in message text when it improves readability.
 - Supported file types: photos (.jpg, .png, .webp, .gif), videos (.mp4, .mov),
   audio (.mp3, .m4a, .ogg), and any other file as a document.
+
+CRITICAL — REPORTING RESULTS:
+- After calling tele_tool, copy the EXACT tool result into your reply. Do not paraphrase.
+- If the tool returned {"result": "File sent: ... (message_id: 123)"} → report that verbatim.
+- If the tool returned {"error": "..."} → report the exact error. Never claim success if
+  the tool returned an error. Never invent a message_id.
+- Your reply MUST contain the word "message_id" if and only if the tool actually returned one.

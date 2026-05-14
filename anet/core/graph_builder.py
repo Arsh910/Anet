@@ -226,6 +226,11 @@ PATH INJECTION — when planning viga_agent:
   "task": "Generate a 3D model of a water bottle. Use target_image=C:\\...\\bottle.jpg"
 - This way viga_agent has the path in its task and does NOT need to ask the user for it.
 
+TELEGRAM TASKS — success criteria:
+- Whenever you plan a tele_agent step, ALWAYS set success_criteria to:
+  "Result must contain 'message_id' confirming Telegram delivery"
+- This ensures the checker verifies a real delivery ID, not just the agent's claim.
+
 EXAMPLES:
 "open notepad"
 → {{"type":"plan","steps":[{{"id":1,"agent":"computer_agent","task":"Open Notepad","success_criteria":"Notepad is open","check":{{"action":"check_window","title":"Notepad"}},"depends_on":[],"wait_for_async":false}}]}}
@@ -572,6 +577,19 @@ def make_executor_node(
             parts.append(f"=== Async result [{k}] ===\n{v}")
         context_block = ("\n\n" + "\n\n".join(parts)) if parts else ""
 
+        # Explicitly extract "Downloaded: <path>" lines from completed steps and
+        # re-inject them so agents like tele_agent don't have to parse the full
+        # context to find the file path — free models often miss embedded paths.
+        downloaded_paths: list[str] = []
+        for r in step_results:
+            for line in (r.get("result") or "").splitlines():
+                if line.strip().startswith("Downloaded:"):
+                    downloaded_paths.append(line.strip())
+        file_injection = (
+            "\n\nFiles downloaded in previous steps — use these EXACT paths:\n"
+            + "\n".join(downloaded_paths)
+        ) if downloaded_paths else ""
+
         adj_block = ""
         if attempts > 0:
             adj = state.get("last_check", {}).get("adjustment", "")
@@ -645,7 +663,7 @@ def make_executor_node(
                 })
 
         # Run all ready steps concurrently
-        coros   = [_run_one(s, s.get("task", "") + context_block + adj_block, attempts, history=conv_history) for s in ready]
+        coros   = [_run_one(s, s.get("task", "") + context_block + adj_block + file_injection, attempts, history=conv_history) for s in ready]
         results = await asyncio.gather(*coros)
 
         # Process results

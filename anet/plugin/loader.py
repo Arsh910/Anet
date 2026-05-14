@@ -105,8 +105,19 @@ def _load_tools_for(entry: RegistryEntry) -> dict:
 def _load_one(entry: RegistryEntry) -> tuple[dict, dict] | None:
     """Load a full agent plugin. Returns (agent_config, tool_map) or None on failure."""
     agent_path = Path(entry.path)
-    manifest   = entry.manifest
-    name       = manifest.name
+
+    # Always re-read agent.yaml from disk so edits take effect without reconnecting.
+    yaml_file = agent_path / "agent.yaml"
+    manifest  = entry.manifest   # fallback if file unreadable
+    if yaml_file.exists():
+        try:
+            import yaml as _yaml
+            from anet.plugin.schema import AgentManifest
+            manifest = AgentManifest(**_yaml.safe_load(yaml_file.read_text(encoding="utf-8")))
+        except Exception as exc:
+            print(f"[loader] warning: could not re-read agent.yaml for '{entry.manifest.name}': {exc} — using cached manifest")
+
+    name = manifest.name
 
     # Load plugin-local .env (isolated credentials per plugin)
     plugin_env = agent_path / ".env"
@@ -147,7 +158,17 @@ def _load_one(entry: RegistryEntry) -> tuple[dict, dict] | None:
 def _load_tool_extension(entry: RegistryEntry) -> tuple[dict[str, list[str]], dict] | None:
     """Load a tool-extension plugin. Returns (attach_map, tool_map) or None on failure."""
     agent_path = Path(entry.path)
-    manifest   = entry.manifest
+
+    # Re-read live agent.yaml (same as _load_one)
+    yaml_file = agent_path / "agent.yaml"
+    manifest  = entry.manifest
+    if yaml_file.exists():
+        try:
+            import yaml as _yaml
+            from anet.plugin.schema import AgentManifest
+            manifest = AgentManifest(**_yaml.safe_load(yaml_file.read_text(encoding="utf-8")))
+        except Exception as exc:
+            print(f"[loader] warning: could not re-read agent.yaml for tool-extension '{entry.manifest.name}': {exc}")
 
     # Load plugin-local .env
     plugin_env = agent_path / ".env"

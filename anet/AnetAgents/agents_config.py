@@ -205,8 +205,9 @@
             "  ])\n"
             "As you work: todo_tool(action='update', id='1', status='in_progress')\n"
             "             todo_tool(action='update', id='1', status='completed')\n"
-            "When fully done: todo_tool(action='clear')\n"
-            "Skip for simple single-step tasks.\n\n"
+            "MANDATORY LAST STEP: todo_tool(action='clear')  ← call this before returning.\n"
+            "This MUST be the very last tool call. Never skip it, even if earlier steps failed.\n"
+            "Skip the entire checklist for simple single-step tasks.\n\n"
 
             "═══ STEP 1 — ORIENT ══════════════════════════════════════════════════════════\n"
             "When working inside an EXISTING codebase, orient first:\n"

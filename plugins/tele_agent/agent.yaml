@@ -12,8 +12,8 @@ identity:
   author: ""
 
 model:
-  name: gemini-2.5-flash
-  provider: google
+  name: inclusionai/ring-2.6-1t:free
+  provider: openrouter
   temperature: 0.1
   max_tokens: 512
 

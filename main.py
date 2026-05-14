@@ -67,13 +67,17 @@ _PROVIDER_KEYS = {
 }
 
 def _check_api_keys() -> None:
+    overrides = _agent_overrides()
     providers_in_use: set[str] = set()
-    # Manager
+    # Manager (yaml override wins)
     providers_in_use.add(_manager_config().get("provider") or "google")
-    # Agents
+    # Agents — apply yaml overrides so we warn about what's actually used
     for agent in AGENTS:
-        if agent.get("enabled"):
-            providers_in_use.add(agent.get("provider") or "openrouter")
+        if not agent.get("enabled"):
+            continue
+        ov = overrides.get(agent["name"], {})
+        provider = ov.get("provider") or agent.get("provider") or "openrouter"
+        providers_in_use.add(provider)
     # Warn for missing keys
     for provider in providers_in_use:
         if provider not in _PROVIDER_KEYS:
@@ -606,6 +610,16 @@ async def _chat_turn(
     # Save first-message title for session listing
     session_dir = _MEMORY_DIR / config["configurable"]["thread_id"]
     _save_session_title(session_dir, user_input)
+
+    # Clear any leftover todos from the previous task — the checklist is per-task,
+    # not persistent. Agents that forget to call todo_tool(clear) at the end would
+    # otherwise bleed their old list into the spinner for the next turn, and the
+    # new code_agent would see stale incomplete items and try to finish them.
+    try:
+        from anet.core.todo_state import clear_todos
+        clear_todos()
+    except Exception:
+        pass
 
     live_status = _LiveStatus()
 
