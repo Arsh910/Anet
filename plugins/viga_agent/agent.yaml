@@ -9,8 +9,8 @@ identity:
   author: anet
 
 model:
-  name: gemini-2.5-flash
-  provider: google
+  name: deepseek/deepseek-v4-flash:free
+  provider: openrouter
   temperature: 0.1
   max_tokens: 1024
 

@@ -4,7 +4,7 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-_DOWNLOADS_DIR = Path(__file__).parent.parent.parent / "agents" / "3dAgent" / "tasks" / "downloads"
+_DOWNLOADS_DIR = Path(__file__).parents[3] / "downloads"
 
 SCHEMA = {
     "type": "function",

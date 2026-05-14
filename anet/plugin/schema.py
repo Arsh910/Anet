@@ -20,7 +20,7 @@ class AgentIdentity(BaseModel):
 
 class ModelConfig(BaseModel):
     name: str
-    provider: Literal["google", "anthropic", "openai", "openrouter"]
+    provider: Literal["google", "anthropic", "openai", "openrouter", "claude", "vertex_google", "vertex_claude"]
     temperature: float = 0.2
     max_tokens: int = 2048
 
