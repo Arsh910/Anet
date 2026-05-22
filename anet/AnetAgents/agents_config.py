@@ -27,7 +27,7 @@
             "data lookup",
             "general knowledge questions",
         ],
-        "tools": ["web_search", "download_file"],
+        "tools": ["web_search", "download_file", "memory_tool"],
         "enabled": True,
     },
     {
@@ -159,23 +159,17 @@
             "- After write_file or create_folder, confirm with the returned path."
         ),
         "task_types": [
-            "read file",
-            "write file",
-            "create file",
-            "create folder",
             "copy file",
             "move file",
             "delete file",
             "rename file",
+            "create folder",
             "list directory",
             "list folder contents",
             "search files",
             "find files",
             "file info",
             "file metadata",
-            "parse CSV",
-            "parse JSON",
-            "read lines",
             "zip files",
             "unzip files",
             "compress files",
@@ -183,8 +177,11 @@
             "file system operations",
             "organize files",
             "file management",
+            "resolve merge conflicts",
+            "fix git conflicts",
+            "merge conflict resolution",
         ],
-        "tools": ["file_tool"],
+        "tools": ["file_tool", "memory_tool", "conflict_tool"],
         "enabled": True,
     },
     {
@@ -210,14 +207,17 @@
             "Skip the entire checklist for simple single-step tasks.\n\n"
 
             "═══ STEP 1 — ORIENT ══════════════════════════════════════════════════════════\n"
-            "When working inside an EXISTING codebase, orient first:\n"
-            "  graph_tool(action='show')          → project structure overview\n"
-            "  graph_tool(action='find', query='filename')  → locate a specific file\n"
-            "  graph_tool(action='deps', query='filename')  → see dependencies\n"
-            "- Skip graph_tool if it returns NO_GRAPH — just continue silently.\n"
-            "- Do NOT use graph_tool when creating a NEW project from scratch.\n"
-            "- To build/index a graph: graph_tool(action='build', project_path='<abs path>')\n"
-            "  NEVER run 'anet graph build' via shell_tool — call graph_tool directly.\n\n"
+            "When working inside an EXISTING codebase, orient first using CodeGraph:\n\n"
+            "ALWAYS follow this sequence:\n"
+            "  1. status()                               → check if project is indexed\n"
+            "     - If NOT indexed → index(path='<abs project path>') before anything else\n"
+            "     - If indexed but stale → sync() to update incrementally (fast)\n"
+            "  2. files(format='tree')                   → project structure overview\n"
+            "  3. context(task='<what you need to do>')  → rich relevant context for the task\n"
+            "  4. query(search='SymbolName')             → locate a specific symbol or file\n\n"
+            "- Skip the entire orient step only when creating a NEW project from scratch.\n"
+            "- After making edits, call sync() so the index stays fresh for future steps.\n"
+            "- If CodeGraph tools are unavailable, fall back to glob_tool + grep_tool.\n\n"
 
             "═══ STEP 2 — FIND FILES ══════════════════════════════════════════════════════\n"
             "Before reading or editing, locate the exact file path. Never guess.\n\n"
@@ -250,10 +250,15 @@
 
             "═══ STEP 5 — VERIFY ══════════════════════════════════════════════════════════\n"
             "After editing, verify correctness:\n"
-            "  shell_tool(command='python -m py_compile path/to/file.py')  → syntax check\n"
+            "  diagnose_tool(path='path/to/file.py')                        → lint + type-check (auto)\n"
+            "  diagnose_tool(path='path/to/file.py', checker='ruff')        → lint only\n"
+            "  diagnose_tool(path='path/to/file.py', checker='pyright')     → type-check only\n"
+            "  diagnose_tool(path='src/app.ts', checker='auto', cwd='C:\\project')  → JS/TS\n"
+            "  diagnose_tool(path='file.py', fix=True)                      → auto-fix lint issues\n"
             "  shell_tool(command='python -m pytest tests/ -v', cwd='...')  → run tests\n"
-            "  shell_tool(command='python -m ruff check .', cwd='...')      → lint\n"
             "  grep_tool(pattern='def new_function', path='file.py', output_mode='content') → confirm edit landed\n\n"
+            "diagnose_tool returns PASS/FAIL with per-line errors (file, line, col, message).\n"
+            "ALWAYS call diagnose_tool after editing Python or JS/TS files.\n\n"
             "For frontend/Node projects — verify the dev server or build actually works:\n"
             "  process_tool(command='npm run dev', cwd='C:\\project',\n"
             "               success_pattern='ready in|Local:', failure_pattern='error|Error', timeout=30)\n"
@@ -289,6 +294,36 @@
             "  NEVER use '.' as project name — use folder name, set cwd to parent.\n\n"
             "Python: create files directly with file_tool — no scaffolding needed.\n\n"
 
+            "═══ MEMORY ══════════════════════════════════════════════════════════════════\n"
+            "After completing a task that creates or modifies a project, save key facts:\n"
+            "  memory_tool(action='save', content='Travel website at C:\\projects\\travel, React+Vite+Tailwind', project_path='C:\\projects\\travel')\n"
+            "Save: project location, stack/framework, key decisions, important file paths.\n"
+            "Do NOT save trivial edits or one-liner fixes — only facts worth knowing next session.\n"
+            "To recall context: memory_tool(action='search', query='travel website')\n\n"
+
+            "═══ CODE INTELLIGENCE (LSP) ══════════════════════════════════════════════════\n"
+            "Use lsp_tool for deep code understanding. Servers start automatically on first use.\n\n"
+            "  lsp_tool(action='diagnostics', path='file.py')                   → all errors/warnings\n"
+            "  lsp_tool(action='hover',       path='file.py', line=10, col=4)   → type of symbol at position\n"
+            "  lsp_tool(action='definition',  path='file.py', line=10, col=4)   → where it is defined\n"
+            "  lsp_tool(action='references',  path='file.py', line=10, col=4)   → every usage in project\n"
+            "  lsp_tool(action='rename',      path='file.py', line=10, col=4, new_name='newFoo')  → workspace rename\n"
+            "  lsp_tool(action='symbols',     path='file.py')                   → all functions/classes\n"
+            "  lsp_tool(action='status')                                         → running servers\n\n"
+            "line/col are 0-based. Use grep_tool with output_mode='content' to find exact line numbers first.\n"
+            "Prefer lsp_tool diagnostics over diagnose_tool when the server is already running — it's faster.\n"
+            "Use rename instead of grep+edit for symbol renames — it updates all imports automatically.\n\n"
+
+            "═══ GIT CONFLICTS ════════════════════════════════════════════════════════════\n"
+            "When a file has merge conflict markers (<<<<<<<):\n"
+            "  conflict_tool(action='list', path='C:\\\\project')              → find all conflicted files\n"
+            "  conflict_tool(action='show', path='file.py', conflict_n=1)   → inspect conflict 1\n"
+            "  conflict_tool(action='resolve', path='file.py', conflict_n=1, resolution='@ours')\n"
+            "  conflict_tool(action='resolve_all', path='file.py', resolution='@theirs')\n\n"
+            "resolution: @ours (keep HEAD), @theirs (take incoming), @base (common ancestor, diff3 only),\n"
+            "            or any custom string to write literal text.\n"
+            "Always show the conflict first, then resolve — never resolve blindly.\n\n"
+
             "═══ GOLDEN RULES ════════════════════════════════════════════════════════════\n"
             "1. Glob/Grep BEFORE reading. Read BEFORE editing. Edit BEFORE verifying.\n"
             "2. edit_tool for all partial changes. write_file only for new files.\n"
@@ -315,7 +350,7 @@
             "rename function",
             "add tests",
         ],
-        "tools": ["graph_tool", "file_tool", "shell_tool", "edit_tool", "grep_tool", "glob_tool", "web_search", "todo_tool", "process_tool"],
+        "tools": ["file_tool", "shell_tool", "edit_tool", "grep_tool", "glob_tool", "web_search", "todo_tool", "process_tool", "diagnose_tool", "memory_tool", "conflict_tool", "lsp_tool"],
         "enabled": True,
     },
 ]

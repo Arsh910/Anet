@@ -1,0 +1,11 @@
+# Playwright MCP server — full browser automation
+#
+# Install: npm install -g @playwright/mcp
+# Docs:    https://github.com/microsoft/playwright-mcp
+#
+# Tools provided: browser_navigate, browser_click, browser_type,
+#   browser_snapshot, browser_take_screenshot, browser_fill_form, and more.
+
+command: npx
+args:
+  - "@playwright/mcp"

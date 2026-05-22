@@ -23,3 +23,10 @@ async def _auto_approve(tool: str, action: str, args: dict) -> bool:
 on_confirm: ContextVar[Callable[[str, str, dict], Awaitable[bool]]] = ContextVar(
     "on_confirm", default=_auto_approve
 )
+
+# Persistent output callback — for content that should appear above the live
+# spinner and remain visible after it clears (e.g. file diffs, tool outputs).
+# main.py installs a Rich console printer; default is a no-op.
+on_output: ContextVar[Callable[[str], None]] = ContextVar(
+    "on_output", default=lambda _: None
+)

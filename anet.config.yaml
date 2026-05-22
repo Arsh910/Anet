@@ -15,31 +15,42 @@
 # Manager (plans and coordinates all requests)
 # Default: gemini-2.5-pro via google
 manager:
-  model: arcee-ai/trinity-large-thinking:free
+  model: z-ai/glm-4.5-air:free
   provider: openrouter
 
-# Per-agent overrides — only model and provider can be set here.
+# Per-agent overrides — model, provider, extra_tools, and mcp can be set here.
+#
+# extra_tools: bolt ExTools (defined in exanet.config.yaml) onto a built-in agent
+# mcp:         connect MCP servers (defined in mcps/) to a built-in agent
+#
+# Example:
+#   code_agent:
+#     model: gemini-2.5-flash
+#     provider: google
+#     extra_tools: [my_tool]      # ExTool from exanet.config.yaml
+#     mcp: [filesystem, github]   # MCP servers from mcps/
 agents:
 
   research_agent:
-    model: inclusionai/ring-2.6-1t:free
+    model: z-ai/glm-4.5-air:free
     provider: openrouter
 
   computer_agent:
-    model: inclusionai/ring-2.6-1t:free
+    model: sao10k/l3-lunaris-8b
     provider: openrouter
 
   checker_agent:
-    model: arcee-ai/trinity-large-thinking:free
+    model: openrouter/owl-alpha
     provider: openrouter
 
   file_agent:
-    model: inclusionai/ring-2.6-1t:free
+    model: z-ai/glm-4.5-air:free
     provider: openrouter
 
   code_agent:
-    model: inclusionai/ring-2.6-1t:free
+    model: poolside/laguna-m.1:free
     provider: openrouter
+    mcp: [codegraph]
 
 # ── Provider / model reference ────────────────────────────────────────────────
 #

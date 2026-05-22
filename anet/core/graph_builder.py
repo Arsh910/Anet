@@ -133,7 +133,27 @@ def _extract_json(text: str) -> dict:
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
-def _plan_system_prompt(agents: list[dict], has_direct_tools: bool = False) -> str:
+def _memory_context(user_msg: str) -> str:
+    """Search stored memories for keywords in the user message and return an injection block."""
+    try:
+        from anet.AnetTools.memory_tool import search_memories
+        results = search_memories(user_msg, max_results=5)
+        if not results:
+            return ""
+        lines = "\n".join(
+            f"  [{m['id']}] {m['content']}"
+            + (f"  (project: {m['project_path']})" if m.get("project_path") else "")
+            for m in results
+        )
+        return (
+            "RELEVANT MEMORIES FROM PAST SESSIONS (use these to inform your plan):\n"
+            + lines
+        )
+    except Exception:
+        return ""
+
+
+def _plan_system_prompt(agents: list[dict], has_direct_tools: bool = False, memory_ctx: str = "") -> str:
     plannable = [a for a in agents if a["name"] != "checker_agent"]
     agent_lines = "\n".join(
         f"  - {a['name']}: {', '.join(a['task_types'])}" for a in plannable
@@ -141,9 +161,10 @@ def _plan_system_prompt(agents: list[dict], has_direct_tools: bool = False) -> s
     agent_names = [a["name"] for a in plannable]
 
     now = datetime.now().strftime("%A, %B %d, %Y  %H:%M")
+    memory_section = f"\n\n{memory_ctx}" if memory_ctx else ""
     return f"""You are {_ASSISTANT_NAME}, an AI assistant. Analyse the user request and decide how to fulfil it.
 Current date and time: {now} (local).
-If asked about your identity, name, or who you are, answer as {_ASSISTANT_NAME} — never mention the underlying model or "Google".
+If asked about your identity, name, or who you are, answer as {_ASSISTANT_NAME} — never mention the underlying model or "Google".{memory_section}
 
 
 AVAILABLE AGENTS:
@@ -208,6 +229,18 @@ CRITICAL — agent routing for code vs desktop:
   clicking buttons, typing into an open window, taking screenshots.
 - NEVER route to computer_agent to run shell/terminal commands. NEVER ask computer_agent to open
   "Terminal" or "PowerShell" to execute npm/pip/python/git. Use code_agent for all of that.
+
+CRITICAL — agent routing for file management vs code editing:
+- file_agent handles ONLY raw file-system operations on NON-CODE files: copying, moving, deleting,
+  renaming, zipping/unzipping, listing directories, reading plain text/data files when no code
+  modification is needed. file_agent does NOT have edit_tool — it CANNOT make surgical code edits.
+- code_agent handles ALL tasks that involve source code or project files — even if the task is
+  described as "write to a file", "create a file", "update a file", or "fix something in a file".
+  Any task inside a software project (React, Python, Node, HTML/CSS/JS/TS, config files, etc.)
+  must go to code_agent — never file_agent.
+- When in doubt between file_agent and code_agent → ALWAYS choose code_agent.
+- NEVER route to file_agent: editing UI, fixing layouts, adding components, modifying source code,
+  changing HTML/CSS/JS/Python/TypeScript files, or ANY task inside a software project folder.
 
 APPROVAL GATE — 3D rendering:
 - If the user asks for a 3D model WITHOUT providing an image path, plan ONLY the
@@ -309,6 +342,51 @@ def _dedup_reply(text: str) -> str:
     return text
 
 
+# ── Routing guard ─────────────────────────────────────────────────────────────
+
+# Signals in a task description that indicate it needs code_agent, not file_agent.
+# file_agent has no edit_tool — routing code work there causes "tool not found".
+_CODE_SIGNALS: frozenset[str] = frozenset({
+    # file extensions
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".scss",
+    ".json", ".yaml", ".yml", ".toml", ".vue", ".svelte",
+    # code concepts
+    "react", "component", "tailwind", "bootstrap",
+    "python", "typescript", "javascript", "npm", "vite", "webpack",
+    "import", "export", "function", "class", "const ", "let ", "def ",
+    # action verbs that imply editing
+    "fix", "edit ", "update ", "refactor", "implement", "add feature",
+    "change the", "modify ", "rewrite", "rename ", "remove ",
+    # ui/project
+    "layout", "styling", "frontend", "backend", " ui ", "interface",
+    "bug", "error", " code", "source", "project",
+})
+
+_FILE_ONLY_SIGNALS: frozenset[str] = frozenset({
+    "copy", "move", "delete", "zip", "unzip", "compress", "extract",
+    "rename folder", "create folder", "list folder",
+})
+
+
+def _coerce_routing(steps: list[dict]) -> list[dict]:
+    """
+    Guard against weak planner models routing code tasks to file_agent.
+    If a step assigned to file_agent contains code-task signals, reroute
+    it to code_agent (which has edit_tool, shell_tool, glob_tool, etc.).
+    Only fires when the task looks like code work AND not a pure file-op.
+    """
+    for step in steps:
+        if step.get("agent") != "file_agent":
+            continue
+        task_lower = step.get("task", "").lower()
+        has_code   = any(sig in task_lower for sig in _CODE_SIGNALS)
+        has_file_only = any(sig in task_lower for sig in _FILE_ONLY_SIGNALS)
+        if has_code and not has_file_only:
+            print(f"[graph] routing guard: file_agent → code_agent for task: {step.get('task','')[:80]!r}", file=sys.stderr)
+            step["agent"] = "code_agent"
+    return steps
+
+
 # ── Keyword fallback ──────────────────────────────────────────────────────────
 
 def _keyword_fallback(user_msg: str, agents: list[dict]) -> dict:
@@ -391,10 +469,16 @@ def make_planner_node(enabled_agents: list[dict], manager_tools: dict | None = N
         _notify("manager: planning...")
         client, manager_model = _manager_client()
 
+        # Search memory for context relevant to this request.
+        # Run in a thread so the sync file I/O does not block the event loop
+        # (blocking the event loop stalls Rich's spinner animation).
+        user_msg_for_memory = _last_user_msg(state.get("messages", []))
+        mem_ctx = await asyncio.to_thread(_memory_context, user_msg_for_memory)
+
         # Use last 8 messages for context
         api_msgs = _to_api_msgs(state.get("messages", [])[-8:])
         msgs = [
-            {"role": "system", "content": _plan_system_prompt(enabled_agents, bool(_mtools))},
+            {"role": "system", "content": _plan_system_prompt(enabled_agents, bool(_mtools), memory_ctx=mem_ctx)},
             *api_msgs,
         ]
 
@@ -456,6 +540,7 @@ def make_planner_node(enabled_agents: list[dict], manager_tools: dict | None = N
             _notify(f"manager: planning failed ({exc}) — keyword fallback")
             user_msg = _last_user_msg(state.get("messages", []))
             plan = _keyword_fallback(user_msg, enabled_agents)
+            plan["steps"] = _coerce_routing(plan.get("steps", []))
 
         # Simple direct reply — no agents needed
         if plan.get("type") == "simple":
@@ -497,6 +582,9 @@ def make_planner_node(enabled_agents: list[dict], manager_tools: dict | None = N
         for i, s in enumerate(steps):
             if "id" not in s:
                 s["id"] = i + 1
+
+        # Guard: reroute any code tasks misassigned to file_agent
+        steps = _coerce_routing(steps)
 
         return {
             "plan":            steps,

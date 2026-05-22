@@ -47,10 +47,12 @@ _ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "Anet")
 from anet.AnetAgents.agents_config import AGENTS
 from anet.core.tool_loader import load_tools
 from anet.core.graph_builder import build_graph
-from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var
+from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var
 from anet.core.config_loader import agent_overrides as _agent_overrides, manager_config as _manager_config
-from anet.plugin.loader import load_all_agents as _load_plugin_agents
-from anet.plugin.registry import REGISTRY_FILE as _ANP_REGISTRY
+from anet.core.ex_loader import load_ex_tools, load_ex_agents, get_extra_for_builtins
+from anet.core.mcp_loader import load_mcp_tools_for_agents
+
+_EX_CONFIG = Path(__file__).parent / "exanet.config.yaml"
 
 _MEMORY_DIR = Path(__file__).parent / "memory"
 
@@ -191,6 +193,15 @@ def _can_import(pkg: str) -> bool:
 
 
 def _print_startup_summary(enabled_agents: list[dict], tool_map: dict) -> None:
+    from anet.core.mcp_loader import _connections as _mcp_connections
+
+    # Split tool_map into MCP-backed vs regular AnetTools
+    mcp_tool_names: set[str] = set()
+    for conn in _mcp_connections.values():
+        for t in conn.tools:
+            mcp_tool_names.add(t.name)
+    regular_tools = {k: v for k, v in tool_map.items() if k not in mcp_tool_names}
+
     console.print()
     console.rule(f"[bold green]{_ASSISTANT_NAME}[/bold green]")
     _mcfg     = _manager_config()
@@ -206,18 +217,31 @@ def _print_startup_summary(enabled_agents: list[dict], tool_map: dict) -> None:
     at.add_column("Tools")
     at.add_column("Handles")
     for a in enabled_agents:
+        # Show only non-MCP tools in the agent row (MCP tools shown separately below)
+        agent_tools = [t for t in a.get("tools", []) if t not in mcp_tool_names]
         preview = ", ".join(a.get("task_types", [])[:3])
         if len(a.get("task_types", [])) > 3:
             preview += ", …"
-        at.add_row(a["name"], a["model"], ", ".join(a.get("tools", [])) or "—", preview)
+        at.add_row(a["name"], a["model"], ", ".join(agent_tools) or "—", preview)
     console.print(Panel(at, title="[bold]Loaded Agents[/bold]", border_style="green"))
 
     tt = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
     tt.add_column("Tool",   style="bold")
     tt.add_column("Status")
-    for name in tool_map:
+    for name in regular_tools:
         tt.add_row(name, "[green]ready[/green]")
     console.print(Panel(tt, title="[bold]Loaded Tools[/bold]", border_style="blue"))
+
+    if _mcp_connections:
+        mt = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
+        mt.add_column("Server",  style="bold")
+        mt.add_column("Tools",   style="dim")
+        mt.add_column("Status")
+        for srv_name, conn in _mcp_connections.items():
+            tool_names = ", ".join(t.name for t in conn.tools) or "—"
+            status = "[red]error[/red]" if conn.error else "[green]ready[/green]"
+            mt.add_row(srv_name, tool_names, status)
+        console.print(Panel(mt, title="[bold]MCP Servers[/bold]", border_style="magenta"))
 
     console.print(
         f"[dim]Type your message and press Enter. "
@@ -414,7 +438,6 @@ _HELP_TEXT = """
   [bold cyan]/session[/bold cyan] [dim]<name>[/dim]        Switch to a named session (creates if new)
   [bold cyan]/sessions[/bold cyan]             List all saved sessions
   [bold cyan]/agents[/bold cyan]               Show loaded agents and their tools
-  [bold cyan]/status[/bold cyan]               Show connected plugin agents
   [bold cyan]/clear[/bold cyan]                Clear the screen
   [bold cyan]/help[/bold cyan]                 Show this message
 
@@ -438,33 +461,6 @@ def _cmd_agents(enabled_agents: list[dict], tool_map: dict) -> None:
     console.print(Panel(t, title="[bold]Loaded Agents[/bold]", border_style="green"))
     console.print()
 
-
-def _cmd_status() -> None:
-    from anet.plugin.registry import list_agents
-    agents = list_agents()
-    console.print()
-    if not agents:
-        console.print("  [dim]No plugin agents connected.[/dim]")
-        console.print(
-            "  [dim]Connect one with:  python cli.py connect --path plugins/<agent>[/dim]"
-        )
-        console.print()
-        return
-    t = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
-    t.add_column("Agent",     style="bold")
-    t.add_column("Status")
-    t.add_column("Connected", style="dim")
-    t.add_column("Path",      style="dim")
-    for e in agents:
-        color = {"idle": "green", "running": "yellow", "disabled": "dim"}.get(e.status, "white")
-        t.add_row(
-            e.manifest.name,
-            f"[{color}]{e.status}[/{color}]",
-            str(e.registered_at)[:16].replace("T", "  "),
-            e.path,
-        )
-    console.print(Panel(t, title="[bold]Plugin Agents[/bold]", border_style="blue"))
-    console.print()
 
 
 def _list_session_dirs() -> list[Path]:
@@ -576,9 +572,6 @@ async def _handle_slash(
     elif command == "/agents":
         _cmd_agents(enabled_agents, tool_map)
 
-    elif command == "/status":
-        _cmd_status()
-
     else:
         console.print(f"\n  [yellow]Unknown command:[/yellow] {command}  "
                       f"[dim](type /help for a list)[/dim]\n")
@@ -626,11 +619,40 @@ async def _chat_turn(
     def on_status(msg: str) -> None:
         live_status.update(msg)
 
+    def _render_diff(text: str) -> None:
+        """Print a colored unified diff above the live spinner."""
+        # Split summary line from diff body
+        lines   = text.splitlines()
+        summary = lines[0] if lines else ""
+        diff    = Text()
+        in_diff = False
+        for line in lines[1:]:
+            if line.startswith("---") or line.startswith("+++"):
+                in_diff = True
+                diff.append(line + "\n", style="bold")
+            elif line.startswith("@@"):
+                in_diff = True
+                diff.append(line + "\n", style="cyan")
+            elif line.startswith("+"):
+                diff.append(line + "\n", style="green")
+            elif line.startswith("-"):
+                diff.append(line + "\n", style="red")
+            elif in_diff:
+                diff.append(line + "\n", style="dim")
+        console.print(Panel(
+            diff,
+            title=f"[dim]{summary}[/dim]",
+            border_style="dim",
+            expand=False,
+            padding=(0, 1),
+        ))
+
     try:
         with Live(live_status, console=console, refresh_per_second=12, transient=True) as live:
             status_tk  = _status_var.set(on_status)
             token_tk   = _token_var.set(lambda _: None)
             confirm_tk = _confirm_var.set(_make_confirm_fn(live))
+            output_tk  = _output_var.set(_render_diff)
             try:
                 state = await graph.ainvoke(
                     {"messages": [HumanMessage(content=user_input)]},
@@ -640,6 +662,7 @@ async def _chat_turn(
                 _status_var.reset(status_tk)
                 _token_var.reset(token_tk)
                 _confirm_var.reset(confirm_tk)
+                _output_var.reset(output_tk)
 
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted. Type 'exit' to quit.[/dim]")
@@ -720,7 +743,6 @@ async def main() -> None:
 
     tool_map = load_tools()
     _check_optional_deps()
-    _print_startup_summary(enabled_agents, tool_map)
 
     # ── Resolve session before opening checkpointer ───────────────────────────
     thread_id, session_label = _resolve_session(args)
@@ -747,40 +769,62 @@ async def main() -> None:
         console.print(f"  [dim]--resume to continue · /sessions to list · exit to quit[/dim]")
         console.print()
 
-        def _merge_plugins() -> tuple[list[dict], dict, dict, int]:
-            """Load plugin agents/extensions and merge with built-ins.
-            Returns (agents, tools, manager_tools, plugin_count)."""
-            plugin_agents, plugin_tools, attach_map = _load_plugin_agents()
+        async def _merge_all() -> tuple[list[dict], dict, dict, int]:
+            """Load all agents and tools: built-ins + ExTools/ExAgents + MCP.
+            Returns (agents, tools, manager_tools, external_count)."""
 
-            # Inject attached tools into target built-in agents
-            merged_agents = [dict(a) for a in enabled_agents]
-            for agent in merged_agents:
-                extra = attach_map.get(agent["name"], [])
-                if extra:
-                    agent["tools"] = list(agent.get("tools", [])) + extra
+            # ── 1. ExTools from exanet.config.yaml ───────────────────────────
+            ex_tools  = load_ex_tools()
 
-            # Manager tools are handled separately by the graph builder
-            manager_tools = {
-                name: plugin_tools[name]
-                for name in attach_map.get("manager", [])
-                if name in plugin_tools
-            }
+            # ── 2. ExAgents from exanet.config.yaml ──────────────────────────
+            ex_agents = load_ex_agents()
 
-            return (
-                merged_agents + plugin_agents,
-                {**tool_map, **plugin_tools},
-                manager_tools,
-                len(plugin_agents),
-            )
+            # ── 3. Load .env files for ExAgents that have one ─────────────────
+            _repo_root = Path(__file__).parent
+            for agent in ex_agents:
+                env_file = _repo_root / "ExAgents" / agent["name"] / ".env"
+                if env_file.exists():
+                    from dotenv import load_dotenv as _ldenv
+                    _ldenv(env_file, override=True)
+
+            # ── 4. Merge all tools ────────────────────────────────────────────
+            combined_tools = {**tool_map, **ex_tools}
+
+            # ── 5. Apply extra_tools/mcp from anet.config.yaml to built-ins ──
+            extra_map       = get_extra_for_builtins()
+            merged_builtins = [dict(a) for a in enabled_agents]
+            for agent in merged_builtins:
+                extra = extra_map.get(agent["name"], {})
+                for t in extra.get("tools", []):
+                    if t not in agent["tools"]:
+                        agent["tools"] = agent["tools"] + [t]
+                if extra.get("mcp"):
+                    agent["mcp"] = list(agent.get("mcp") or []) + extra["mcp"]
+
+            # ── 6. All agents combined ────────────────────────────────────────
+            all_agents = merged_builtins + ex_agents
+
+            # ── 7. Connect MCP servers for every agent that needs them ────────
+            mcp_tools = await load_mcp_tools_for_agents(all_agents)
+            combined_tools.update(mcp_tools)
+
+            # ── 8. Manager tools ──────────────────────────────────────────────
+            manager_tools: dict = {}
+            if "memory_tool" in combined_tools:
+                manager_tools["memory_tool"] = combined_tools["memory_tool"]
+
+            return all_agents, combined_tools, manager_tools, len(ex_agents)
 
         # Initial build
-        all_agents, all_tools, manager_tools, n_plugins = _merge_plugins()
+        all_agents, all_tools, manager_tools, n_external = await _merge_all()
         graph = build_graph(all_agents, all_tools, checkpointer=checkpointer, manager_tools=manager_tools)
-        if n_plugins:
-            console.print(f"[dim]  + {n_plugins} plugin agent(s) loaded from registry[/dim]\n")
+        # Reprint summary now that MCP tools have been injected into agent tool lists
+        _print_startup_summary(all_agents, all_tools)
+        if n_external:
+            console.print(f"[dim]  + {n_external} external agent(s) loaded[/dim]\n")
 
         try:
-            mtime = _ANP_REGISTRY.stat().st_mtime if _ANP_REGISTRY.exists() else 0.0
+            mtime = _EX_CONFIG.stat().st_mtime if _EX_CONFIG.exists() else 0.0
         except OSError:
             mtime = 0.0
 
@@ -791,20 +835,22 @@ async def main() -> None:
 
             async def _loop_with_hotreload() -> None:
                 nonlocal mtime
+                cur_agents = all_agents
+                cur_tools  = all_tools
                 while True:
                     # Check if registry changed (anet connect / disconnect in another terminal)
                     try:
-                        new_mtime = _ANP_REGISTRY.stat().st_mtime if _ANP_REGISTRY.exists() else 0.0
+                        new_mtime = _EX_CONFIG.stat().st_mtime if _EX_CONFIG.exists() else 0.0
                     except OSError:
                         new_mtime = 0.0
                     if new_mtime != mtime:
                         mtime = new_mtime
-                        all_agents2, all_tools2, manager_tools2, n2 = _merge_plugins()
-                        graph_box[0] = build_graph(all_agents2, all_tools2, checkpointer=checkpointer, manager_tools=manager_tools2)
-                        console.print(f"[dim]  ✓ registry updated — {n2} plugin agent(s) active[/dim]")
+                        cur_agents, cur_tools, mgr_tools2, n2 = await _merge_all()
+                        graph_box[0] = build_graph(cur_agents, cur_tools, checkpointer=checkpointer, manager_tools=mgr_tools2)
+                        console.print(f"[dim]  ✓ registry updated — {n2} external agent(s) active[/dim]")
 
                     # Run one chat turn
-                    done = await _chat_turn(graph_box[0], config, all_agents, all_tools)
+                    done = await _chat_turn(graph_box[0], config, cur_agents, cur_tools)
                     if done:
                         break
 

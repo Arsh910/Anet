@@ -35,13 +35,7 @@ TOOLS = [
         "description": "OS-level file operations: read/write files, create folders, copy/move/delete/rename, list directories, search, parse CSV/JSON, read line ranges, zip/unzip.",
         "enabled": True,
     },
-    {
-        "name": "graph_tool",
-        "path": "anet.AnetTools.graph_tool",
-        "description": "Query the project code graph. Returns project structure, file summaries, exports, and dependency chains. Built by: anet graph build.",
-        "enabled": True,
-    },
-    {
+{
         "name": "shell_tool",
         "path": "anet.AnetTools.shell_tool",
         "description": "Run shell commands with a timeout. Use for tests (pytest, npm test), linters (ruff, eslint), and build scripts.",
@@ -75,6 +69,30 @@ TOOLS = [
         "name": "process_tool",
         "path": "anet.AnetTools.process_tool",
         "description": "Start a command, capture output until a success/failure pattern matches or timeout expires. Use to verify dev servers and build tools actually work.",
+        "enabled": True,
+    },
+    {
+        "name": "diagnose_tool",
+        "path": "anet.AnetTools.diagnose_tool",
+        "description": "Run linters and type-checkers on a file or directory. Auto-detects language: ruff+pyright for Python, eslint+tsc for JS/TS. Returns structured per-line diagnostics with PASS/FAIL summary.",
+        "enabled": True,
+    },
+    {
+        "name": "memory_tool",
+        "path": "anet.AnetTools.memory_tool",
+        "description": "Persistent cross-session memory. Save facts (project paths, decisions, preferences), search by keyword, list all entries, delete stale ones. Memories survive across restarts.",
+        "enabled": True,
+    },
+    {
+        "name": "conflict_tool",
+        "path": "anet.AnetTools.conflict_tool",
+        "description": "Resolve git merge conflicts. List conflicts in a file or directory, inspect each one (ours/theirs/base), and resolve with @ours, @theirs, @base, or custom text.",
+        "enabled": True,
+    },
+    {
+        "name": "lsp_tool",
+        "path": "anet.AnetTools.lsp_tool",
+        "description": "IDE-level code intelligence via Language Server Protocol. diagnostics (real errors/warnings), hover (type info), definition (go-to-def), references (find usages), rename (workspace-wide), symbols (list file symbols). Supports Python/Go/TypeScript/JavaScript/C/C++/Rust.",
         "enabled": True,
     },
 ]

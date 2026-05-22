@@ -62,6 +62,25 @@ _INTERACTIVE = {
 
 _MAX_OUTPUT = 8_000   # truncate output to this many chars
 
+# Commands where a specific non-zero exit code is not an error condition.
+# Maps command name → set of "ok" exit codes beyond 0.
+_EXIT_OK: dict[str, set[int]] = {
+    "grep":    {1},   # 1 = no matches found
+    "rg":      {1},   # 1 = no matches found
+    "diff":    {1},   # 1 = files differ (requested comparison, not a failure)
+    "git":     {1},   # git diff / git grep return 1 on no output
+    "find":    {1},   # GNU find -quit path
+}
+
+
+def _is_success(command: str, returncode: int) -> bool:
+    if returncode == 0:
+        return True
+    cmd0 = command.lstrip().split()[0].lower() if command.strip() else ""
+    # Strip path prefix (e.g. /usr/bin/grep → grep)
+    cmd0 = cmd0.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    return returncode in _EXIT_OK.get(cmd0, set())
+
 
 def _is_blocked(cmd: str) -> bool:
     lower = cmd.lower()
@@ -132,7 +151,7 @@ async def run(params: dict) -> dict:
         return {
             "result":      combined or "(no output)",
             "exit_code":   proc.returncode,
-            "success":     proc.returncode == 0,
+            "success":     _is_success(command, proc.returncode),
         }
 
     except FileNotFoundError:

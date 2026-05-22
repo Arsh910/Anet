@@ -11,6 +11,7 @@ Key features:
 """
 from __future__ import annotations
 
+import difflib
 import re
 import unicodedata
 from pathlib import Path
@@ -218,10 +219,18 @@ async def run(params: dict) -> dict:
 
     _record_read(path)   # update cache so next edit doesn't see false staleness
 
+    # ── Generate unified diff for visibility ─────────────────────────────────
+    diff_lines = list(difflib.unified_diff(
+        content.splitlines(keepends=True),
+        updated.splitlines(keepends=True),
+        fromfile=f"a/{path.name}",
+        tofile=f"b/{path.name}",
+        lineterm="\n",
+    ))
+    diff_text = "".join(diff_lines).rstrip()
+
     n = len(positions)
     replaced = n if replace_all else 1
-    return {
-        "result": (
-            f"Edited {path}: replaced {replaced} occurrence(s) of the target string."
-        )
-    }
+    summary = f"Edited {path} ({replaced} occurrence(s) replaced)"
+    result  = f"{summary}\n\n{diff_text}" if diff_text else summary
+    return {"result": result}

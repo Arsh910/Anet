@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Callable
 
 from anet.core import agent_runner
-from anet.core.context import on_confirm as _confirm_var
+from anet.core.context import on_confirm as _confirm_var, on_output as _output_var
 
 # Safety valve — only fires if the model never stops calling tools.
 # Normal tasks end naturally when the model returns a plain-text reply.
@@ -34,7 +34,7 @@ _CYCLE_WINDOW = 10
 # Read-only operations excluded from cycle detection (reading the same file
 # multiple times to verify a change is normal, not a loop).
 _READ_ONLY_OPS: set[str] = {
-    "glob_tool", "grep_tool", "graph_tool", "web_search", "todo_tool",
+    "glob_tool", "grep_tool", "web_search", "todo_tool",
 }
 _READ_ONLY_ACTIONS: set[str] = {
     "read_file", "read_lines", "list_directory", "search_files",
@@ -42,6 +42,9 @@ _READ_ONLY_ACTIONS: set[str] = {
     "show", "find", "deps", "summary",
     "read", "check_window", "check_process", "check_path",
     "list_windows", "read_window_text", "take_screenshot",
+    "list",                                          # conflict_tool
+    "diagnostics", "hover", "definition",            # lsp_tool read-only actions
+    "references", "symbols", "status",               # lsp_tool read-only actions
 }
 
 
@@ -291,6 +294,14 @@ async def run(
                     "poll_path":  tool_map[resolved_tool_name].get("poll_path", ""),
                     "result_key": tool_map[resolved_tool_name].get("result_key", ""),
                 }
+
+            # Emit file diffs to the terminal so the user can see what changed.
+            # Only fires for edit_tool when the result contains a unified diff.
+            effective = resolved_tool_name or called_name
+            if effective == "edit_tool" and isinstance(result, dict):
+                res_text = result.get("result", "")
+                if res_text and ("---" in res_text and "+++" in res_text):
+                    _output_var.get()(res_text)
 
             result_str = json.dumps(result)
             last_tool_result = result_str

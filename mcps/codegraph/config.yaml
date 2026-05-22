@@ -1,0 +1,20 @@
+# CodeGraph MCP server — production-grade code graph for AI agents
+#
+# Install:  npm install -g codegraph
+# Index:    npx codegraph index <project-path>   (run once per project)
+# Docs:     https://github.com/nicholasgasior/codegraph
+#
+# Tools exposed via MCP:
+#   index    — index a project (first-time or full re-index)
+#   sync     — incremental update (git-aware, fast)
+#   query    — symbol + full-text search (FTS5)
+#   context  — build rich context block for a task description
+#   files    — project file tree (tree/flat/grouped)
+#   affected — files/tests impacted by a set of changes
+#   status   — index stats (node count, DB size, language breakdown)
+
+command: node
+args:
+  - C:\thinkbig\Anet\Anet\mcps\codegraph\codegraph\dist\bin\codegraph.js
+  - serve
+  - --mcp

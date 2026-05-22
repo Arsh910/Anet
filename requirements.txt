@@ -3,6 +3,9 @@ fastapi
 uvicorn[standard]
 pyyaml
 
+# mcp 
+mcp
+
 # Core runtime
 openai
 anthropic
