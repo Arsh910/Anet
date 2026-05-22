@@ -1,8 +1,23 @@
-# ANet
+<p align="center">
+  <img src="ReadmeImages/anet.jpg" alt="ANet" width="900">
+</p>
 
-**A config-driven multi-agent assistant for coding, research, and desktop automation.**
+<h1 align="center">ANet</h1>
 
-Six specialized agents. Eighteen built-in tools. One conversation.
+<p align="center">
+  <strong>A config-driven multi-agent assistant for coding, research, and desktop automation.</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/LangGraph-orchestration-1a1a2e?style=flat" alt="LangGraph">
+  <img src="https://img.shields.io/badge/OpenRouter-300%2B_models-FF6B35?style=flat" alt="OpenRouter">
+  <img src="https://img.shields.io/badge/MCP-codegraph_%7C_playwright-8B5CF6?style=flat" alt="MCP">
+  <img src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat&logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/License-MIT-22c55e?style=flat" alt="MIT">
+</p>
+
+<p align="center">Six specialized agents. Eighteen built-in tools. One conversation.</p>
 
 ---
 
