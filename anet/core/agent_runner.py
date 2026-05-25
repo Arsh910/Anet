@@ -33,7 +33,8 @@ from openai.types.chat.chat_completion_message_tool_call import (
 )
 
 _RETRY_ATTEMPTS = 4
-_RETRY_DELAY    = 5    # base seconds between retries (multiplied by attempt number)
+_RETRY_DELAY    = 15   # base seconds between retries (multiplied by attempt number)
+                       # Vertex AI free tier has low QPM — 15s/30s/45s backoff avoids pile-up
 _MODEL_TIMEOUT  = 150  # seconds — abort a hung model call instead of waiting the default 600s
 
 # Errors worth retrying with backoff (transient infrastructure issues)
@@ -57,6 +58,7 @@ _PROVIDERS: dict[str, dict] = {
 }
 
 _DEFAULT_PROVIDER = "openrouter"
+_DEFAULT_MODEL    = "gemini-2.5-flash"
 
 
 # ── Vertex AI auth ─────────────────────────────────────────────────────────────
@@ -229,7 +231,7 @@ async def _run_anthropic(
     tools   = _convert_tools_to_anthropic(tool_schemas) if tool_schemas else []
 
     call_kwargs: dict = {
-        "model":      agent["model"],
+        "model":      agent.get("model") or _DEFAULT_MODEL,
         "max_tokens": 8192,
         "messages":   anthropic_msgs,
     }
@@ -288,7 +290,7 @@ async def run(
     # Vertex AI (Gemini or Claude via Vertex's unified OpenAI-compat endpoint)
     if provider in ("vertex_google", "vertex_claude"):
         client = build_vertex_client()
-        call_kwargs: dict = {"model": agent["model"], "messages": messages}
+        call_kwargs: dict = {"model": agent.get("model") or _DEFAULT_MODEL, "messages": messages}
         if tool_schemas:
             call_kwargs["tools"]       = tool_schemas
             call_kwargs["tool_choice"] = "auto"
@@ -320,7 +322,7 @@ async def run(
     client = _build_openai_client(provider)
 
     call_kwargs: dict = {
-        "model":    agent["model"],
+        "model":    agent.get("model") or _DEFAULT_MODEL,
         "messages": messages,
     }
     if tool_schemas:

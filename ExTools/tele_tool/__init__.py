@@ -67,49 +67,64 @@ async def run(params: dict) -> dict:
     if not message and not file_path:
         return {"error": "Provide 'message' (text to send) or 'file_path' (file to send)"}
 
+    # Guard: file_path must be a local path, not a URL
+    if file_path and file_path.startswith(("http://", "https://")):
+        return {
+            "error": (
+                "file_path must be a local file path, not a URL. "
+                "The file must be downloaded first (use research_agent / download_file), "
+                "then pass the absolute local path here."
+            )
+        }
+
     base = f"https://api.telegram.org/bot{token}"
 
-    async with httpx.AsyncClient(timeout=60) as client:
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
 
-        if file_path:
-            p = Path(file_path)
-            if not p.exists():
-                return {"error": f"File not found: {file_path}"}
-            if p.stat().st_size > 50 * 1024 * 1024:
-                return {"error": f"File too large for Telegram Bot API (max 50 MB): {p.name}"}
+            if file_path:
+                p = Path(file_path)
+                if not p.exists():
+                    return {"error": f"File not found: {file_path}"}
+                if p.stat().st_size > 50 * 1024 * 1024:
+                    return {"error": f"File too large for Telegram Bot API (max 50 MB): {p.name}"}
 
-            method, field = _file_method(p)
-            form: dict = {"chat_id": chat_id}
-            if message:
-                form["caption"]    = message
-                form["parse_mode"] = "Markdown"
+                method, field = _file_method(p)
+                form: dict = {"chat_id": chat_id}
+                if message:
+                    form["caption"]    = message
+                    form["parse_mode"] = "Markdown"
 
-            mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
+                mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
 
-            with p.open("rb") as fh:
-                resp = await client.post(
-                    f"{base}/{method}",
-                    data=form,
-                    files={field: (p.name, fh, mime)},
-                )
-            result = resp.json()
-
-            if not result.get("ok") and method != "sendDocument":
                 with p.open("rb") as fh:
                     resp = await client.post(
-                        f"{base}/sendDocument",
+                        f"{base}/{method}",
                         data=form,
-                        files={"document": (p.name, fh, mime)},
+                        files={field: (p.name, fh, mime)},
                     )
                 result = resp.json()
 
-        else:
-            resp = await client.post(f"{base}/sendMessage", json={
-                "chat_id":    chat_id,
-                "text":       message,
-                "parse_mode": "Markdown",
-            })
-            result = resp.json()
+                if not result.get("ok") and method != "sendDocument":
+                    with p.open("rb") as fh:
+                        resp = await client.post(
+                            f"{base}/sendDocument",
+                            data=form,
+                            files={"document": (p.name, fh, mime)},
+                        )
+                    result = resp.json()
+
+            else:
+                resp = await client.post(f"{base}/sendMessage", json={
+                    "chat_id":    chat_id,
+                    "text":       message,
+                    "parse_mode": "Markdown",
+                })
+                result = resp.json()
+
+    except Exception as exc:
+        err_msg = str(exc) or type(exc).__name__
+        return {"error": f"Network error sending to Telegram: {err_msg}"}
 
     if result.get("ok"):
         msg_id = result["result"]["message_id"]

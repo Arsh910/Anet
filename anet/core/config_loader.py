@@ -11,7 +11,9 @@ from __future__ import annotations
 from pathlib import Path
 
 _CONFIG_FILE = Path(__file__).parents[2] / "anet.config.yaml"
+_REPO_ROOT   = Path(__file__).parents[2]
 _cache: dict | None = None
+_soul_cache: str | None = None
 
 
 def load() -> dict:
@@ -34,6 +36,32 @@ def load() -> dict:
         _cache = {}
 
     return _cache
+
+
+def load_soul() -> str:
+    """Load and cache SOUL.md from the repo root (or a custom path from config).
+    Returns empty string if persona is disabled or file is missing."""
+    global _soul_cache
+    if _soul_cache is not None:
+        return _soul_cache
+
+    cfg     = load().get("persona") or {}
+    enabled = cfg.get("enabled", True)
+    if not enabled:
+        _soul_cache = ""
+        return _soul_cache
+
+    soul_path = _REPO_ROOT / cfg.get("soul_file", "SOUL.md")
+    if soul_path.exists():
+        try:
+            _soul_cache = soul_path.read_text(encoding="utf-8").strip()
+        except Exception as exc:
+            print(f"[config_loader] WARNING: could not read {soul_path} — {exc}")
+            _soul_cache = ""
+    else:
+        _soul_cache = ""
+
+    return _soul_cache
 
 
 def agent_overrides() -> dict[str, dict]:

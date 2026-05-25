@@ -1,27 +1,21 @@
 """
-web_search — Exa-powered semantic web search.
+web_search — DuckDuckGo-powered web and image search.
 
-Key behaviours:
-- recency_days is truly optional. When omitted, no date filter is applied
-  and results are sorted by relevance (best for docs/code queries).
-  Pass recency_days=1 for breaking news, 7 for recent events.
-- type="code" biases results toward GitHub, Stack Overflow, and official docs.
-- num_results lets the caller control result count (1–8, default 3).
+No API key required. Uses the duckduckgo-search package.
+type="image" returns direct image URLs ready for download_file.
 """
 
-import os
-from datetime import datetime, timedelta, timezone
-
-import httpx
+import asyncio
 
 SCHEMA = {
     "type": "function",
     "function": {
         "name": "web_search",
         "description": (
-            "Search the web for information, documentation, and code examples. "
-            "Use type='code' for programming questions, library docs, or error messages. "
-            "Use recency_days only when freshness matters (news, changelogs, status updates)."
+            "Search the web for information, documentation, code examples, or images. "
+            "Use type='image' to find downloadable image URLs. "
+            "Use type='code' for programming questions. "
+            "Use recency_days only when freshness matters (news, recent events)."
         ),
         "parameters": {
             "type": "object",
@@ -32,22 +26,23 @@ SCHEMA = {
                 },
                 "type": {
                     "type": "string",
-                    "enum": ["general", "code"],
+                    "enum": ["general", "code", "image"],
                     "description": (
                         "general = broad web search (default). "
-                        "code = biases toward GitHub, Stack Overflow, and official docs."
+                        "code = biases toward GitHub, Stack Overflow, and official docs. "
+                        "image = returns direct image URLs suitable for download_file."
                     ),
                 },
                 "num_results": {
                     "type": "integer",
-                    "description": "Number of results to return (1–8). Default 3.",
+                    "description": "Number of results to return (1–8). Default 5.",
                 },
                 "recency_days": {
                     "type": "integer",
                     "description": (
                         "Only return results from the last N days. "
-                        "Use 1 for breaking news, 7 for recent events. "
-                        "Omit entirely for documentation, code, or timeless queries."
+                        "1=today, 7=this week, 30=this month. "
+                        "Omit for documentation, code, or timeless queries."
                     ),
                 },
             },
@@ -56,126 +51,134 @@ SCHEMA = {
     },
 }
 
-_EXA_URL       = "https://api.exa.ai/search"
-_TIMEOUT       = 20.0
-_SNIPPET_CHARS = 1500
-_MAX_RESULTS   = 8
-_DEFAULT_RESULTS = 3
-
-# Domains to include when type="code"
-_CODE_DOMAINS = [
-    "github.com",
-    "stackoverflow.com",
-    "developer.mozilla.org",
-    "docs.python.org",
-    "npmjs.com",
-    "pypi.org",
-    "reactjs.org",
-    "react.dev",
-    "vitejs.dev",
-    "tailwindcss.com",
-    "nextjs.org",
-    "fastapi.tiangolo.com",
-    "docs.anthropic.com",
-    "platform.openai.com",
-]
+_DEFAULT_RESULTS = 5
+_MAX_RESULTS = 8
 
 
-async def _search(client: httpx.AsyncClient, api_key: str, body: dict) -> list[dict]:
-    """Execute one Exa search call and return raw results list."""
-    response = await client.post(
-        _EXA_URL,
-        headers={"x-api-key": api_key, "Content-Type": "application/json"},
-        json=body,
-    )
-    response.raise_for_status()
-    return response.json().get("results", [])
+def _timelimit(recency_days) -> str | None:
+    if recency_days is None:
+        return None
+    days = int(recency_days)
+    if days <= 1:
+        return "d"
+    if days <= 7:
+        return "w"
+    return "m"
 
 
 async def run(input: dict) -> dict:
-    query       = input.get("query", "").strip()
+    query       = (input.get("query") or "").strip()
     search_type = input.get("type", "general")
     num_results = min(int(input.get("num_results", _DEFAULT_RESULTS)), _MAX_RESULTS)
-    recency_days = input.get("recency_days")   # None = no date filter
+    recency     = input.get("recency_days")
+    timelimit   = _timelimit(recency)
 
     if not query:
         return {"error": "query is required"}
 
-    api_key = os.getenv("EXA_API_KEY")
-    if not api_key:
-        return {"error": "EXA_API_KEY is not set"}
-
-    # Build request body
-    body: dict = {
-        "query":         query,
-        "numResults":    num_results,
-        "useAutoprompt": True,
-        "contents": {
-            "text": {"maxCharacters": _SNIPPET_CHARS},
-        },
-    }
-
-    # Date filter + sort — only when the caller explicitly wants freshness
-    if recency_days is not None:
-        start = (datetime.now(timezone.utc) - timedelta(days=int(recency_days))).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-        body["startPublishedDate"] = start
-        body["sortBy"] = "date"
-    else:
-        # No date filter — sort by relevance for docs/code queries
-        body["sortBy"] = "relevance"
-
-    # Code mode: bias toward developer domains
-    if search_type == "code":
-        body["includeDomains"] = _CODE_DOMAINS
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        return {"error": "ddgs is not installed. Run: pip install ddgs"}
 
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            results = await _search(client, api_key, body)
-
-            # If code search returns nothing, fall back to general (same query, no domain filter)
-            if not results and search_type == "code":
-                fallback = {k: v for k, v in body.items() if k != "includeDomains"}
-                results = await _search(client, api_key, fallback)
-
-            # If still nothing AND we used a date filter, retry without it
-            if not results and recency_days is not None:
-                no_date = {k: v for k, v in body.items()
-                           if k not in ("startPublishedDate", "sortBy", "includeDomains")}
-                no_date["sortBy"] = "relevance"
-                results = await _search(client, api_key, no_date)
-
-        if not results:
-            return {"results": [], "snippet": "No results found."}
-
-        # Format output
-        blocks = []
-        for r in results:
-            title     = r.get("title") or "Untitled"
-            url       = r.get("url", "")
-            text      = (r.get("text") or "").strip()
-            published = r.get("publishedDate", "")
-            date_line = f"Published: {published}\n" if published else ""
-            if text:
-                blocks.append(f"### {title}\n{url}\n{date_line}{text}")
-
-        return {
-            "snippet": "\n\n---\n\n".join(blocks) if blocks else "No content available.",
-            "results": [
-                {
-                    "title":          r.get("title", ""),
-                    "url":            r.get("url", ""),
-                    "snippet":        (r.get("text") or "")[:500],
-                    "published_date": r.get("publishedDate", ""),
-                }
-                for r in results
-            ],
-        }
-
-    except httpx.TimeoutException:
-        return {"error": "Search timed out after 20s"}
-    except httpx.HTTPStatusError as exc:
-        return {"error": f"Exa API HTTP {exc.response.status_code}: {exc.response.text[:300]}"}
+        if search_type == "image":
+            results = await asyncio.to_thread(
+                _image_search, query, num_results, timelimit
+            )
+        else:
+            results = await asyncio.to_thread(
+                _text_search, query, search_type, num_results, timelimit
+            )
+        return results
     except Exception as exc:
-        return {"error": str(exc)}
+        return {"error": f"Search failed: {exc}"}
+
+
+def _text_search(query: str, search_type: str, num_results: int, timelimit) -> dict:
+    from ddgs import DDGS
+
+    # Prepend "python" or common dev terms for code searches
+    effective_query = query
+    if search_type == "code" and not any(
+        kw in query.lower() for kw in ("python", "javascript", "github", "npm", "pip", "api")
+    ):
+        effective_query = f"{query} site:github.com OR site:stackoverflow.com OR docs"
+
+    with DDGS() as ddgs:
+        raw = list(ddgs.text(
+            effective_query,
+            max_results=num_results,
+            timelimit=timelimit,
+        ))
+
+    if not raw:
+        return {"results": [], "snippet": "No results found."}
+
+    blocks = []
+    structured = []
+    for r in raw:
+        title = r.get("title", "Untitled")
+        url   = r.get("href", "")
+        body  = (r.get("body") or "").strip()
+        if body:
+            blocks.append(f"### {title}\n{url}\n{body}")
+        structured.append({"title": title, "url": url, "snippet": body[:500]})
+
+    return {
+        "snippet": "\n\n---\n\n".join(blocks) if blocks else "No content available.",
+        "results": structured,
+    }
+
+
+def _image_search(query: str, num_results: int, timelimit) -> dict:
+    from ddgs import DDGS
+
+    with DDGS() as ddgs:
+        raw = list(ddgs.images(
+            query,
+            max_results=num_results,
+            timelimit=timelimit,
+        ))
+
+    if not raw:
+        return {"results": [], "snippet": "No image results found."}
+
+    # Prefer .jpeg URLs over .jpg — sort so .jpeg comes first
+    def _ext_priority(r):
+        url = (r.get("image") or "").lower().split("?")[0]
+        if url.endswith(".jpeg"):
+            return 0
+        if url.endswith(".png"):
+            return 1
+        if url.endswith(".webp"):
+            return 2
+        return 3  # .jpg and everything else last
+
+    raw.sort(key=_ext_priority)
+
+    lines = []
+    structured = []
+    for r in raw:
+        image_url = r.get("image", "")
+        title     = r.get("title", "")
+        width     = r.get("width", "?")
+        height    = r.get("height", "?")
+        source    = r.get("url", "")
+        if image_url:
+            lines.append(f"- {title} ({width}×{height})\n  Image URL: {image_url}\n  Source: {source}")
+            structured.append({
+                "title":     title,
+                "image_url": image_url,
+                "width":     width,
+                "height":    height,
+                "source":    source,
+            })
+
+    snippet = (
+        "Direct image URLs (pass image_url to download_file):\n\n"
+        + "\n\n".join(lines)
+        if lines else "No image results found."
+    )
+
+    return {"snippet": snippet, "results": structured}

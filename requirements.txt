@@ -13,10 +13,10 @@ python-dotenv
 httpx
 rich
 prompt_toolkit
+ddgs
 
-# LangGraph orchestration
-langgraph
-langchain-core
+# Conversation persistence (replaces LangGraph AsyncSqliteSaver)
+aiosqlite
 
 # Vertex AI (optional — only needed for provider='vertex_google' or 'vertex_claude')
 google-auth

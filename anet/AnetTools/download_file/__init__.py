@@ -56,11 +56,40 @@ async def run(input: dict) -> dict:
         dest = _DOWNLOADS_DIR / f"{dest.stem}_{counter}{dest.suffix}"
         counter += 1
 
+    # Content-Type → correct extension mapping
+    _CT_EXT = {
+        "image/jpeg":   ".jpeg",
+        "image/jpg":    ".jpeg",
+        "image/png":    ".png",
+        "image/webp":   ".webp",
+        "image/gif":    ".gif",
+        "image/bmp":    ".bmp",
+        "image/tiff":   ".tiff",
+    }
+
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             resp = await client.get(url)
             resp.raise_for_status()
-            dest.write_bytes(resp.content)
+
+            # Use Content-Type to pick the right extension — CDNs often serve
+            # WebP at a .jpg URL, which produces unreadable files if we trust the URL.
+            ct = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+            real_ext = _CT_EXT.get(ct)
+            if real_ext and dest.suffix.lower() != real_ext:
+                correct_dest = dest.with_suffix(real_ext)
+                counter = 1
+                while correct_dest.exists():
+                    correct_dest = _DOWNLOADS_DIR / f"{correct_dest.stem}_{counter}{real_ext}"
+                    counter += 1
+                dest = correct_dest
+
+            # Reject HTML responses — CDN returned an error/redirect page
+            content = resp.content
+            if content[:15].lstrip().startswith((b"<!DOCTYPE", b"<html", b"<HTML")):
+                return {"error": f"URL returned an HTML page instead of a file — the server blocked the download or the URL is a webpage, not a direct file link: {url}"}
+
+            dest.write_bytes(content)
     except httpx.TimeoutException:
         return {"error": "Download timed out"}
     except httpx.HTTPStatusError as exc:

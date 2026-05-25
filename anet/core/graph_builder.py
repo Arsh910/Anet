@@ -27,6 +27,7 @@ import os
 import re
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -40,6 +41,35 @@ from anet.core.state import AgentState
 
 _MAX_RETRIES    = 3
 _ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "Anet")
+
+# ── Soul (loaded once at import time, injected into manager prompts only) ─────
+def _load_soul_once() -> str:
+    try:
+        from anet.core.config_loader import load_soul
+        return load_soul()
+    except Exception:
+        return ""
+
+_SOUL = _load_soul_once()
+
+# ── User profile (loaded once at import time, injected into planner prompt) ───
+_USER_PROFILE_PATH = Path(__file__).parents[2] / "memory" / "USER.md"
+
+def _load_user_profile_once() -> str:
+    """Read memory/USER.md. Returns empty string if file is missing or only has headers."""
+    try:
+        if not _USER_PROFILE_PATH.exists():
+            return ""
+        content = _USER_PROFILE_PATH.read_text(encoding="utf-8").strip()
+        substantive = [
+            ln for ln in content.splitlines()
+            if ln.strip() and not ln.startswith("#") and not ln.startswith("<!--")
+        ]
+        return content if substantive else ""
+    except Exception:
+        return ""
+
+_USER_PROFILE = _load_user_profile_once()
 
 # ── Manager model config (overridable via anet.config.yaml) ───────────────────
 
@@ -161,10 +191,12 @@ def _plan_system_prompt(agents: list[dict], has_direct_tools: bool = False, memo
     agent_names = [a["name"] for a in plannable]
 
     now = datetime.now().strftime("%A, %B %d, %Y  %H:%M")
-    memory_section = f"\n\n{memory_ctx}" if memory_ctx else ""
+    memory_section  = f"\n\n{memory_ctx}" if memory_ctx else ""
+    soul_section    = f"\n\n{_SOUL}" if _SOUL else ""
+    profile_section = f"\n\n## What I know about you\n{_USER_PROFILE}" if _USER_PROFILE else ""
     return f"""You are {_ASSISTANT_NAME}, an AI assistant. Analyse the user request and decide how to fulfil it.
 Current date and time: {now} (local).
-If asked about your identity, name, or who you are, answer as {_ASSISTANT_NAME} — never mention the underlying model or "Google".{memory_section}
+If asked about your identity, name, or who you are, answer as {_ASSISTANT_NAME} — never mention the underlying model or "Google".{soul_section}{profile_section}{memory_section}
 
 
 AVAILABLE AGENTS:
@@ -259,6 +291,15 @@ PATH INJECTION — when planning viga_agent:
   "task": "Generate a 3D model of a water bottle. Use target_image=C:\\...\\bottle.jpg"
 - This way viga_agent has the path in its task and does NOT need to ask the user for it.
 
+IMAGE DOWNLOAD TASKS — how to write the task for research_agent:
+- ALWAYS tell research_agent to find a DIRECT image URL (ending in .jpg, .png, or .webp).
+  Example task: "Find a direct downloadable .jpg image of <topic>. Search Wikimedia Commons first
+  (site:upload.wikimedia.org), then try filetype:jpg queries. Download it once a direct URL is found."
+- success_criteria: "Result contains 'Downloaded:' line with an absolute file path"
+- If the image download succeeds AND the user wants it sent to Telegram, chain a tele_agent step:
+  depends_on the research step, task: "Send the downloaded image to Telegram. The file path is
+  in the previous step result — look for the 'Downloaded: <path>' line and pass that path."
+
 TELEGRAM TASKS — success criteria:
 - Whenever you plan a tele_agent step, ALWAYS set success_criteria to:
   "Result must contain 'message_id' confirming Telegram delivery"
@@ -297,8 +338,9 @@ OUTPUT ONLY JSON."""
 
 
 def _synthesis_system_prompt(interim: bool = False) -> str:
+    soul_prefix = f"{_SOUL}\n\n" if _SOUL else ""
     base = (
-        f"You are {_ASSISTANT_NAME}, an AI assistant. One or more agents just completed the user's request. "
+        f"{soul_prefix}You are {_ASSISTANT_NAME}, an AI assistant. One or more agents just completed the user's request. "
         "Your job is to present the results to the user.\n\n"
         "Rules:\n"
         "- If the agent returned information, facts, lists, quotes, code, or any content the user asked for: "
@@ -311,7 +353,11 @@ def _synthesis_system_prompt(interim: bool = False) -> str:
         "- IMPORTANT: if any agent output contains a line starting with 'Downloaded:', "
         "copy that exact line verbatim into your reply.\n"
         "- If any agent output starts with '[INCOMPLETE', the agent ran out of steps mid-task. "
-        "Tell the user clearly what was completed so far and that they can ask you to continue."
+        "Tell the user clearly what was completed so far and that they can ask you to continue.\n"
+        "- NEVER invent capability limitations. If a task failed, say WHAT failed (e.g. "
+        "'research_agent could not find a direct downloadable image URL') — do NOT claim "
+        "the system 'cannot' do something (like 'cannot send images to Telegram') unless "
+        "the agent explicitly returned that error. Stick to what the agent results actually say."
     )
     if interim:
         base += (

@@ -12,6 +12,7 @@ Rules:
     every tool result is appended before the next model call.
 """
 
+import asyncio
 import hashlib
 import json
 import sys
@@ -23,6 +24,7 @@ from anet.core.context import on_confirm as _confirm_var, on_output as _output_v
 
 # Safety valve — only fires if the model never stops calling tools.
 # Normal tasks end naturally when the model returns a plain-text reply.
+# Per-agent cap: agent["max_steps"] overrides this when set.
 _SAFETY_CAP = 80
 
 # Cycle detection — if the same (tool, args) signature appears this many
@@ -167,7 +169,19 @@ async def run(
     on_status   : callback for status strings (printed by the caller)
     """
     date_ctx = f"Current date and time: {datetime.now().strftime('%A, %B %d, %Y  %H:%M')} (local)."
-    messages: list[dict] = [{"role": "system", "content": f"{date_ctx}\n\n{agent['system_prompt']}"}]
+
+    # Inject relevant skills into the system prompt (fast file-based search, no model call)
+    try:
+        from anet.core import skill_manager as _sm
+        _skill_block = _sm.find_relevant_skills(user_message)
+    except Exception:
+        _skill_block = ""
+
+    _sys_content = f"{date_ctx}\n\n{agent['system_prompt']}"
+    if _skill_block:
+        _sys_content += f"\n\n{_skill_block}"
+
+    messages: list[dict] = [{"role": "system", "content": _sys_content}]
     messages.extend(history)
     messages.append({"role": "user", "content": user_message})
 
@@ -177,9 +191,17 @@ async def run(
     _cycle_window: list[str] = []   # sliding window of recent call signatures
     _stuck = False
 
-    agent_name = agent.get("name", "agent")
+    # ── Skill creation tracking ───────────────────────────────────────────────
+    _total_tool_calls = 0
+    _had_retry        = False
+    _prev_tool: str | None      = None
+    _prev_args_hash: str | None = None
+    _prev_failed                = False
 
-    for iteration in range(1, _SAFETY_CAP + 1):
+    agent_name = agent.get("name", "agent")
+    cap = int(agent.get("max_steps") or _SAFETY_CAP)
+
+    for iteration in range(1, cap + 1):
         step_label = f"step {iteration}" if iteration > 1 else "thinking"
         on_status(f"{agent_name}: {step_label}...")
         try:
@@ -206,6 +228,18 @@ async def run(
                 arguments = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError:
                 arguments = {}
+
+            # ── Skill creation: track total calls and retries ─────────────────
+            _total_tool_calls += 1
+            _curr_hash = hashlib.md5(json.dumps(arguments, sort_keys=True).encode()).hexdigest()[:8]
+            # Same tool with different args → self-correction
+            if _prev_tool == called_name and _prev_args_hash != _curr_hash:
+                _had_retry = True
+            # shell_tool after a failed shell_tool → correction
+            if called_name == "shell_tool" and _prev_tool == "shell_tool" and _prev_failed:
+                _had_retry = True
+            _prev_tool      = called_name
+            _prev_args_hash = _curr_hash
 
             # ── Cycle detection (writes only) ─────────────────────────────────
             # Only track mutating operations — reads are legitimate verification.
@@ -303,6 +337,7 @@ async def run(
                 if res_text and ("---" in res_text and "+++" in res_text):
                     _output_var.get()(res_text)
 
+            _prev_failed = isinstance(result, dict) and "error" in result
             result_str = json.dumps(result)
             last_tool_result = result_str
             messages.append(
@@ -317,9 +352,9 @@ async def run(
             break
     else:
         # Safety cap hit — model never stopped calling tools
-        on_status(f"[warning] safety cap reached ({_SAFETY_CAP} steps) — stopping")
+        on_status(f"[warning] safety cap reached ({cap} steps) — stopping")
         text = (
-            f"[INCOMPLETE — safety cap of {_SAFETY_CAP} steps reached]\n\n"
+            f"[INCOMPLETE — safety cap of {cap} steps reached]\n\n"
             + (last_tool_result or last_text or "")
         )
         return {
@@ -340,6 +375,22 @@ async def run(
             "poll_path":  offloaded.get("poll_path", "") if offloaded else "",
             "result_key": offloaded.get("result_key", "") if offloaded else "",
         }
+
+    # ── Skill creation trigger (background, non-blocking) ────────────────────
+    try:
+        from anet.core import skill_manager as _sm
+        _threshold = _sm._creation_threshold()
+        if _total_tool_calls >= _threshold and _had_retry:
+            _history_text = "\n".join(
+                f"{m['role'].upper()}: {(m.get('content') or '')[:300]}"
+                for m in messages
+                if m.get("content") and m["role"] in ("user", "assistant", "tool")
+            )
+            asyncio.create_task(
+                _sm.create_skill_background(_history_text, agent_name)
+            )
+    except Exception:
+        pass
 
     text = last_text or last_tool_result or ""
     return {

@@ -25,8 +25,8 @@ tools:
 
 agents:
   - name: tele_agent
-    model: openai/gpt-oss-120b:free
-    provider: openrouter
+    model: gemini-2.5-pro
+    provider: google
     enabled: true
     prompt_file: ExAgents/tele_agent/prompt.md
     task_types:

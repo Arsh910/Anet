@@ -51,3 +51,7 @@ desktop.ini
 .vscode/
 *.swp
 *.swo
+
+
+#  Mcp 
+.mcps/codegraph/codegraph

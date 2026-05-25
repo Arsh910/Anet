@@ -6,8 +6,8 @@ Startup sequence:
   2. Validate required API keys
   3. Filter enabled agents from agents_config
   4. Load enabled tools via tool_loader
-  5. Open AsyncSqliteSaver (disk checkpointer — persists conversation across restarts)
-  6. Build LangGraph
+  5. Open ConversationStore (SQLite — persists conversation across restarts)
+  6. Build Engine (pure-Python planner/executor/checker/synthesizer)
   7. Start background VIGA notifier task (polls registry.json every 30 s)
   8. Async readline loop → Live spinner while working → thinking panel + response
 """
@@ -22,7 +22,6 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
@@ -46,7 +45,8 @@ _ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "Anet")
 
 from anet.AnetAgents.agents_config import AGENTS
 from anet.core.tool_loader import load_tools
-from anet.core.graph_builder import build_graph
+from anet.core.engine import Engine, _manager_client as _engine_manager_client
+from anet.core.store import ConversationStore
 from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var
 from anet.core.config_loader import agent_overrides as _agent_overrides, manager_config as _manager_config
 from anet.core.ex_loader import load_ex_tools, load_ex_agents, get_extra_for_builtins
@@ -54,7 +54,22 @@ from anet.core.mcp_loader import load_mcp_tools_for_agents
 
 _EX_CONFIG = Path(__file__).parent / "exanet.config.yaml"
 
-_MEMORY_DIR = Path(__file__).parent / "memory"
+_MEMORY_DIR         = Path(__file__).parent / "memory"
+_USER_PROFILE_PATH  = _MEMORY_DIR / "USER.md"
+
+# ── Memory nudge ──────────────────────────────────────────────────────────────
+_session_turn_count: int = 0   # increments on every real user message; reset on /new
+
+_NUDGE_TEXT = (
+    "[MEMORY CHECK — system instruction, not from user]\n"
+    "Before processing the request below: review the last 10 conversation turns. "
+    "If the agent handling this task has memory_tool available, save any genuinely "
+    "new and useful facts to memory — user preferences, project details, decisions "
+    "made, or lessons learned. Be selective: only save facts not already stored that "
+    "would meaningfully help future sessions. Do not save temporary task details. "
+    "After saving (or if nothing worth saving), proceed with the user's request.\n"
+    "[END MEMORY CHECK]\n\n"
+)
 
 # ── API key validation ────────────────────────────────────────────────────────
 # Only warn for providers actually referenced by the current config.
@@ -96,6 +111,9 @@ console = Console()
 # ── Live spinner display ──────────────────────────────────────────────────────
 
 _LOG_TAIL = 6   # how many past steps to show above the spinner
+
+_CONTEXT_THRESHOLD = 40   # message count that triggers the compression prompt
+_CONTEXT_KEEP      = 20   # messages to retain after forget
 
 class _LiveStatus:
     """Rich renderable: rolling step log + animated spinner + elapsed time."""
@@ -170,6 +188,155 @@ def _thinking_panel(steps: list[str]) -> Panel:
         expand=False,
         padding=(0, 1),
     )
+
+
+# ── Context compression ───────────────────────────────────────────────────────
+
+async def _context_forget(store: ConversationStore, thread_id: str) -> None:
+    """Drop oldest messages, keep the last _CONTEXT_KEEP."""
+    messages = await store.load(thread_id)
+    kept = messages[-_CONTEXT_KEEP:]
+    if len(kept) == len(messages):
+        console.print("  [dim]Nothing old enough to forget.[/dim]\n")
+        return
+    await store.replace_all(thread_id, kept)
+    console.print(
+        f"  [dim]Dropped {len(messages) - len(kept)} old message(s). "
+        f"{len(kept)} most recent kept.[/dim]\n"
+    )
+
+
+async def _context_compress(store: ConversationStore, thread_id: str) -> None:
+    """Summarize old messages into one block, replace them in store."""
+    messages = await store.load(thread_id)
+    to_compress = messages[:-_CONTEXT_KEEP]
+    if not to_compress:
+        console.print("  [dim]Nothing old enough to compress.[/dim]\n")
+        return
+
+    console.print("  [dim]Compressing old context...[/dim]")
+
+    history_text = "\n".join(
+        f"{m['role'].upper()}: {(m.get('content') or '').strip()}"
+        for m in to_compress
+        if (m.get("content") or "").strip()
+    )
+
+    try:
+        client, model = _engine_manager_client()
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a concise conversation summarizer."},
+                {
+                    "role": "user",
+                    "content": (
+                        "Summarize the conversation below into a compact block that preserves "
+                        "all important facts, decisions, file paths, code changes, and outcomes. "
+                        "Write in past tense. Be thorough but concise.\n\n"
+                        + history_text
+                    ),
+                },
+            ],
+            max_tokens=1200,
+        )
+        summary = resp.choices[0].message.content.strip()
+    except Exception as exc:
+        console.print(f"  [red]Compression failed: {exc}[/red]\n")
+        return
+
+    kept = messages[-_CONTEXT_KEEP:]
+    new_messages = [{"role": "user", "content": f"[Earlier conversation — summarised]\n{summary}"}] + kept
+    await store.replace_all(thread_id, new_messages)
+    console.print(
+        f"  [dim]Compressed {len(to_compress)} message(s) into a summary. "
+        f"{_CONTEXT_KEEP} recent messages kept.[/dim]\n"
+    )
+
+
+async def _context_check(store: ConversationStore, thread_id: str) -> None:
+    """If message count exceeds threshold, offer forget / compress to the user."""
+    try:
+        n = await store.message_count(thread_id)
+    except Exception:
+        return
+
+    if n < _CONTEXT_THRESHOLD:
+        return
+
+    console.print()
+    console.print(f"  [yellow]Context is getting long ({n} messages).[/yellow]")
+    console.print(f"  [dim]  [f] forget   — drop oldest, keep last {_CONTEXT_KEEP}[/dim]")
+    console.print(f"  [dim]  [c] compress — summarise old messages into one block[/dim]")
+    console.print(f"  [dim]  [s] skip     — continue as-is[/dim]")
+
+    if _HAS_PT and _pt_session is not None:
+        raw = await _pt_session.prompt_async("  > ")
+    else:
+        loop = asyncio.get_event_loop()
+        raw = await loop.run_in_executor(None, input, "  > ")
+
+    raw = raw.strip().lower()
+    console.print()
+
+    if raw == "f":
+        await _context_forget(store, thread_id)
+    elif raw == "c":
+        await _context_compress(store, thread_id)
+
+
+# ── User profile update (called on any exit — clean, Ctrl+C, or interrupt) ────
+
+async def _update_user_profile(store: ConversationStore, thread_id: str) -> None:
+    """Send this session's history to the manager model and update memory/USER.md."""
+    from anet.core.config_loader import load as _load_cfg
+    if not _load_cfg().get("memory", {}).get("user_profile_enabled", True):
+        return
+
+    try:
+        messages = await store.load(thread_id)
+    except Exception:
+        return
+
+    if not messages:
+        return
+
+    history_text = "\n".join(
+        f"{m['role'].upper()}: {(m.get('content') or '').strip()}"
+        for m in messages[-40:]
+        if (m.get("content") or "").strip()
+    )
+    if not history_text.strip():
+        return
+
+    current = _USER_PROFILE_PATH.read_text(encoding="utf-8").strip() if _USER_PROFILE_PATH.exists() else ""
+
+    try:
+        client, model = _engine_manager_client()
+        resp = await client.chat.completions.create(
+            model=model,
+            max_tokens=1000,
+            messages=[
+                {"role": "system", "content": "You update a user profile file for an AI assistant."},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Current USER.md:\n{current}\n\n"
+                        f"Session conversation (last 40 messages):\n{history_text}\n\n"
+                        "Update USER.md with any new facts learned about the user — preferences, "
+                        "tech stack, working style, project context. Only add genuinely new information "
+                        "not already present. Never remove existing entries. Keep entries concise "
+                        "(one line each). Return the complete updated USER.md content, nothing else."
+                    ),
+                },
+            ],
+        )
+        updated = (resp.choices[0].message.content or "").strip()
+        if updated:
+            _USER_PROFILE_PATH.write_text(updated, encoding="utf-8")
+            console.print("[dim]  ✓ User profile updated.[/dim]")
+    except Exception as exc:
+        console.print(f"[dim]  Profile update skipped: {exc}[/dim]")
 
 
 # ── Startup helpers ───────────────────────────────────────────────────────────
@@ -252,28 +419,23 @@ def _print_startup_summary(enabled_agents: list[dict], tool_map: dict) -> None:
 
 # ── Background async task notifier ───────────────────────────────────────────
 
-async def _async_notifier(graph_box: list, config: dict, interval: int = 30) -> None:
+async def _async_notifier(
+    engine_box: list, thread_id: str, store: ConversationStore, interval: int = 30
+) -> None:
     """
-    Generic async-task notifier.
+    Background async-task notifier.
 
     Polls each task's poll_path (a JSON registry file) every `interval` seconds.
-    When a task transitions to "done", stores the result in async_results and
-    re-invokes the graph with __anet_async_resume__ so blocked pending_steps run.
-    When a task transitions to "failed" or "stopped", prints an error notification.
+    When a task transitions to "done", stores the result via engine.set_async_result
+    and calls engine.run_turn with __anet_async_resume__ so blocked pending_steps run.
     """
     last_state: dict[str, str] = {}
 
     while True:
         await asyncio.sleep(interval)
-        graph = graph_box[0]
+        engine = engine_box[0]
 
-        try:
-            snapshot = await graph.aget_state(config)
-            state    = snapshot.values if snapshot else {}
-        except Exception:
-            continue
-
-        offloaded_tasks: dict = state.get("offloaded_tasks", {})
+        offloaded_tasks = engine.get_offloaded_tasks(thread_id)
         if not offloaded_tasks:
             continue
 
@@ -308,25 +470,10 @@ async def _async_notifier(graph_box: list, config: dict, interval: int = 30) -> 
                 console.print(
                     f"\n[bold green]{agent_name}[/bold green]: task {short}… complete → {out}"
                 )
-                # Store result in async_results
-                new_async_results = dict(state.get("async_results", {}))
-                if result_key:
-                    new_async_results[result_key] = out
-                else:
-                    new_async_results[task_id] = out
+                engine.set_async_result(thread_id, result_key or task_id, out)
 
-                await graph.aupdate_state(
-                    config,
-                    {"async_results": new_async_results},
-                )
-
-                # Resume blocked steps if any
-                pending_steps = state.get("pending_steps", [])
-                if pending_steps:
-                    await graph.ainvoke(
-                        {"messages": [HumanMessage(content="__anet_async_resume__")]},
-                        config=config,
-                    )
+                if engine.get_pending_steps(thread_id):
+                    await engine.run_turn(thread_id, store, "__anet_async_resume__")
 
             elif status in ("failed", "stopped"):
                 console.print(
@@ -438,6 +585,10 @@ _HELP_TEXT = """
   [bold cyan]/session[/bold cyan] [dim]<name>[/dim]        Switch to a named session (creates if new)
   [bold cyan]/sessions[/bold cyan]             List all saved sessions
   [bold cyan]/agents[/bold cyan]               Show loaded agents and their tools
+  [bold cyan]/forget[/bold cyan]               Drop oldest messages, keep last 20
+  [bold cyan]/compress[/bold cyan]             Summarise old messages into one block
+  [bold cyan]/profile[/bold cyan]              Show the current user profile (USER.md)
+  [bold cyan]/skills[/bold cyan]               List all saved skills
   [bold cyan]/clear[/bold cyan]                Clear the screen
   [bold cyan]/help[/bold cyan]                 Show this message
 
@@ -528,7 +679,8 @@ def _cmd_sessions(current_thread_id: str | None = None) -> None:
 
 
 async def _handle_slash(
-    raw: str, config: dict, enabled_agents: list[dict], tool_map: dict
+    raw: str, config: dict, enabled_agents: list[dict], tool_map: dict,
+    engine=None, store: ConversationStore | None = None,
 ) -> bool:
     """
     Handle a slash command. Returns True if the main loop should exit.
@@ -545,6 +697,8 @@ async def _handle_slash(
         console.clear()
 
     elif command == "/new":
+        global _session_turn_count
+        _session_turn_count = 0
         new_id = _new_session_id()
         _save_last_session(new_id)
         config["configurable"]["thread_id"] = new_id
@@ -572,6 +726,57 @@ async def _handle_slash(
     elif command == "/agents":
         _cmd_agents(enabled_agents, tool_map)
 
+    elif command == "/forget":
+        if store is None:
+            console.print("  [yellow]No active store.[/yellow]\n")
+        else:
+            thread_id = config["configurable"]["thread_id"]
+            await _context_forget(store, thread_id)
+
+    elif command == "/compress":
+        if store is None:
+            console.print("  [yellow]No active store.[/yellow]\n")
+        else:
+            thread_id = config["configurable"]["thread_id"]
+            await _context_compress(store, thread_id)
+
+    elif command == "/skills":
+        try:
+            from anet.core import skill_manager as _sm
+            sdir = _sm._skills_dir()
+            skill_files = sorted(sdir.glob("*.md")) if (sdir and sdir.exists()) else []
+            if not skill_files:
+                console.print("\n  [dim]No skills saved yet — Anet writes them after complex tasks.[/dim]\n")
+            else:
+                t = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
+                t.add_column("Skill",      style="bold")
+                t.add_column("Applies to", style="dim")
+                t.add_column("Used",       justify="right", style="dim")
+                for f in skill_files:
+                    name, applies_to, used = _sm.read_skill_header(f)
+                    t.add_row(name, applies_to or "—", str(used))
+                console.print()
+                console.print(Panel(t, title="[bold]Skills[/bold]", border_style="cyan"))
+                console.print()
+        except Exception as exc:
+            console.print(f"\n  [red]Error: {exc}[/red]\n")
+
+    elif command == "/profile":
+        if _USER_PROFILE_PATH.exists():
+            content = _USER_PROFILE_PATH.read_text(encoding="utf-8").strip()
+            substantive = [
+                ln for ln in content.splitlines()
+                if ln.strip() and not ln.startswith("#") and not ln.startswith("<!--")
+            ]
+            if substantive:
+                console.print()
+                console.print(Markdown(content))
+                console.print()
+            else:
+                console.print("\n  [dim]User profile is empty — Anet will build it after this session.[/dim]\n")
+        else:
+            console.print("\n  [dim]No user profile yet.[/dim]\n")
+
     else:
         console.print(f"\n  [yellow]Unknown command:[/yellow] {command}  "
                       f"[dim](type /help for a list)[/dim]\n")
@@ -582,7 +787,8 @@ async def _handle_slash(
 # ── Chat turn (single request/response cycle) ─────────────────────────────────
 
 async def _chat_turn(
-    graph, config: dict, enabled_agents: list[dict], tool_map: dict
+    engine: Engine, store: ConversationStore, config: dict,
+    enabled_agents: list[dict], tool_map: dict,
 ) -> bool:
     """Run one input → response cycle. Returns True when the user wants to exit."""
     try:
@@ -598,7 +804,32 @@ async def _chat_turn(
         console.print("[dim]Goodbye![/dim]")
         return True
     if user_input.startswith("/"):
-        return await _handle_slash(user_input, config, enabled_agents, tool_map)
+        return await _handle_slash(user_input, config, enabled_agents, tool_map, engine, store)
+
+    # Real user message — increment turn counter and check memory nudge
+    global _session_turn_count
+    _session_turn_count += 1
+
+    effective_input = user_input
+    if len(user_input) > 20:   # skip trivial/very short inputs
+        try:
+            from anet.core.config_loader import load as _cfg_load
+            _mem_cfg = _cfg_load().get("memory", {})
+            _nudge_enabled  = _mem_cfg.get("nudge_enabled", True)
+            _nudge_interval = int(_mem_cfg.get("nudge_interval", 10))
+        except Exception:
+            _nudge_enabled, _nudge_interval = True, 10
+
+        if _nudge_enabled and _nudge_interval > 0 and _session_turn_count % _nudge_interval == 0:
+            print(
+                f"[memory nudge] turn {_session_turn_count} — prompting memory reflection",
+                file=sys.stderr,
+            )
+            effective_input = _NUDGE_TEXT + user_input
+
+    # Offer forget/compress if context is getting long
+    thread_id = config["configurable"]["thread_id"]
+    await _context_check(store, thread_id)
 
     # Save first-message title for session listing
     session_dir = _MEMORY_DIR / config["configurable"]["thread_id"]
@@ -654,10 +885,7 @@ async def _chat_turn(
             confirm_tk = _confirm_var.set(_make_confirm_fn(live))
             output_tk  = _output_var.set(_render_diff)
             try:
-                state = await graph.ainvoke(
-                    {"messages": [HumanMessage(content=user_input)]},
-                    config=config,
-                )
+                result = await engine.run_turn(thread_id, store, effective_input)
             finally:
                 _status_var.reset(status_tk)
                 _token_var.reset(token_tk)
@@ -671,9 +899,9 @@ async def _chat_turn(
         console.print(f"[red]Error: {exc}[/red]")
         return False
 
-    response = state.get("final_reply") or "Done."
+    response = result.reply or "Done."
 
-    if state.get("step_results") and live_status.log:
+    if result.step_results and live_status.log:
         console.print(Padding(_thinking_panel(live_status.log), (0, 0, 1, 0)))
 
     console.print(Panel(
@@ -736,6 +964,19 @@ async def main() -> None:
         _list_sessions_cmd()
         return
 
+    # Create USER.md with initial structure on first run
+    if not _USER_PROFILE_PATH.exists():
+        _MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        _USER_PROFILE_PATH.write_text(
+            "## User Profile\n"
+            "<!-- Anet builds this automatically. Do not edit manually. -->\n\n"
+            "### Preferences\n\n"
+            "### Tech Stack\n\n"
+            "### Working Style\n\n"
+            "### Project Context\n",
+            encoding="utf-8",
+        )
+
     enabled_agents = [a for a in AGENTS if a.get("enabled", False)]
     if not enabled_agents:
         console.print("[red]No enabled agents found in agents_config.py. Exiting.[/red]")
@@ -744,7 +985,7 @@ async def main() -> None:
     tool_map = load_tools()
     _check_optional_deps()
 
-    # ── Resolve session before opening checkpointer ───────────────────────────
+    # ── Resolve session ───────────────────────────────────────────────────────
     thread_id, session_label = _resolve_session(args)
     _save_last_session(thread_id)
 
@@ -753,17 +994,7 @@ async def main() -> None:
     session_dir.mkdir(parents=True, exist_ok=True)
     db_path = str(session_dir / "checkpoint.db")
 
-    try:
-        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-        checkpointer_ctx = AsyncSqliteSaver.from_conn_string(db_path)
-    except ImportError:
-        console.print(
-            "[yellow]langgraph-checkpoint-sqlite not installed — "
-            "using in-memory checkpointer.[/yellow]"
-        )
-        checkpointer_ctx = None
-
-    async def _run(checkpointer) -> None:
+    async with ConversationStore(db_path) as store:
         config = {"configurable": {"thread_id": thread_id}}
         console.print(f"  {session_label}")
         console.print(f"  [dim]--resume to continue · /sessions to list · exit to quit[/dim]")
@@ -808,31 +1039,50 @@ async def main() -> None:
             mcp_tools = await load_mcp_tools_for_agents(all_agents)
             combined_tools.update(mcp_tools)
 
-            # ── 8. Manager tools ──────────────────────────────────────────────
-            manager_tools: dict = {}
-            if "memory_tool" in combined_tools:
-                manager_tools["memory_tool"] = combined_tools["memory_tool"]
+            # spawn_tool is not auto-injected — agents that need it declare it
+            # explicitly in their tools list, same as any other tool.
 
+            # ── Configure spawn_tool with live agents + tools ─────────────────
+            try:
+                from anet.AnetTools.spawn_tool import configure as _cfg_spawn
+                _cfg_spawn(combined_tools, all_agents)
+            except Exception:
+                pass
+
+            manager_tools: dict = {}
             return all_agents, combined_tools, manager_tools, len(ex_agents)
 
         # Initial build
         all_agents, all_tools, manager_tools, n_external = await _merge_all()
-        graph = build_graph(all_agents, all_tools, checkpointer=checkpointer, manager_tools=manager_tools)
+        engine = Engine(all_agents, all_tools, manager_tools=manager_tools)
         # Reprint summary now that MCP tools have been injected into agent tool lists
         _print_startup_summary(all_agents, all_tools)
         if n_external:
             console.print(f"[dim]  + {n_external} external agent(s) loaded[/dim]\n")
+
+        # Run Curator in background if enough skills exist
+        try:
+            from anet.core import skill_manager as _sm
+            _sdir = _sm._skills_dir()
+            if _sdir and _sdir.exists():
+                _skill_count = len(list(_sdir.glob("*.md")))
+                if _skill_count >= _sm._curator_min_skills():
+                    console.print(f"[dim]  [curator] reviewing {_skill_count} skills...[/dim]\n")
+                    asyncio.create_task(_sm.run_curator())
+        except Exception:
+            pass
 
         try:
             mtime = _EX_CONFIG.stat().st_mtime if _EX_CONFIG.exists() else 0.0
         except OSError:
             mtime = 0.0
 
-        # Pass graph as a mutable container so notifier and hot-reload both see updates
-        graph_box = [graph]
-        notifier = asyncio.create_task(_async_notifier(graph_box, config))
+        # Mutable box so notifier and hot-reload always reference the current Engine
+        engine_box = [engine]
+        notifier = asyncio.create_task(
+            _async_notifier(engine_box, thread_id, store)
+        )
         try:
-
             async def _loop_with_hotreload() -> None:
                 nonlocal mtime
                 cur_agents = all_agents
@@ -846,27 +1096,34 @@ async def main() -> None:
                     if new_mtime != mtime:
                         mtime = new_mtime
                         cur_agents, cur_tools, mgr_tools2, n2 = await _merge_all()
-                        graph_box[0] = build_graph(cur_agents, cur_tools, checkpointer=checkpointer, manager_tools=mgr_tools2)
+                        engine_box[0] = Engine(cur_agents, cur_tools, manager_tools=mgr_tools2)
                         console.print(f"[dim]  ✓ registry updated — {n2} external agent(s) active[/dim]")
 
                     # Run one chat turn
-                    done = await _chat_turn(graph_box[0], config, cur_agents, cur_tools)
+                    done = await _chat_turn(engine_box[0], store, config, cur_agents, cur_tools)
                     if done:
                         break
 
-            await _loop_with_hotreload()
+            try:
+                await _loop_with_hotreload()
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                console.print("\n[dim]Session interrupted.[/dim]")
+            finally:
+                # Save user profile on ANY exit — clean, Ctrl+C, or terminal close
+                console.print("[dim]  saving user profile...[/dim]")
+                try:
+                    await asyncio.wait_for(
+                        _update_user_profile(store, thread_id),
+                        timeout=15.0,
+                    )
+                except (asyncio.TimeoutError, Exception):
+                    pass
         finally:
             notifier.cancel()
             try:
                 await notifier
             except asyncio.CancelledError:
                 pass
-
-    if checkpointer_ctx is not None:
-        async with checkpointer_ctx as checkpointer:
-            await _run(checkpointer)
-    else:
-        await _run(None)
 
 
 if __name__ == "__main__":

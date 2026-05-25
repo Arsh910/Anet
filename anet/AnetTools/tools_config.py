@@ -95,4 +95,10 @@ TOOLS = [
         "description": "IDE-level code intelligence via Language Server Protocol. diagnostics (real errors/warnings), hover (type info), definition (go-to-def), references (find usages), rename (workspace-wide), symbols (list file symbols). Supports Python/Go/TypeScript/JavaScript/C/C++/Rust.",
         "enabled": True,
     },
+    {
+        "name": "spawn_tool",
+        "path": "anet.AnetTools.spawn_tool",
+        "description": "Spawn a specialist sub-agent mid-task to delegate work and return its result. Auto-injected into every agent — no per-agent config needed.",
+        "enabled": True,
+    },
 ]

@@ -1,21 +1,43 @@
 ﻿AGENTS = [
     {
         "name": "research_agent",
-        "model": "gemini-2.5-flash",
-        "provider": "google",
         "system_prompt": (
-            "You are a research assistant with access to web search and file download.\n"
-            "You help users find current information, answer factual questions, "
-            "look up recent events, and provide well-researched responses.\n\n"
-            "DOWNLOADING IMAGES:\n"
-            "- When asked to find and download a reference image, use web_search to find ONE "
-            "good image URL, then call download_file ONCE with that URL.\n"
-            "- Download exactly one image. Do not retry with multiple URLs unless the first fails.\n"
-            "- Your response MUST end with this exact line (no variation):\n"
-            "  Downloaded: <full absolute path from the tool result>\n"
-            "  Example: Downloaded: C:\\thinkbig\\Anet\\agents\\3dAgent\\tasks\\downloads\\bottle.jpg\n"
-            "- If the image is smaller than 256x256px, warn the user on the line before.\n\n"
-            "For all other tasks: search the web, cite sources, present findings clearly."
+            "You are a research assistant with web_search and download_file tools.\n\n"
+            "RESEARCH:\n"
+            "- Give short, direct answers. Use bullet points for multi-part info.\n"
+            "- Always cite the source URL after your answer.\n"
+            "- Prefer recent, authoritative sources.\n\n"
+            "DOWNLOADING FILES:\n"
+            "- Supported types: images (jpg, png, webp), docs (pdf, docx), "
+            "3D files (obj, stl, fbx), audio/video (mp3, mp4, wav), and others.\n"
+            "- Use web_search to find a DIRECT file URL, then call download_file ONCE.\n"
+            "- A direct URL ends with the file extension: .jpg  .png  .webp  .pdf  .mp4  etc.\n"
+            "- Article page URLs (html, / ending) are NOT downloadable — keep searching.\n\n"
+            "FINDING DIRECT IMAGE URLs — follow this order:\n"
+            "1. ALWAYS try image search first:\n"
+            "   web_search(query='<topic>', type='image')\n"
+            "   This returns a list with 'image_url' fields — these are direct downloadable URLs.\n"
+            "   Results are pre-sorted: .jpeg first, then .png, then .webp, then .jpg.\n"
+            "   Pick the first result (highest priority format) and call download_file(url=<image_url>).\n\n"
+            "2. If image search returns nothing useful, try Wikimedia Commons:\n"
+            "   web_search(query='site:commons.wikimedia.org File: <topic>')\n"
+            "   Results look like: https://commons.wikimedia.org/wiki/File:Name.jpg\n"
+            "   → Extract filename after 'File:' → build URL:\n"
+            "     https://commons.wikimedia.org/wiki/Special:FilePath/<filename>\n"
+            "   → download_file follows the redirect to the real file.\n\n"
+            "3. If all fail, report clearly: 'Could not find a downloadable image for <topic>.'\n"
+            "   DO NOT call download_file on HTML page URLs (.html, .htm, or ending in /).\n\n"
+            "- On download failure: try the next image_url from the search results. After 2 failures, stop.\n"
+            "- For images smaller than 256x256px, warn the user before confirming.\n"
+            "- End every download response with EXACTLY this line:\n"
+            "  Downloaded: <full absolute path from tool result>\n\n"
+            "RULES:\n"
+            "- Never guess file paths — always use the path returned by the tool.\n"
+            "- Do not download multiple files unless explicitly asked.\n"
+            "- If a file type is unsupported by the host server, report it and stop.\n"
+            "- Sports/news event photos (F1, NFL, etc.) are almost always copyrighted and behind\n"
+            "  CDNs — you will not find a direct .jpg URL for them on news sites. Accept this and\n"
+            "  tell the user clearly rather than looping. Wikipedia/Wikimedia is the exception."
         ),
         "task_types": [
             "research",
@@ -27,13 +49,12 @@
             "data lookup",
             "general knowledge questions",
         ],
-        "tools": ["web_search", "download_file", "memory_tool"],
+        "tools": ["web_search", "download_file"],
+        "max_steps": 10,
         "enabled": True,
     },
     {
         "name": "computer_agent",
-        "model": "gemini-2.5-flash",
-        "provider": "google",
         "system_prompt": (
             "You control a Windows desktop using the open_app tool.\n"
             "You MUST always call the tool with the 'action' parameter set.\n\n"
@@ -67,12 +88,11 @@
             "window management",
         ],
         "tools": ["open_app"],
+        "max_steps": 20,
         "enabled": True,
     },
     {
         "name": "checker_agent",
-        "model": "gemini-2.5-flash",
-        "provider": "google",
         "system_prompt": (
             "You validate whether a task was actually completed successfully.\n"
             "You have one tool â€” 'checker' â€” with the following actions:\n\n"
@@ -106,12 +126,11 @@
             "retry suggestion",
         ],
         "tools": ["checker"],
+        "max_steps": 8,
         "enabled": True,
     },
     {
         "name": "file_agent",
-        "model": "gemini-2.5-flash",
-        "provider": "google",
         "system_prompt": (
             "You manage files and folders on this Windows machine using the file_tool.\n"
             "Always call file_tool with an 'action' parameter. Never explain what you are going to do — just call the tool.\n\n"
@@ -181,13 +200,12 @@
             "fix git conflicts",
             "merge conflict resolution",
         ],
-        "tools": ["file_tool", "memory_tool", "conflict_tool"],
+        "tools": ["file_tool", "memory_tool", "conflict_tool", "spawn_tool"],
+        "max_steps": 25,
         "enabled": True,
     },
     {
         "name": "code_agent",
-        "model": "gemini-2.5-flash",
-        "provider": "google",
         "system_prompt": (
             "You are a coding agent. You read, understand, and modify codebases precisely.\n\n"
 
@@ -350,19 +368,19 @@
             "rename function",
             "add tests",
         ],
-        "tools": ["file_tool", "shell_tool", "edit_tool", "grep_tool", "glob_tool", "web_search", "todo_tool", "process_tool", "diagnose_tool", "memory_tool", "conflict_tool", "lsp_tool"],
+        "tools": ["file_tool", "shell_tool", "edit_tool", "grep_tool", "glob_tool", "web_search", "todo_tool", "process_tool", "diagnose_tool", "memory_tool", "conflict_tool", "lsp_tool", "spawn_tool"],
+        "max_steps": 60,
         "enabled": True,
     },
 ]
 
 # ── Apply anet.config.yaml overrides ─────────────────────────────────────────
-# Only model and provider can be overridden — behaviour/tools stay in code.
 try:
     from anet.core.config_loader import agent_overrides as _get_overrides
     _overrides = _get_overrides()
     for _agent in AGENTS:
         _patch = _overrides.get(_agent["name"], {})
-        for _key in ("model", "provider"):
+        for _key in ("model", "provider", "max_steps"):
             if _key in _patch:
                 _agent[_key] = _patch[_key]
 except Exception as _e:

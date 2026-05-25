@@ -12,12 +12,13 @@
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/LangGraph-orchestration-1a1a2e?style=flat" alt="LangGraph">
   <img src="https://img.shields.io/badge/OpenRouter-300%2B_models-FF6B35?style=flat" alt="OpenRouter">
+  <img src="https://img.shields.io/badge/Vertex_AI-Gemini-4285F4?style=flat&logo=googlecloud&logoColor=white" alt="Vertex AI">
   <img src="https://img.shields.io/badge/MCP-codegraph_%7C_playwright-8B5CF6?style=flat" alt="MCP">
   <img src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat&logo=windows&logoColor=white" alt="Windows">
   <img src="https://img.shields.io/badge/License-MIT-22c55e?style=flat" alt="MIT">
 </p>
 
-<p align="center">Six specialized agents. Eighteen built-in tools. One conversation.</p>
+<p align="center">Six specialized agents. Nineteen built-in tools. Persistent memory. Self-improving skills.</p>
 
 ---
 
@@ -33,7 +34,7 @@ Manager (plans the work)
   ├─ checker_agent → validates the result
   └─ tele_agent    → sends the notification
   ↓
-ANet: "Done. Tests pass. Message sent."
+Anet: "Done. Tests pass. Message sent."
 ```
 
 ---
@@ -60,7 +61,7 @@ python main.py
 
 | Agent | What it does | Key tools |
 |---|---|---|
-| **research_agent** | Web research, fact-finding, news, image downloads | web_search, download_file, memory_tool |
+| **research_agent** | Web research, fact-finding, news, image downloads | web_search, download_file |
 | **code_agent** | Write, edit, refactor, test, and debug code | edit_tool, shell_tool, grep_tool, lsp_tool, conflict_tool, diagnose_tool + codegraph MCP |
 | **file_agent** | File system operations — copy, move, zip, conflict resolution | file_tool, conflict_tool, memory_tool |
 | **computer_agent** | Windows desktop automation — launch apps, click, type, screenshot | open_app |
@@ -68,6 +69,8 @@ python main.py
 | **tele_agent** *(external)* | Send messages, files, photos to Telegram | tele_tool |
 
 All agents default to **Gemini 2.5 Flash** unless overridden in `anet.config.yaml`.
+
+**spawn_tool** is auto-injected into every agent, allowing any agent to delegate a sub-task to another agent at runtime without returning to the manager.
 
 ---
 
@@ -84,7 +87,7 @@ All agents default to **Gemini 2.5 Flash** unless overridden in `anet.config.yam
 | **shell_tool** | Run shell commands — tests, linters, builds, anything |
 | **process_tool** | Start a command, stream output until a pattern matches or timeout fires |
 | **diagnose_tool** | Run ruff/pyright for Python, eslint/tsc for JS/TS, report problems |
-| **conflict_tool** | Resolve git merge conflicts — `@ours`, `@theirs`, `@base`, or custom text. Supports diff3 style. |
+| **conflict_tool** | Resolve git merge conflicts — `@ours`, `@theirs`, `@base`, or custom text |
 | **lsp_tool** | Code intelligence via LSP — diagnostics, hover, go-to-definition, find references, rename, symbols |
 
 ### Research & Web
@@ -92,21 +95,22 @@ All agents default to **Gemini 2.5 Flash** unless overridden in `anet.config.yam
 | Tool | What it does |
 |---|---|
 | **web_search** | Semantic web search via Exa API |
-| **download_file** | Download a file from a URL; reports image dimensions |
+| **download_file** | Download a file from a direct URL; reports image dimensions |
 
 ### Desktop Automation (Windows)
 
 | Tool | What it does |
 |---|---|
-| **open_app** | Launch apps, manage windows, type text, click elements, keyboard shortcuts, take screenshots |
+| **open_app** | Launch apps, manage windows, type text, click elements, keyboard shortcuts, screenshots |
 
 ### Coordination & Memory
 
 | Tool | What it does |
 |---|---|
-| **todo_tool** | Session-scoped task checklist shown in the live spinner |
+| **todo_tool** | Session-scoped task checklist shown live in the spinner |
 | **memory_tool** | Persistent cross-session memory — save, search, delete facts |
 | **checker** | Classify task outcomes as success / failure / partial |
+| **spawn_tool** | Delegate a sub-task to any other agent at runtime (depth-limited to 2) |
 
 ### MCP Servers
 
@@ -130,6 +134,8 @@ planner (manager model)
         │
         ├─ step A (agent 1) ─── parallel ──── step B (agent 2)
         │         ↓                                   ↓
+        │   spawn_tool → sub-agent (depth ≤ 2)        │
+        │                                             │
         └─ checker_agent validates ← ← ← retry if partial
                    ↓
             synthesizer → final reply
@@ -137,70 +143,176 @@ planner (manager model)
 
 **Safety mechanisms**
 
-- **Safety cap** — agent loops terminate after 80 tool calls.
-- **Cycle detection** — same write operation repeated 3x in a sliding window stops the loop.
+- **Per-agent step cap** — each agent has a configurable `max_steps` (defaults: research 10, code 60, file 25, computer 20, checker 8). Overridable per-agent in `anet.config.yaml`.
+- **Cycle detection** — same write operation repeated 3× in a sliding window stops the loop.
+- **Spawn depth limit** — `spawn_tool` nesting is capped at 2 to prevent infinite delegation chains.
 - **Confirmation policy** — `shell_tool` (every command), `edit_tool` (every edit), and destructive `file_tool` actions pause for explicit `y/n/a` approval.
+
+---
+
+## Intelligence & Memory
+
+### Agent Persona — `SOUL.md`
+
+The manager's personality is defined in `SOUL.md` at the repo root. It is injected into the planner and synthesizer prompts on every turn. Sub-agents are unaffected — their specialized prompts stay clean.
+
+Edit `SOUL.md` to change how Anet presents itself, its tone, and its behaviour rules. Disable via `anet.config.yaml`:
+
+```yaml
+persona:
+  enabled: false
+```
+
+### User Profile — `memory/USER.md`
+
+On every clean session exit (`exit` / `quit`), Anet sends the last 40 messages to the manager model and updates `memory/USER.md` with new facts learned about you — your preferences, tech stack, working style, and project context. On the next session start, this profile is injected into the planner prompt so Anet already knows you.
+
+View the current profile with `/profile`. Disable via config:
+
+```yaml
+memory:
+  user_profile_enabled: false
+```
+
+### 10-Turn Memory Nudge
+
+Every 10 substantive user messages, the agent handling the current task is prompted to save any genuinely new facts to `memory_tool` before proceeding. This keeps persistent memory up to date without any manual effort.
+
+Configure the interval (or disable) in `anet.config.yaml`:
+
+```yaml
+memory:
+  nudge_enabled: true
+  nudge_interval: 10    # 0 to disable
+```
+
+### Context Compression
+
+When a session grows long (>40 messages), Anet prompts you with two options:
+
+- **[f] forget** — drop the oldest messages, keep the last 20
+- **[c] compress** — summarise old messages into a single block via the manager model
+
+Also available as slash commands: `/forget`, `/compress`.
+
+### Self-Improving Skills — `skills/`
+
+After any task where an agent made ≥6 tool calls **and** self-corrected at least once (same tool called with different args, or shell command retried after failure), Anet writes a reusable procedure file to `skills/` in the background.
+
+Before every agent task, the skills folder is keyword-searched against the task description. Up to 3 matching skills are injected into the agent's system prompt as "Relevant Skills from Past Experience". No match → nothing injected, no noise.
+
+**Curator** — at startup, if `skills/` contains ≥5 files, a background Curator pass runs:
+- Groups skills with >70% keyword similarity and merges duplicates (originals archived to `skills/archived/`)
+- Improves skills that have been used ≥3 times
+
+Configure in `anet.config.yaml`:
+
+```yaml
+skills:
+  enabled: true
+  creation_threshold: 6   # tool calls needed to trigger skill creation
+  curator_min_skills: 5   # min files before Curator runs
+  max_injected: 3         # max skills injected per task
+```
+
+View all skills with `/skills`.
 
 ---
 
 ## Configuration
 
-### `anet.config.yaml` — swap models, add MCP
+### `anet.config.yaml`
 
 ```yaml
-manager:
-  model: gemini-2.5-pro
-  provider: google
+# Persona — loaded from SOUL.md, injected into manager prompts
+persona:
+  soul_file: SOUL.md
+  enabled: true
 
+# Memory — user profile + memory nudge
+memory:
+  user_profile_enabled: true
+  nudge_enabled: true
+  nudge_interval: 10
+
+# Self-improving skills
+skills:
+  enabled: true
+  creation_threshold: 6
+  curator_min_skills: 5
+  max_injected: 3
+
+# Manager model
+manager:
+  model: google/gemini-2.5-flash
+  provider: vertex_google
+
+# Per-agent overrides — model, provider, max_steps, extra_tools, mcp
 agents:
   code_agent:
     model: claude-opus-4-7
     provider: claude
-    mcp:
-      - codegraph     # injects all codegraph tools into this agent
+    max_steps: 80
+    mcp: [codegraph]
   research_agent:
-    model: gpt-4o
-    provider: openai
+    model: google/gemini-2.5-flash
+    provider: vertex_google
+    max_steps: 10
 ```
 
 ### Supported providers
 
 | Key | API key env var | Notes |
 |---|---|---|
-| `google` | `GOOGLE_API_KEY` | Gemini models |
+| `google` | `GOOGLE_API_KEY` | Gemini models direct |
 | `openrouter` | `OPENROUTER_API_KEY` | 300+ models via one key |
 | `openai` | `OPENAI_API_KEY` | GPT models |
 | `claude` | `ANTHROPIC_API_KEY` | Claude models |
-| `vertex_google` | `VERTEX_PROJECT_ID` | Gemini on Vertex AI |
-| `vertex_claude` | `VERTEX_PROJECT_ID` | Claude on Vertex AI |
+| `vertex_google` | `VERTEX_PROJECT_ID` + ADC | Gemini on Vertex AI (uses GCP credits) |
+| `vertex_claude` | `VERTEX_PROJECT_ID` + ADC | Claude on Vertex AI |
+
+For Vertex AI: run `gcloud auth application-default login` once, then set `VERTEX_PROJECT_ID` in `.env`.
 
 ---
 
 ## Environment variables
 
-Create a `.env` file in the project root:
+### Minimum to start
+
+Create a `.env` file in the project root with just one key:
 
 ```env
-# Required — at least one provider key
-OPENROUTER_API_KEY=...
-GOOGLE_API_KEY=...
-OPENAI_API_KEY=...
-ANTHROPIC_API_KEY=...
+OPENROUTER_API_KEY=your_key_here
+```
 
-# Web search (research_agent)
-EXA_API_KEY=...
+`OPENROUTER_API_KEY` drives all agents (free models available). Web search uses DuckDuckGo — **no API key required**. That's it — everything else is optional.
 
-# Telegram (tele_agent — optional)
+### Switching to a different provider
+
+Add whichever key matches the provider you set in `anet.config.yaml`:
+
+```env
+GOOGLE_API_KEY=...          # provider: google
+OPENAI_API_KEY=...          # provider: openai
+ANTHROPIC_API_KEY=...       # provider: claude
+
+# Vertex AI — also run: gcloud auth application-default login
+VERTEX_PROJECT_ID=your-gcp-project-id
+VERTEX_LOCATION=us-central1  # optional, default is us-central1
+```
+
+### External agent credentials
+
+Each external agent keeps its own `.env` in its folder — **not** in the root `.env`. For example, `tele_agent` needs:
+
+```
+ExAgents/tele_agent/.env
+─────────────────────────
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
-
-# Vertex AI (optional)
-VERTEX_PROJECT_ID=...
-VERTEX_LOCATION=us-central1
-
-# Display name in the CLI (default: Anet)
-ASSISTANT_NAME=Anet
 ```
+
+ANet loads these automatically at startup for each external agent that has one.
 
 ---
 
@@ -208,15 +320,19 @@ ASSISTANT_NAME=Anet
 
 | Command | What it does |
 |---|---|
-| `/agents` | Show loaded agents and their current tool lists |
+| `/agents` | Show loaded agents, models, and tool lists |
+| `/skills` | List all saved skills with their applies-to description and usage count |
+| `/profile` | Show the current user profile (`memory/USER.md`) |
 | `/sessions` | List all saved sessions |
 | `/session <name>` | Switch to a named session (creates it if new) |
 | `/new` | Start a fresh session |
+| `/forget` | Drop oldest messages, keep last 20 |
+| `/compress` | Summarise old messages into one block |
 | `/clear` | Clear the screen |
 | `/help` | Show this list |
-| `exit` or `quit` | End the session |
+| `exit` or `quit` | End the session (triggers USER.md update) |
 
-Sessions are persisted in `memory/<session_id>/checkpoint.db` and survive restarts. Use `--resume` to pick up the last one, or `--session <name>` to open a specific session.
+Sessions persist in `memory/<session_id>/checkpoint.db`. Resume with `--resume` or open a specific session with `--session <name>`.
 
 ```bash
 python main.py --resume
@@ -240,7 +356,7 @@ ex_tools:
 
 ### Add an external agent — ExAgents
 
-Create `ExAgents/<agent_name>/agent.py` with an agent config dict. Register in `exanet.config.yaml`:
+Create `ExAgents/<agent_name>/` with `agent.py` (config dict) and optionally `prompt.md` and `.env`. Register in `exanet.config.yaml`:
 
 ```yaml
 ex_agents:
@@ -248,7 +364,7 @@ ex_agents:
     path: ExAgents/my_agent
 ```
 
-External agents and tools live outside the `anet/` core. Hot-reload picks them up when `exanet.config.yaml` changes — no restart needed.
+External agents automatically get `spawn_tool` injected — they can delegate to other agents without any extra config.
 
 ### Add an MCP server
 
@@ -281,30 +397,36 @@ The server starts once on boot, stays alive for the session, and its tools are i
 Anet/
 ├── main.py                  # CLI entry point
 ├── server.py                # Web dashboard entry point
-├── anet.config.yaml         # Model/provider overrides per agent
+├── anet.config.yaml         # Model/provider/persona/memory/skills config
 ├── exanet.config.yaml       # External agents and tools
+├── SOUL.md                  # Agent persona — edit to change Anet's personality
 ├── requirements.txt
 ├── .env                     # API credentials (not committed)
 │
 ├── anet/
 │   ├── AnetAgents/          # Built-in agent definitions
 │   ├── AnetTools/           # Built-in tool implementations
+│   │   └── spawn_tool/      # Runtime subagent delegation
 │   └── core/
-│       ├── graph_builder.py # LangGraph StateGraph construction
-│       ├── orchestrator.py  # Agentic loop, cycle detection, confirmation
+│       ├── graph_builder.py # LangGraph StateGraph + manager prompts + SOUL/USER injection
+│       ├── orchestrator.py  # Agentic loop, cycle detection, skill tracking
 │       ├── agent_runner.py  # Model calls, provider dispatch
+│       ├── skill_manager.py # Self-improving skills — search, create, curate
 │       ├── mcp_loader.py    # MCP server lifecycle management
 │       ├── tool_loader.py   # Built-in tool loader
 │       ├── ex_loader.py     # External agent/tool loader
-│       └── config_loader.py # anet.config.yaml / exanet.config.yaml reader
+│       └── config_loader.py # anet.config.yaml reader + soul/profile loaders
 │
 ├── mcps/
 │   ├── codegraph/           # Code graph MCP (config.yaml + source)
 │   └── playwright/          # Browser automation MCP
 │
+├── skills/                  # Auto-written skill procedures (grows over time)
 ├── ExAgents/                # Your custom agents (not in core)
 ├── ExTools/                 # Your custom tools (not in core)
-└── memory/                  # Per-session SQLite checkpoints + memories
+└── memory/
+    ├── USER.md              # Auto-built user profile (updated on session exit)
+    └── <session_id>/        # Per-session SQLite checkpoints
 ```
 
 ---
@@ -328,3 +450,4 @@ Opens at `http://localhost:8000`.
 - Node.js (for MCP servers — codegraph, playwright)
 - `pip install -r requirements.txt`
 - Optional: `pip install pyautogui pywinauto Pillow` for desktop automation
+- Optional: `pip install google-auth` for Vertex AI providers

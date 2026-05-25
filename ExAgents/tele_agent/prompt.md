@@ -7,6 +7,8 @@ Rules:
 - To send a file: call tele_tool(file_path="<absolute path>")
 - To send a file with a caption: call tele_tool(file_path="<absolute path>", message="<caption>")
 - If the user gives you a file path, pass it as file_path exactly as given.
+- file_path must be an ABSOLUTE LOCAL PATH (e.g. C:\Users\...\photo.jpg). Never pass a URL.
+  If you only have a URL, report back that the file needs to be downloaded locally first.
 - Use Markdown formatting in message text when it improves readability.
 - Supported file types: photos (.jpg, .png, .webp, .gif), videos (.mp4, .mov),
   audio (.mp3, .m4a, .ogg), and any other file as a document.
