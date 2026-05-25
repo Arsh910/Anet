@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/LangGraph-orchestration-1a1a2e?style=flat" alt="LangGraph">
+  <img src="https://img.shields.io/badge/Engine-pure_Python-1a1a2e?style=flat" alt="Pure Python Engine">
   <img src="https://img.shields.io/badge/OpenRouter-300%2B_models-FF6B35?style=flat" alt="OpenRouter">
   <img src="https://img.shields.io/badge/Vertex_AI-Gemini-4285F4?style=flat&logo=googlecloud&logoColor=white" alt="Vertex AI">
   <img src="https://img.shields.io/badge/MCP-codegraph_%7C_playwright-8B5CF6?style=flat" alt="MCP">
@@ -94,7 +94,7 @@ All agents default to **Gemini 2.5 Flash** unless overridden in `anet.config.yam
 
 | Tool | What it does |
 |---|---|
-| **web_search** | Semantic web search via Exa API |
+| **web_search** | Web search via DuckDuckGo — no API key required |
 | **download_file** | Download a file from a direct URL; reports image dimensions |
 
 ### Desktop Automation (Windows)
@@ -165,13 +165,24 @@ persona:
 
 ### User Profile — `memory/USER.md`
 
-On every clean session exit (`exit` / `quit`), Anet sends the last 40 messages to the manager model and updates `memory/USER.md` with new facts learned about you — your preferences, tech stack, working style, and project context. On the next session start, this profile is injected into the planner prompt so Anet already knows you.
+Anet maintains a structured profile of you across two mechanisms:
 
-View the current profile with `/profile`. Disable via config:
+**Incremental background agent** — every N turns (default: 5), a background task fires silently after a reply. In a single LLM call it:
+- Updates `memory/USER.md` with any new facts (preferences, tech stack, projects, working style)
+- Saves discrete facts to `memory_tool` (`~/.anet/memory.json`) as cross-session memories, with deduplication
+
+**Session-end update** — on every clean exit (`exit` / `quit`), the full session history is also sent to the manager model and `memory/USER.md` is updated as a final pass.
+
+On the next session start, the profile is injected into the planner prompt so Anet already knows you.
+
+View the current profile with `/profile`. Configure in `anet.config.yaml`:
 
 ```yaml
 memory:
-  user_profile_enabled: false
+  user_profile_enabled: true
+  incremental_interval: 5   # turns between background reviews (0 to disable)
+  # model: gemini-2.5-flash  # optional cheaper model for memory (defaults to manager)
+  # provider: google
 ```
 
 ### 10-Turn Memory Nudge
@@ -229,11 +240,14 @@ persona:
   soul_file: SOUL.md
   enabled: true
 
-# Memory — user profile + memory nudge
+# Memory — user profile + background agent + memory nudge
 memory:
   user_profile_enabled: true
+  incremental_interval: 5   # background memory review every N turns (0 to disable)
   nudge_enabled: true
   nudge_interval: 10
+  # model: gemini-2.5-flash  # optional cheaper model for background memory
+  # provider: google
 
 # Self-improving skills
 skills:
@@ -408,7 +422,9 @@ Anet/
 │   ├── AnetTools/           # Built-in tool implementations
 │   │   └── spawn_tool/      # Runtime subagent delegation
 │   └── core/
-│       ├── graph_builder.py # LangGraph StateGraph + manager prompts + SOUL/USER injection
+│       ├── engine.py        # Pure-Python planner→executor→checker→synthesizer (replaces LangGraph)
+│       ├── store.py         # ConversationStore — aiosqlite-backed message persistence
+│       ├── memory_agent.py  # Background memory agent — updates USER.md + saves facts to memory_tool
 │       ├── orchestrator.py  # Agentic loop, cycle detection, skill tracking
 │       ├── agent_runner.py  # Model calls, provider dispatch
 │       ├── skill_manager.py # Self-improving skills — search, create, curate
@@ -425,8 +441,8 @@ Anet/
 ├── ExAgents/                # Your custom agents (not in core)
 ├── ExTools/                 # Your custom tools (not in core)
 └── memory/
-    ├── USER.md              # Auto-built user profile (updated on session exit)
-    └── <session_id>/        # Per-session SQLite checkpoints
+    ├── USER.md              # Auto-built user profile (updated incrementally + on session exit)
+    └── <session_id>.db      # Per-session SQLite conversation store (aiosqlite)
 ```
 
 ---
