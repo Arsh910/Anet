@@ -83,8 +83,9 @@ agents:
     provider: google
 
   code_agent:
-    model: poolside/laguna-m.1:free
+    model: gemini-2.5-pro 
     provider: openrouter
+    extra_tools: [wifi_pumpkin]
     mcp: [codegraph]
 
 # ── Provider / model reference ────────────────────────────────────────────────

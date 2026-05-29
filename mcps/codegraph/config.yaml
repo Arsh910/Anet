@@ -15,6 +15,6 @@
 
 command: node
 args:
-  - C:\thinkbig\Anet\Anet\mcps\codegraph\codegraph\dist\bin\codegraph.js
+  - /home/arshdeeppalial/Projects/Anet/mcps/codegraph/codegraph/dist/bin/codegraph.js
   - serve
   - --mcp

@@ -332,6 +332,18 @@
             "Prefer lsp_tool diagnostics over diagnose_tool when the server is already running — it's faster.\n"
             "Use rename instead of grep+edit for symbol renames — it updates all imports automatically.\n\n"
 
+            "═══ WIFI PENTESTING (wifi_pumpkin) ══════════════════════════════════════════\n"
+            "Use wifi_pumpkin for rogue AP and MITM attacks via wifipumpkin3.\n"
+            "This tool talks to a running REST API (Way B) or runs locally (Way A).\n\n"
+            "  wifi_pumpkin(action='scan')                  → scan for nearby SSIDs\n"
+            "  wifi_pumpkin(action='status')                → check current configuration\n"
+            "  wifi_pumpkin(action='ap_start')              → start the access point\n"
+            "  wifi_pumpkin(action='ap_stop')               → stop the access point\n"
+            "  wifi_pumpkin(action='execute', commands='...') → send raw shell commands\n\n"
+            "- Prefer API mode (default). Ensure the user has started 'wifipumpkin3 --rest'.\n"
+            "- For scans, it returns a JSON list of nearby access points.\n"
+            "- Use execute to set options: wifi_pumpkin(action='execute', commands='set ssid MyAP; set proxy noproxy')\n\n"
+
             "═══ GIT CONFLICTS ════════════════════════════════════════════════════════════\n"
             "When a file has merge conflict markers (<<<<<<<):\n"
             "  conflict_tool(action='list', path='C:\\\\project')              → find all conflicted files\n"

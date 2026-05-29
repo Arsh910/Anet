@@ -1,0 +1,1 @@
+Use the wifi_pumpkin tool to scan for nearby WiFi networks and list the top 5 strongest SSIDs.

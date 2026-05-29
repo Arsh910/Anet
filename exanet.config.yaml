@@ -16,6 +16,8 @@
 tools:
   - name: tele_tool
     path: ExTools/tele_tool
+  - name: wifi_pumpkin
+    path: ExTools/wifi_punpkin
 
 
 # ── External Agents ───────────────────────────────────────────────────────────

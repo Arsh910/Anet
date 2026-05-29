@@ -55,3 +55,6 @@ desktop.ini
 
 #  Mcp 
 .mcps/codegraph/codegraph
+
+# Extools 
+.ExTools/wifi_punpkin/wifipumpkin3
