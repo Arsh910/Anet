@@ -39,8 +39,8 @@ persona:
 # Manager (plans and coordinates all requests)
 # Default: gemini-2.5-pro via google
 manager:
-  model: gemini-2.5-pro 
-  provider: google
+    model: anthropic/claude-opus-4.8
+    provider: openrouter
 
 # Per-agent overrides — model, provider, max_steps, extra_tools, and mcp can be set here.
 #
@@ -67,23 +67,23 @@ manager:
 agents:
 
   research_agent:
-    model: gemini-2.5-pro 
-    provider: google
+    model: anthropic/claude-opus-4.8
+    provider: openrouter
 
   computer_agent:
-    model: sao10k/l3-lunaris-8b
+    model: anthropic/claude-opus-4.8
     provider: openrouter
 
   checker_agent:
-    model: gemini-2.5-pro 
-    provider: google
+    model: anthropic/claude-opus-4.8
+    provider: openrouter
 
   file_agent:
-    model: gemini-2.5-pro 
-    provider: google
+    model: anthropic/claude-opus-4.8
+    provider: openrouter
 
   code_agent:
-    model: gemini-2.5-pro 
+    model: anthropic/claude-opus-4.8
     provider: openrouter
     extra_tools: [wifi_pumpkin]
     mcp: [codegraph]

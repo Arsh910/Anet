@@ -5,7 +5,8 @@
 <h1 align="center">ANet</h1>
 
 <p align="center">
-  <strong>A config-driven multi-agent assistant for coding, research, and desktop automation.</strong>
+  <strong>Run Claude for code. Gemini for research. GPT-4o for planning.<br>
+  All from a single YAML file. No framework lock-in.</strong>
 </p>
 
 <p align="center">
@@ -14,17 +15,74 @@
   <img src="https://img.shields.io/badge/OpenRouter-300%2B_models-FF6B35?style=flat" alt="OpenRouter">
   <img src="https://img.shields.io/badge/Vertex_AI-Gemini-4285F4?style=flat&logo=googlecloud&logoColor=white" alt="Vertex AI">
   <img src="https://img.shields.io/badge/MCP-codegraph_%7C_playwright-8B5CF6?style=flat" alt="MCP">
-  <img src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat&logo=windows&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/License-MIT-22c55e?style=flat" alt="MIT">
+  <img src="https://img.shields.io/badge/computer__agent-Windows_only-0078D4?style=flat&logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/everything_else-cross--platform-22c55e?style=flat" alt="Cross-platform">
+  <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=flat" alt="MIT">
 </p>
 
 <p align="center">Six specialized agents. Nineteen built-in tools. Persistent memory. Self-improving skills.</p>
 
 ---
 
-## What it does
+## Demo
 
-ANet routes your request through a planning layer that decides which agents to run, in what order, and in parallel where possible. Each agent has its own model, its own tool surface, and its own job. You get a synthesized answer when all the pieces land.
+<p align="center">
+  <video src="ReadmeImages/demo.mp4" width="900" controls autoplay loop muted>
+    Your browser does not support the video tag.
+  </video>
+</p>
+
+> *research FastAPI best practices → refactor routes.py → run tests → send Telegram notification. All in one prompt.*
+
+---
+
+## Why ANet?
+
+Most agent frameworks lock you into one model, one provider, and one way of working. ANet doesn't.
+
+| | ANet | Most others |
+|---|---|---|
+| Per-agent model selection | ✅ YAML config, swap anytime | ❌ hardcoded or global |
+| Web search without API keys | ✅ DuckDuckGo built-in | ❌ paid API required |
+| Bring your own tools | ✅ ExTools hot-reload, no restart | ⚠️ framework-specific |
+| Confirmation before shell/file ops | ✅ always, `y/n/a` prompt | ❌ runs blind |
+| Real LSP code intelligence | ✅ go-to-def, rename, references | ❌ grep-based |
+| Session resume | ✅ `--resume` flag | ❌ starts fresh every time |
+| Agents spawning sub-agents | ✅ `spawn_tool`, depth-limited | ❌ not available |
+| Self-improving skills | ✅ agent writes its own procedures | ❌ not available |
+| User profile across sessions | ✅ auto-built `USER.md` | ❌ no memory of you |
+
+---
+
+## Quickstart
+
+**One API key is all you need to start.**
+
+```bash
+git clone https://github.com/Arsh910/Anet.git
+cd Anet
+pip install -r requirements.txt
+```
+
+Create a `.env` file with just one key:
+
+```env
+OPENROUTER_API_KEY=your_key_here
+```
+
+> Free models are available on OpenRouter. Web search uses DuckDuckGo — no Exa key, no paid search API needed.
+
+```bash
+python main.py
+```
+
+That's it. Everything else (Telegram, Vertex AI, MCP servers) is optional and added only when you need it.
+
+---
+
+## How it works
+
+ANet routes your request through a planning layer that decides which agents to run, in what order, and in parallel where possible. Each agent has its own model, its own tool surface, and its own job.
 
 ```
 You: "refactor this module, run the tests, and send me a Telegram when done"
@@ -37,23 +95,28 @@ Manager (plans the work)
 Anet: "Done. Tests pass. Message sent."
 ```
 
----
-
-## Install
-
-Python 3.11+ required.
-
-```bash
-git clone <repo>
-cd Anet
-pip install -r requirements.txt
+```
+planner (manager model)
+  │
+  ├─ simple request → direct reply → done
+  │
+  └─ complex request → DAG of steps
+        │
+        ├─ step A (agent 1) ─── parallel ──── step B (agent 2)
+        │         ↓                                   ↓
+        │   spawn_tool → sub-agent (depth ≤ 2)        │
+        │                                             │
+        └─ checker_agent validates ← ← ← retry if partial
+                   ↓
+            synthesizer → final reply
 ```
 
-Copy `.env.example` to `.env` and fill in your keys (see [Environment variables](#environment-variables)).
+**Safety mechanisms**
 
-```bash
-python main.py
-```
+- **Per-agent step cap** — each agent has a configurable `max_steps` (defaults: research 10, code 60, file 25, computer 20, checker 8).
+- **Cycle detection** — same write operation repeated 3× in a sliding window stops the loop.
+- **Spawn depth limit** — `spawn_tool` nesting is capped at 2 to prevent infinite delegation chains.
+- **Confirmation policy** — `shell_tool` (every command), `edit_tool` (every edit), and destructive `file_tool` actions pause for explicit `y/n/a` approval.
 
 ---
 
@@ -70,7 +133,9 @@ python main.py
 
 All agents default to **Gemini 2.5 Flash** unless overridden in `anet.config.yaml`.
 
-**spawn_tool** is auto-injected into every agent, allowing any agent to delegate a sub-task to another agent at runtime without returning to the manager.
+**`spawn_tool`** is auto-injected into every agent — any agent can delegate a sub-task to another agent at runtime without returning to the manager.
+
+> **Platform note:** `computer_agent` (desktop automation) requires Windows. All other agents and tools are cross-platform.
 
 ---
 
@@ -94,10 +159,10 @@ All agents default to **Gemini 2.5 Flash** unless overridden in `anet.config.yam
 
 | Tool | What it does |
 |---|---|
-| **web_search** | Web search via DuckDuckGo — no API key required |
+| **web_search** | Web search via DuckDuckGo — **no API key required** |
 | **download_file** | Download a file from a direct URL; reports image dimensions |
 
-### Desktop Automation (Windows)
+### Desktop Automation (Windows only)
 
 | Tool | What it does |
 |---|---|
@@ -123,83 +188,35 @@ MCP servers extend the tool surface without touching the core. They appear in a 
 
 ---
 
-## How the loop works
-
-```
-planner (manager model)
-  │
-  ├─ simple request → direct reply → done
-  │
-  └─ complex request → DAG of steps
-        │
-        ├─ step A (agent 1) ─── parallel ──── step B (agent 2)
-        │         ↓                                   ↓
-        │   spawn_tool → sub-agent (depth ≤ 2)        │
-        │                                             │
-        └─ checker_agent validates ← ← ← retry if partial
-                   ↓
-            synthesizer → final reply
-```
-
-**Safety mechanisms**
-
-- **Per-agent step cap** — each agent has a configurable `max_steps` (defaults: research 10, code 60, file 25, computer 20, checker 8). Overridable per-agent in `anet.config.yaml`.
-- **Cycle detection** — same write operation repeated 3× in a sliding window stops the loop.
-- **Spawn depth limit** — `spawn_tool` nesting is capped at 2 to prevent infinite delegation chains.
-- **Confirmation policy** — `shell_tool` (every command), `edit_tool` (every edit), and destructive `file_tool` actions pause for explicit `y/n/a` approval.
-
----
-
 ## Intelligence & Memory
 
 ### Agent Persona — `SOUL.md`
 
-The manager's personality is defined in `SOUL.md` at the repo root. It is injected into the planner and synthesizer prompts on every turn. Sub-agents are unaffected — their specialized prompts stay clean.
-
-Edit `SOUL.md` to change how Anet presents itself, its tone, and its behaviour rules. Disable via `anet.config.yaml`:
+The manager's personality is defined in `SOUL.md` at the repo root. Injected into the planner and synthesizer prompts on every turn. Edit it to change Anet's name, tone, and behaviour rules. Sub-agents are unaffected — their specialized prompts stay clean.
 
 ```yaml
+# anet.config.yaml
 persona:
-  enabled: false
+  enabled: false   # disable if you want a neutral system prompt
 ```
 
 ### User Profile — `memory/USER.md`
 
-Anet maintains a structured profile of you across two mechanisms:
+Anet builds a structured profile of you automatically across two mechanisms:
 
-**Incremental background agent** — every N turns (default: 5), a background task fires silently after a reply. In a single LLM call it:
-- Updates `memory/USER.md` with any new facts (preferences, tech stack, projects, working style)
-- Saves discrete facts to `memory_tool` (`~/.anet/memory.json`) as cross-session memories, with deduplication
+**Background agent** — every 5 turns (configurable), a silent background task updates `memory/USER.md` with new facts (preferences, tech stack, projects, working style) and saves discrete facts to `memory_tool` with deduplication.
 
-**Session-end update** — on every clean exit (`exit` / `quit`), the full session history is also sent to the manager model and `memory/USER.md` is updated as a final pass.
+**Session-end update** — on every clean exit, the full session history is reviewed and `USER.md` gets a final pass.
 
-On the next session start, the profile is injected into the planner prompt so Anet already knows you.
-
-View the current profile with `/profile`. Configure in `anet.config.yaml`:
-
-```yaml
-memory:
-  user_profile_enabled: true
-  incremental_interval: 5   # turns between background reviews (0 to disable)
-  # model: gemini-2.5-flash  # optional cheaper model for memory (defaults to manager)
-  # provider: google
-```
+On the next session start, the profile is injected into the planner so Anet already knows you. View it with `/profile`.
 
 ### 10-Turn Memory Nudge
 
-Every 10 substantive user messages, the agent handling the current task is prompted to save any genuinely new facts to `memory_tool` before proceeding. This keeps persistent memory up to date without any manual effort.
-
-Configure the interval (or disable) in `anet.config.yaml`:
-
-```yaml
-memory:
-  nudge_enabled: true
-  nudge_interval: 10    # 0 to disable
-```
+Every 10 substantive messages, the active agent is prompted to push any genuinely new facts to `memory_tool` before proceeding — so nothing important slips through between background reviews.
 
 ### Context Compression
 
-When a session grows long (>40 messages), Anet prompts you with two options:
+When a session grows long (>40 messages), Anet prompts with two options:
 
 - **[f] forget** — drop the oldest messages, keep the last 20
 - **[c] compress** — summarise old messages into a single block via the manager model
@@ -208,23 +225,11 @@ Also available as slash commands: `/forget`, `/compress`.
 
 ### Self-Improving Skills — `skills/`
 
-After any task where an agent made ≥6 tool calls **and** self-corrected at least once (same tool called with different args, or shell command retried after failure), Anet writes a reusable procedure file to `skills/` in the background.
+After any task where an agent made ≥6 tool calls **and** self-corrected at least once, Anet writes a reusable procedure file to `skills/` in the background.
 
-Before every agent task, the skills folder is keyword-searched against the task description. Up to 3 matching skills are injected into the agent's system prompt as "Relevant Skills from Past Experience". No match → nothing injected, no noise.
+Before every agent task, the skills folder is keyword-searched against the task description. Up to 3 matching skills are injected into the agent's system prompt as "Relevant Skills from Past Experience". No match — nothing injected, no noise.
 
-**Curator** — at startup, if `skills/` contains ≥5 files, a background Curator pass runs:
-- Groups skills with >70% keyword similarity and merges duplicates (originals archived to `skills/archived/`)
-- Improves skills that have been used ≥3 times
-
-Configure in `anet.config.yaml`:
-
-```yaml
-skills:
-  enabled: true
-  creation_threshold: 6   # tool calls needed to trigger skill creation
-  curator_min_skills: 5   # min files before Curator runs
-  max_injected: 3         # max skills injected per task
-```
+**Curator** — at startup, if `skills/` has ≥5 files, a background Curator pass runs: merges duplicate skills and improves skills used ≥3 times. Originals are archived to `skills/archived/`.
 
 View all skills with `/skills`.
 
@@ -235,21 +240,19 @@ View all skills with `/skills`.
 ### `anet.config.yaml`
 
 ```yaml
-# Persona — loaded from SOUL.md, injected into manager prompts
+# Persona
 persona:
   soul_file: SOUL.md
   enabled: true
 
-# Memory — user profile + background agent + memory nudge
+# Memory + skills
 memory:
   user_profile_enabled: true
   incremental_interval: 5   # background memory review every N turns (0 to disable)
   nudge_enabled: true
   nudge_interval: 10
-  # model: gemini-2.5-flash  # optional cheaper model for background memory
-  # provider: google
+  # model: gemini-2.5-flash  # cheaper model for background memory tasks
 
-# Self-improving skills
 skills:
   enabled: true
   creation_threshold: 6
@@ -261,7 +264,7 @@ manager:
   model: google/gemini-2.5-flash
   provider: vertex_google
 
-# Per-agent overrides — model, provider, max_steps, extra_tools, mcp
+# Per-agent overrides
 agents:
   code_agent:
     model: claude-opus-4-7
@@ -279,10 +282,10 @@ agents:
 | Key | API key env var | Notes |
 |---|---|---|
 | `google` | `GOOGLE_API_KEY` | Gemini models direct |
-| `openrouter` | `OPENROUTER_API_KEY` | 300+ models via one key |
+| `openrouter` | `OPENROUTER_API_KEY` | 300+ models via one key, free tier available |
 | `openai` | `OPENAI_API_KEY` | GPT models |
 | `claude` | `ANTHROPIC_API_KEY` | Claude models |
-| `vertex_google` | `VERTEX_PROJECT_ID` + ADC | Gemini on Vertex AI (uses GCP credits) |
+| `vertex_google` | `VERTEX_PROJECT_ID` + ADC | Gemini on Vertex AI (GCP credits) |
 | `vertex_claude` | `VERTEX_PROJECT_ID` + ADC | Claude on Vertex AI |
 
 For Vertex AI: run `gcloud auth application-default login` once, then set `VERTEX_PROJECT_ID` in `.env`.
@@ -293,17 +296,13 @@ For Vertex AI: run `gcloud auth application-default login` once, then set `VERTE
 
 ### Minimum to start
 
-Create a `.env` file in the project root with just one key:
-
 ```env
 OPENROUTER_API_KEY=your_key_here
 ```
 
-`OPENROUTER_API_KEY` drives all agents (free models available). Web search uses DuckDuckGo — **no API key required**. That's it — everything else is optional.
+Free models available. Web search is DuckDuckGo — no extra key needed.
 
-### Switching to a different provider
-
-Add whichever key matches the provider you set in `anet.config.yaml`:
+### Adding other providers
 
 ```env
 GOOGLE_API_KEY=...          # provider: google
@@ -312,12 +311,12 @@ ANTHROPIC_API_KEY=...       # provider: claude
 
 # Vertex AI — also run: gcloud auth application-default login
 VERTEX_PROJECT_ID=your-gcp-project-id
-VERTEX_LOCATION=us-central1  # optional, default is us-central1
+VERTEX_LOCATION=us-central1
 ```
 
 ### External agent credentials
 
-Each external agent keeps its own `.env` in its folder — **not** in the root `.env`. For example, `tele_agent` needs:
+Each external agent keeps its own `.env` in its folder — not in the root `.env`. Example for `tele_agent`:
 
 ```
 ExAgents/tele_agent/.env
@@ -326,7 +325,7 @@ TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 ```
 
-ANet loads these automatically at startup for each external agent that has one.
+ANet loads these automatically at startup.
 
 ---
 
@@ -335,7 +334,7 @@ ANet loads these automatically at startup for each external agent that has one.
 | Command | What it does |
 |---|---|
 | `/agents` | Show loaded agents, models, and tool lists |
-| `/skills` | List all saved skills with their applies-to description and usage count |
+| `/skills` | List all saved skills with description and usage count |
 | `/profile` | Show the current user profile (`memory/USER.md`) |
 | `/sessions` | List all saved sessions |
 | `/session <name>` | Switch to a named session (creates it if new) |
@@ -346,21 +345,29 @@ ANet loads these automatically at startup for each external agent that has one.
 | `/help` | Show this list |
 | `exit` or `quit` | End the session (triggers USER.md update) |
 
-Sessions persist in `memory/<session_id>/checkpoint.db`. Resume with `--resume` or open a specific session with `--session <name>`.
+```bash
+python main.py --resume                  # pick up your last session
+python main.py --session my-project      # open a named session
+python main.py --list-sessions           # see all sessions
+```
+
+---
+
+## Web Dashboard
+
+A FastAPI-based dashboard runs alongside the CLI:
 
 ```bash
-python main.py --resume
-python main.py --session my-project
-python main.py --list-sessions
+python server.py   # opens at http://localhost:8000
 ```
 
 ---
 
 ## Extending ANet
 
-### Add an external tool — ExTools
+### Add a tool — ExTools
 
-Create `ExTools/<tool_name>/__init__.py` with a `SCHEMA` dict and an async `run(params)` function. Register it in `exanet.config.yaml`:
+Create `ExTools/<tool_name>/__init__.py` with a `SCHEMA` dict and an async `run(params)` function. Register in `exanet.config.yaml`:
 
 ```yaml
 ex_tools:
@@ -368,7 +375,9 @@ ex_tools:
     path: ExTools/my_tool
 ```
 
-### Add an external agent — ExAgents
+No restart needed — hot-reload picks it up when `exanet.config.yaml` changes.
+
+### Add an agent — ExAgents
 
 Create `ExAgents/<agent_name>/` with `agent.py` (config dict) and optionally `prompt.md` and `.env`. Register in `exanet.config.yaml`:
 
@@ -378,7 +387,7 @@ ex_agents:
     path: ExAgents/my_agent
 ```
 
-External agents automatically get `spawn_tool` injected — they can delegate to other agents without any extra config.
+External agents automatically get `spawn_tool` injected — they can delegate to other agents without extra config.
 
 ### Add an MCP server
 
@@ -422,48 +431,35 @@ Anet/
 │   ├── AnetTools/           # Built-in tool implementations
 │   │   └── spawn_tool/      # Runtime subagent delegation
 │   └── core/
-│       ├── engine.py        # Pure-Python planner→executor→checker→synthesizer (replaces LangGraph)
-│       ├── store.py         # ConversationStore — aiosqlite-backed message persistence
-│       ├── memory_agent.py  # Background memory agent — updates USER.md + saves facts to memory_tool
+│       ├── engine.py        # Pure-Python planner→executor→checker→synthesizer
+│       ├── store.py         # aiosqlite-backed conversation persistence
+│       ├── memory_agent.py  # Background memory — updates USER.md + memory_tool
 │       ├── orchestrator.py  # Agentic loop, cycle detection, skill tracking
 │       ├── agent_runner.py  # Model calls, provider dispatch
 │       ├── skill_manager.py # Self-improving skills — search, create, curate
 │       ├── mcp_loader.py    # MCP server lifecycle management
 │       ├── tool_loader.py   # Built-in tool loader
 │       ├── ex_loader.py     # External agent/tool loader
-│       └── config_loader.py # anet.config.yaml reader + soul/profile loaders
+│       └── config_loader.py # Config + soul/profile loaders
 │
 ├── mcps/
-│   ├── codegraph/           # Code graph MCP (config.yaml + source)
+│   ├── codegraph/           # Code graph MCP
 │   └── playwright/          # Browser automation MCP
 │
 ├── skills/                  # Auto-written skill procedures (grows over time)
-├── ExAgents/                # Your custom agents (not in core)
-├── ExTools/                 # Your custom tools (not in core)
+├── ExAgents/                # Your custom agents
+├── ExTools/                 # Your custom tools
 └── memory/
-    ├── USER.md              # Auto-built user profile (updated incrementally + on session exit)
-    └── <session_id>.db      # Per-session SQLite conversation store (aiosqlite)
+    ├── USER.md              # Auto-built user profile
+    └── <session_id>.db      # Per-session SQLite conversation store
 ```
-
----
-
-## Web dashboard
-
-A FastAPI-based dashboard runs alongside the CLI:
-
-```bash
-python server.py
-```
-
-Opens at `http://localhost:8000`.
 
 ---
 
 ## Requirements
 
 - Python 3.11+
-- Windows (for `computer_agent` / desktop automation)
 - Node.js (for MCP servers — codegraph, playwright)
 - `pip install -r requirements.txt`
-- Optional: `pip install pyautogui pywinauto Pillow` for desktop automation
-- Optional: `pip install google-auth` for Vertex AI providers
+- Windows only for `computer_agent`: `pip install pyautogui pywinauto Pillow`
+- Vertex AI providers: `pip install google-auth` + `gcloud auth application-default login`

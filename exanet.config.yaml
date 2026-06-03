@@ -27,8 +27,8 @@ tools:
 
 agents:
   - name: tele_agent
-    model: gemini-2.5-pro
-    provider: google
+    model: anthropic/claude-opus-4.8
+    provider: openrouter
     enabled: true
     prompt_file: ExAgents/tele_agent/prompt.md
     task_types:
