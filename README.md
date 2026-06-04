@@ -27,9 +27,7 @@
 ## Demo
 
 <p align="center">
-  <video src="ReadmeImages/demo.gif" width="900" controls autoplay loop muted>
-    Your browser does not support the video tag.
-  </video>
+  <img src="ReadmeImages/demo.gif" alt="ANet Demo" width="900">
 </p>
 
 > *research FastAPI best practices → refactor routes.py → run tests → send Telegram notification. All in one prompt.*
