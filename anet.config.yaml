@@ -67,19 +67,19 @@ manager:
 agents:
 
   research_agent:
-    model: anthropic/claude-opus-4.8
+    model: openai/gpt-5.4-mini
     provider: openrouter
 
   computer_agent:
-    model: anthropic/claude-opus-4.8
+    model: moonshotai/kimi-k2.6:free
     provider: openrouter
 
   checker_agent:
-    model: anthropic/claude-opus-4.8
+    model: anthropic/claude-haiku-4.5
     provider: openrouter
 
   file_agent:
-    model: anthropic/claude-opus-4.8
+    model: moonshotai/kimi-k2.6:free
     provider: openrouter
 
   code_agent:

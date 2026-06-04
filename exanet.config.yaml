@@ -27,7 +27,7 @@ tools:
 
 agents:
   - name: tele_agent
-    model: anthropic/claude-opus-4.8
+    model: openai/gpt-oss-20b:free
     provider: openrouter
     enabled: true
     prompt_file: ExAgents/tele_agent/prompt.md
