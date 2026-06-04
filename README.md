@@ -27,7 +27,7 @@
 ## Demo
 
 <p align="center">
-  <video src="ReadmeImages/demo.mp4" width="900" controls autoplay loop muted>
+  <video src="ReadmeImages/demo.gif" width="900" controls autoplay loop muted>
     Your browser does not support the video tag.
   </video>
 </p>
