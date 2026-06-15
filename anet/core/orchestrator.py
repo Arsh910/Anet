@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Callable
 
 from anet.core import agent_runner
-from anet.core.context import on_confirm as _confirm_var, on_output as _output_var
+from anet.core.context import on_confirm as _confirm_var, on_output as _output_var, is_cancelled as _is_cancelled
 
 # Safety valve — only fires if the model never stops calling tools.
 # Normal tasks end naturally when the model returns a plain-text reply.
@@ -192,6 +192,7 @@ async def run(
     offloaded: dict | None = None
     _cycle_window: list[str] = []   # sliding window of recent call signatures
     _stuck = False
+    _cancelled = False
 
     # ── Skill creation tracking ───────────────────────────────────────────────
     _total_tool_calls = 0
@@ -204,6 +205,9 @@ async def run(
     cap = int(agent.get("max_steps") or _SAFETY_CAP)
 
     for iteration in range(1, cap + 1):
+        if _is_cancelled():
+            _cancelled = True
+            break
         step_label = f"step {iteration}" if iteration > 1 else "thinking"
         on_status(f"{agent_name}: {step_label}...")
         try:
@@ -224,6 +228,9 @@ async def run(
         messages.append(_message_to_dict(response_message))
 
         for tool_call in response_message.tool_calls:
+            if _is_cancelled():
+                _cancelled = True
+                break
             called_name = tool_call.function.name
 
             try:
@@ -353,7 +360,7 @@ async def run(
                 }
             )
 
-        if _stuck:
+        if _stuck or _cancelled:
             break
     else:
         # Safety cap hit — model never stopped calling tools
@@ -376,6 +383,14 @@ async def run(
         )
         return {
             "text":       text,
+            "task_id":    offloaded.get("task_id") if offloaded else None,
+            "poll_path":  offloaded.get("poll_path", "") if offloaded else "",
+            "result_key": offloaded.get("result_key", "") if offloaded else "",
+        }
+
+    if _cancelled:
+        return {
+            "text":       last_text or last_tool_result or "[stopped by user]",
             "task_id":    offloaded.get("task_id") if offloaded else None,
             "poll_path":  offloaded.get("poll_path", "") if offloaded else "",
             "result_key": offloaded.get("result_key", "") if offloaded else "",

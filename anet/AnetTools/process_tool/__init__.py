@@ -18,10 +18,12 @@ SCHEMA = {
     "function": {
         "name": "process_tool",
         "description": (
-            "Start a shell command and capture its output until a pattern is matched or timeout expires. "
-            "Use to verify dev servers, build tools, or any long-running process. "
-            "The process is always terminated before returning — it does NOT keep running. "
-            "Examples: verify 'npm run dev' starts cleanly, check 'npm run build' succeeds."
+            "Start a shell command, stream its output until a pattern is matched (success_pattern / "
+            "failure_pattern) or the timeout expires, then ALWAYS terminate it — it does NOT keep running. "
+            "Use this for any streaming or long-running command where you want to stop as soon as expected "
+            "output appears, instead of waiting for it to finish: verify a dev server ('npm run dev' until "
+            "'ready in'), check a build, OR run a command and stop the moment a specific line is printed "
+            "(e.g. success_pattern='5' to stop once '5' appears in the output)."
         ),
         "parameters": {
             "type": "object",

@@ -42,3 +42,15 @@ async def _no_user(question: str, options=None) -> str:
 on_ask: ContextVar[Callable[[str, list], Awaitable[str]]] = ContextVar(
     "on_ask", default=_no_user
 )
+
+# Cancellation signal — set when the user presses ESC mid-task. The engine and
+# orchestrator check it at safe checkpoints and stop cleanly (any in-flight tool
+# is allowed to finish first). main.py installs an asyncio.Event per turn; the
+# default None means "no cancellation wired" (headless / tests).
+on_cancel: ContextVar = ContextVar("on_cancel", default=None)
+
+
+def is_cancelled() -> bool:
+    """True if the current turn has been asked to stop (ESC). Safe to call anywhere."""
+    evt = on_cancel.get()
+    return evt is not None and evt.is_set()

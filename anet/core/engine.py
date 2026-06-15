@@ -19,7 +19,7 @@ from pathlib import Path
 from openai import AsyncOpenAI
 
 from anet.core import orchestrator
-from anet.core.context import on_status as _status_var, on_token as _token_var
+from anet.core.context import on_status as _status_var, on_token as _token_var, is_cancelled as _is_cancelled
 
 _MAX_RETRIES    = 3
 _ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "Anet")
@@ -541,6 +541,8 @@ class Engine:
         pending_steps_after: list      = []
 
         while True:
+            if _is_cancelled():
+                break
             exec_r = await self._execute(
                 plan, step_statuses, step_results,
                 offloaded_tasks, async_results,
@@ -574,6 +576,10 @@ class Engine:
 
             if not _has_ready_steps(plan, step_statuses):
                 break
+
+        # ── Stopped by user (ESC) — skip synthesis/persist, return cleanly ──────
+        if _is_cancelled():
+            return EngineResult(reply="", step_results=step_results)
 
         # ── Save async state ──────────────────────────────────────────────────
         async_state["offloaded_tasks"] = offloaded_tasks

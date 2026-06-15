@@ -98,6 +98,7 @@ Environment for this run:
 | G2 | ⬜ | | |
 | G3 | ⬜ | | |
 | G8 | ⬜ | downloads gated | |
+| G9 | ⬜ | ESC stops task | |
 | G4 | ⬜ | | |
 | G7 | ⬜ | p = redirect path | |
 | G5 | ⬜ | cycle detect | |

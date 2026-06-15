@@ -14,6 +14,7 @@ Startup sequence:
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -47,7 +48,7 @@ from anet.AnetAgents.agents_config import AGENTS
 from anet.core.tool_loader import load_tools
 from anet.core.engine import Engine, _manager_client as _engine_manager_client
 from anet.core.store import ConversationStore
-from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var, on_ask as _ask_var
+from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var, on_ask as _ask_var, on_cancel as _cancel_var
 from anet.core.config_loader import agent_overrides as _agent_overrides, manager_config as _manager_config
 from anet.core.ex_loader import load_ex_tools, load_ex_agents, get_extra_for_builtins
 from anet.core.mcp_loader import load_mcp_tools_for_agents
@@ -649,10 +650,14 @@ def _make_confirm_fn(live: "Live") -> callable:
             console.print(f"  [cyan]└─[/cyan] [dim]{choices}[/dim]")
 
             async def _read(prompt: str) -> str:
-                if _HAS_PT and _pt_session is not None:
-                    return await _pt_session.prompt_async(prompt)
-                loop = asyncio.get_event_loop()
-                return await loop.run_in_executor(None, input, prompt)
+                _pause_esc_watcher()   # release stdin so this prompt can read it
+                try:
+                    if _HAS_PT and _pt_session is not None:
+                        return await _pt_session.prompt_async(prompt)
+                    loop = asyncio.get_event_loop()
+                    return await loop.run_in_executor(None, input, prompt)
+                finally:
+                    _resume_esc_watcher()
 
             raw = (await _read("  > ")).strip().lower()
 
@@ -705,11 +710,15 @@ def _make_ask_fn(live: "Live") -> callable:
             hint = "type your answer, or a number to pick" if options else "type your answer"
             console.print(f"  [yellow]└─[/yellow] [dim]{hint}[/dim]")
 
-            if _HAS_PT and _pt_session is not None:
-                raw = await _pt_session.prompt_async("  > ")
-            else:
-                loop = asyncio.get_event_loop()
-                raw = await loop.run_in_executor(None, input, "  > ")
+            _pause_esc_watcher()   # release stdin so this prompt can read it
+            try:
+                if _HAS_PT and _pt_session is not None:
+                    raw = await _pt_session.prompt_async("  > ")
+                else:
+                    loop = asyncio.get_event_loop()
+                    raw = await loop.run_in_executor(None, input, "  > ")
+            finally:
+                _resume_esc_watcher()
 
             console.print()
             live.start()
@@ -723,6 +732,126 @@ def _make_ask_fn(live: "Live") -> callable:
             return raw
 
     return _ask
+
+
+# ── ESC-to-stop (cross-platform via prompt_toolkit input) ─────────────────────
+
+_active_esc_watcher = None   # current watcher — confirm/ask prompts pause it via the helpers below
+
+
+class _EscWatcher:
+    """Watch for the ESC key while a task runs and set a cancel event.
+
+    Uses prompt_toolkit's input layer, which works on Windows/macOS/Linux with one
+    code path and hooks into the asyncio loop (no polling thread, no manual termios,
+    and it disambiguates a lone ESC from an escape sequence). Must be PAUSED while a
+    confirm/ask prompt reads stdin — a tty allows only one reader at a time.
+    """
+
+    def __init__(self, cancel_event: "asyncio.Event") -> None:
+        from prompt_toolkit.input import create_input
+        from prompt_toolkit.keys import Keys
+        self._Keys   = Keys
+        self._inp    = create_input()
+        self._cancel = cancel_event
+        self._raw    = None
+        self._attach = None
+
+    def _on_keys(self) -> None:
+        try:
+            keys = list(self._inp.read_keys()) + list(self._inp.flush_keys())
+        except Exception:
+            return
+        for kp in keys:
+            if kp.key == self._Keys.Escape:
+                self._cancel.set()
+
+    def start(self) -> None:
+        self._raw = self._inp.raw_mode(); self._raw.__enter__()
+        self._attach = self._inp.attach(self._on_keys); self._attach.__enter__()
+
+    def pause(self) -> None:
+        """Release stdin so a confirm/ask prompt can read it."""
+        if self._attach is not None:
+            with contextlib.suppress(Exception):
+                self._attach.__exit__(None, None, None)
+            self._attach = None
+        if self._raw is not None:
+            with contextlib.suppress(Exception):
+                self._raw.__exit__(None, None, None)
+            self._raw = None
+
+    def resume(self) -> None:
+        if self._raw is None:
+            self._raw = self._inp.raw_mode(); self._raw.__enter__()
+        if self._attach is None:
+            self._attach = self._inp.attach(self._on_keys); self._attach.__enter__()
+
+    def stop(self) -> None:
+        self.pause()
+        with contextlib.suppress(Exception):
+            self._inp.close()
+
+
+def _pause_esc_watcher() -> None:
+    if _active_esc_watcher is not None:
+        with contextlib.suppress(Exception):
+            _active_esc_watcher.pause()
+
+
+def _resume_esc_watcher() -> None:
+    if _active_esc_watcher is not None:
+        with contextlib.suppress(Exception):
+            _active_esc_watcher.resume()
+
+
+async def _run_turn_with_esc(engine, thread_id, store, user_input, cancel_event):
+    """Run one turn while watching for ESC. Returns (result, stopped: bool).
+
+    Two-tier stop: ESC sets `cancel_event` (cooperative — the engine/orchestrator
+    stop at their next safe checkpoint, so any in-flight tool finishes first); if the
+    turn doesn't wind down within a short grace period, it is hard-cancelled.
+    """
+    global _active_esc_watcher
+    run_task = asyncio.create_task(engine.run_turn(thread_id, store, user_input))
+
+    watcher = None
+    if _HAS_PT:
+        try:
+            watcher = _EscWatcher(cancel_event)
+            watcher.start()
+            _active_esc_watcher = watcher
+        except Exception:
+            watcher = None
+            _active_esc_watcher = None
+
+    if watcher is None:
+        # No ESC support (prompt_toolkit unavailable) — Ctrl+C still interrupts.
+        return (await run_task, False)
+
+    esc_wait = asyncio.create_task(cancel_event.wait())
+    try:
+        done, _ = await asyncio.wait({run_task, esc_wait}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        _active_esc_watcher = None
+        watcher.stop()
+
+    if run_task in done:
+        esc_wait.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await esc_wait
+        return (run_task.result(), False)
+
+    # ESC pressed → cooperative cancel already set. Give the turn a moment to stop
+    # at its next checkpoint; hard-cancel if it doesn't.
+    try:
+        result = await asyncio.wait_for(asyncio.shield(run_task), timeout=2.0)
+        return (result, True)
+    except asyncio.TimeoutError:
+        run_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await run_task
+        return (None, True)
 
 
 # ── Slash commands ────────────────────────────────────────────────────────────
@@ -744,6 +873,7 @@ _HELP_TEXT = """
   [bold cyan]/clear[/bold cyan]                Clear the screen
   [bold cyan]/help[/bold cyan]                 Show this message
 
+  [bold cyan]ESC[/bold cyan]                   Stop the running task and return to the prompt
   [bold cyan]exit[/bold cyan] [dim]or[/dim] [bold cyan]quit[/bold cyan]           End the session
 """
 
@@ -1228,6 +1358,8 @@ async def _chat_turn(
             padding=(0, 1),
         ))
 
+    cancel_event = asyncio.Event()
+    stopped = False
     try:
         with Live(live_status, console=console, refresh_per_second=12, transient=True) as live:
             status_tk  = _status_var.set(on_status)
@@ -1235,20 +1367,28 @@ async def _chat_turn(
             confirm_tk = _confirm_var.set(_make_confirm_fn(live))
             output_tk  = _output_var.set(_render_diff)
             ask_tk     = _ask_var.set(_make_ask_fn(live))
+            cancel_tk  = _cancel_var.set(cancel_event)
             try:
-                result = await engine.run_turn(thread_id, store, effective_input)
+                result, stopped = await _run_turn_with_esc(
+                    engine, thread_id, store, effective_input, cancel_event
+                )
             finally:
                 _status_var.reset(status_tk)
                 _token_var.reset(token_tk)
                 _confirm_var.reset(confirm_tk)
                 _output_var.reset(output_tk)
                 _ask_var.reset(ask_tk)
+                _cancel_var.reset(cancel_tk)
 
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted. Type 'exit' to quit.[/dim]")
         return False
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        return False
+
+    if stopped:
+        console.print("\n  [yellow]⏹ Stopped.[/yellow] [dim]Back to the prompt.[/dim]\n")
         return False
 
     response = result.reply or "Done."

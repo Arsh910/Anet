@@ -20,6 +20,17 @@ Prereqs: API key.
 **Exercises:** `edit_tool` confirmation + unified diff preview
 **Pass if:** a diff is shown and approval is requested before writing.
 
+### G9 — ESC stops a running task
+**Prompt:** `research the history of the Eiffel Tower in depth and write a long summary`
+(any task that runs for several steps), then **press ESC** while it's working.
+**Exercises:** cross-platform ESC watcher (prompt_toolkit) + cooperative cancel
+**Watch for:** within ~1–2s the spinner stops and you see `⏹ Stopped. Back to the
+prompt.` — the in-flight tool is allowed to finish; it doesn't hard-kill mid-write.
+**Pass if:** you're returned to a clean `You:` prompt, the partial turn is **not**
+saved to history, and the next prompt works normally. Test on each OS you ship
+(Windows/macOS/Linux). Note: ESC at a y/n/p confirm prompt is handled by that
+prompt (the watcher pauses there); ESC stops during autonomous execution.
+
 ### G8 — Downloads are gated, but asked once per request
 **Prompt:** `find and download a public domain image of the Eiffel Tower`
 **Exercises:** `download_file` confirmation, asked **once per turn** (first approval

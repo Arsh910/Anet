@@ -28,8 +28,14 @@ Set up a scratch area first:
 **Pass if:** a y/n confirmation appears, command runs, version printed.
 
 ### T5 — process_tool (stream until pattern)
-**Prompt:** `start "python -c \"import time; [print(i) or time.sleep(0.2) for i in range(10)]\"" and stop streaming once you see the number 5`
-**Pass if:** output streams and stops around the matched pattern (not the full 10).
+**Setup:** `create scratch/tools/count.py that prints the numbers 0 to 9 one per line, sleeping 0.3 seconds between each (flush each line)`
+**Prompt:** `run scratch/tools/count.py and stop it the moment its output shows the number 5 — don't let it run to the end`
+**Exercises:** `process_tool` with `success_pattern="5"` and early termination
+**Watch for:** the agent picks **process_tool** (not shell_tool). The clean script path
+avoids the nested-quote escaping that breaks the command otherwise.
+**Pass if:** it stops at/around 5 and does **not** print 6–9. If it routes to
+`shell_tool` and prints the full 0–9, it did **not** exercise process_tool — rephrase
+explicitly: `use process_tool to run scratch/tools/count.py and stop as soon as you see 5`.
 
 ### T6 — diagnose_tool (linters)
 **Prompt:** `run diagnostics on scratch/tools/demo.py and report any problems`

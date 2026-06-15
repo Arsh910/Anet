@@ -7,7 +7,7 @@ Exposes simple operations: add, sub, mul, div, plus a small dispatcher
 
 from typing import Callable, Dict
 
-__all__ = ["add", "sub", "mul", "div", "calculate", "subtotal", "subscribe"]
+__all__ = ["add", "subtract", "mul", "div", "calculate", "subtotal", "subscribe"]
 
 
 def add(a: float, b: float) -> float:
@@ -15,11 +15,11 @@ def add(a: float, b: float) -> float:
     return a + b
 
 
-def sub(a: float, b: float) -> float:
+def subtract(a: float, b: float) -> float:
     """Return a - b.
 
     Example:
-        >>> sub(5, 3)
+        >>> subtract(5, 3)
         2
     """
     return a - b
@@ -40,7 +40,7 @@ def div(a: float, b: float) -> float:
 # Name-to-function lookup table used by calculate().
 OPERATIONS: Dict[str, Callable[[float, float], float]] = {
     "add": add,
-    "sub": sub,
+    "sub": subtract,
     "mul": mul,
     "div": div,
 }
@@ -54,7 +54,7 @@ def calculate(op: str, a: float, b: float) -> float:
 
 
 # A direct alias pointing at the same function object.
-subtract_alias = sub
+subtract_alias = subtract
 
 
 def subtotal(values):
@@ -71,15 +71,15 @@ def subscribe(callback: Callable) -> None:
 
 
 def run_demo() -> None:
-    """Exercise every operation, including sub(), and print the results."""
+    """Exercise every operation, including subtract(), and print the results."""
     print("add(10, 4) =", add(10, 4))
-    print("sub(10, 4) =", sub(10, 4))
+    print("subtract(10, 4) =", subtract(10, 4))
     print("mul(10, 4) =", mul(10, 4))
     print("div(10, 4) =", div(10, 4))
     print("calculate('sub', 10, 4) =", calculate("sub", 10, 4))
     print("subtract_alias(10, 4) =", subtract_alias(10, 4))
     print("subtotal([1, 2, 3]) =", subtotal([1, 2, 3]))
-    subscribe(sub)
+    subscribe(subtract)
 
 
 if __name__ == "__main__":
