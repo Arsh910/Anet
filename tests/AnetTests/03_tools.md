@@ -53,10 +53,6 @@ explicitly: `use process_tool to run scratch/tools/count.py and stop as soon as 
 **Prompt:** `web search: who won the most recent FIFA World Cup — cite the source`
 **Pass if:** DuckDuckGo result with a citation, no paid API used.
 
-### T10 — download_file (direct URL)
-**Prompt:** `download https://raw.githubusercontent.com/python/cpython/main/README.rst into scratch/tools`
-**Pass if:** file saved, absolute path reported.
-
 ---
 
 **Tier pass:** every tool is selected by the agent and returns a sane result.

@@ -143,39 +143,6 @@ def _dedup_reply(text: str) -> str:
     return text
 
 
-# ── Routing guard (file_agent → code_agent for code tasks) ───────────────────
-
-_CODE_SIGNALS: frozenset[str] = frozenset({
-    ".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".scss",
-    ".json", ".yaml", ".yml", ".toml", ".vue", ".svelte",
-    "react", "component", "tailwind", "bootstrap",
-    "python", "typescript", "javascript", "npm", "vite", "webpack",
-    "import", "export", "function", "class", "const ", "let ", "def ",
-    "fix", "edit ", "update ", "refactor", "implement", "add feature",
-    "change the", "modify ", "rewrite", "rename ", "remove ",
-    "layout", "styling", "frontend", "backend", " ui ", "interface",
-    "bug", "error", " code", "source", "project",
-})
-
-_FILE_ONLY_SIGNALS: frozenset[str] = frozenset({
-    "copy", "move", "delete", "zip", "unzip", "compress", "extract",
-    "rename folder", "create folder", "list folder",
-})
-
-
-def _coerce_routing(steps: list[dict]) -> list[dict]:
-    for step in steps:
-        if step.get("agent") != "file_agent":
-            continue
-        task_lower = step.get("task", "").lower()
-        has_code      = any(sig in task_lower for sig in _CODE_SIGNALS)
-        has_file_only = any(sig in task_lower for sig in _FILE_ONLY_SIGNALS)
-        if has_code and not has_file_only:
-            print(f"[engine] routing guard: file_agent → code_agent for task: {step.get('task','')[:80]!r}", file=sys.stderr)
-            step["agent"] = "code_agent"
-    return steps
-
-
 def _keyword_fallback(user_msg: str, agents: list[dict]) -> dict:
     plannable = [a for a in agents if a["name"] != "checker_agent"]
     lower = user_msg.lower()
@@ -680,7 +647,6 @@ class Engine:
         for i, s in enumerate(steps):
             if "id" not in s:
                 s["id"] = i + 1
-        steps = _coerce_routing(steps)
         return {"type": "plan", "steps": steps}
 
     # ── Executor ──────────────────────────────────────────────────────────────

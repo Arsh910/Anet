@@ -105,9 +105,11 @@ def _write_file(params: dict) -> dict:
 def _create_folder(params: dict) -> dict:
     path = params.get("path", "")
     p = Path(path)
+    already_existed = p.exists()
     try:
         p.mkdir(parents=True, exist_ok=True)
-        return {"result": f"Folder created: {path}", "path": str(p)}
+        msg = f"Folder already exists: {path}" if already_existed else f"Folder created: {path}"
+        return {"result": msg, "path": str(p), "already_existed": already_existed}
     except Exception as exc:
         return {"error": f"create_folder failed — {exc}"}
 
