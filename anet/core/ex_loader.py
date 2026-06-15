@@ -143,11 +143,11 @@ def load_ex_agents() -> list[dict]:
 
 def get_extra_for_builtins() -> dict[str, dict]:
     """
-    Read anet.config.yaml agents section for extra_tools and mcp entries
+    Read anet.config.yaml agents section for extra_tools, task_types, and mcp entries
     so users can extend built-in agents without editing agents_config.py.
 
     Returns:
-      { agent_name: { "tools": [tool_names], "mcp": [server_names] } }
+      { agent_name: { "tools": [tool_names], "mcp": [server_names], "task_types": [types] } }
     """
     try:
         from anet.core.config_loader import load as _load_anet
@@ -158,7 +158,12 @@ def get_extra_for_builtins() -> dict[str, dict]:
     result: dict[str, dict] = {}
     for agent_name, overrides in (cfg.get("agents") or {}).items():
         extra_tools = list(overrides.get("extra_tools") or [])
+        task_types  = list(overrides.get("task_types") or [])
         mcp         = list(overrides.get("mcp") or [])
-        if extra_tools or mcp:
-            result[agent_name] = {"tools": extra_tools, "mcp": mcp}
+        if extra_tools or mcp or task_types:
+            result[agent_name] = {
+                "tools": extra_tools,
+                "mcp": mcp,
+                "task_types": task_types,
+            }
     return result

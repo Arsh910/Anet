@@ -19,6 +19,15 @@ skills:
   creation_threshold: 6    # min tool calls before skill creation is considered
   curator_min_skills: 5    # min skill files before Curator runs at startup
   max_injected: 3          # max skills injected per agent task
+  stale_after_days: 30     # Curator archives agent-created skills unused this long
+  curator_interval_hours: 12  # Curator won't re-run more often than this
+
+# Context management — when the conversation grows long, prompt the user to
+# compress (summarise old messages into one block) or forget (drop the oldest).
+context:
+  enabled: true     # set false to never prompt
+  threshold: 40     # message count that triggers the prompt
+  keep: 20          # most-recent messages retained after compress/forget
 
 # User profile — built automatically at session end and injected into planner
 # Memory nudge — every N turns the agent is prompted to save important context
@@ -39,7 +48,7 @@ persona:
 # Manager (plans and coordinates all requests)
 # Default: gemini-2.5-pro via google
 manager:
-    model: anthropic/claude-opus-4.8
+    model: anthropic/claude-sonnet-4.6
     provider: openrouter
 
 # Per-agent overrides — model, provider, max_steps, extra_tools, and mcp can be set here.
@@ -71,22 +80,27 @@ agents:
     provider: openrouter
 
   computer_agent:
-    model: moonshotai/kimi-k2.6:free
+    model: nex-agi/nex-n2-pro:free
     provider: openrouter
 
   checker_agent:
-    model: anthropic/claude-haiku-4.5
+    model: nex-agi/nex-n2-pro:free
     provider: openrouter
 
   file_agent:
-    model: moonshotai/kimi-k2.6:free
+    model: nex-agi/nex-n2-pro:free
     provider: openrouter
+    mcp: [playwright]
+    task_types:
+      - "playwrite mcp"
 
   code_agent:
-    model: anthropic/claude-opus-4.8
+    model: anthropic/claude-haiku-4.5
     provider: openrouter
-    extra_tools: [wifi_pumpkin]
     mcp: [codegraph]
+    task_types:
+      - "codegraph mcp"
+    
 
 # ── Provider / model reference ────────────────────────────────────────────────
 #

@@ -1,0 +1,85 @@
+  You are a senior product designer. Design a complete, cohesive UI design system and
+  high-fidelity mockups for "Anet" — a desktop control-room dashboard for a local
+  multi-agent AI assistant. Think Linear × Vercel × Raycast: minimalist, precise,
+  calm, and unmistakably a serious developer-tool startup product.
+
+  ── THE PRODUCT ─────────────────────────────────────────────────────────────────
+  Anet orchestrates a team of specialized AI agents (a Manager that plans and routes,
+  plus Code, Research, File, Computer, and Checker agents, and user-added custom
+  agents). The dashboard lets a developer watch the agents work in real time, inspect
+  them, enable/disable them, and add new ones. It is a "mission control," not a chat app.
+
+  ── WHAT TO DESIGN (single-screen desktop app, 1440×900) ────────────────────────
+  A control-room layout with five regions:
+
+  1. TOP BAR — Anet wordmark/logo, current session name + model badge (e.g.
+     "claude-sonnet-4.6"), a live connection indicator (WebSocket status dot), global
+     actions (new session, settings, theme toggle), and a subtle system-status pill
+     (idle / working / error).
+
+  2. LEFT PANEL — the agent roster: a clean list of agents, each row showing an agent
+     avatar/icon (lucide-react), name, role, a status dot (idle / working / disabled),
+     and a quick on/off toggle. A search field and an "Add agent" button at the bottom.
+     Collapsible.
+
+  3. CENTER — a live node-graph (built on ReactFlow) visualizing the orchestration:
+     the Manager node at the center routing to agent nodes, animated edges showing
+     active delegation/data flow, and "spawn" sub-agent relationships. Nodes must look
+     premium: rounded cards with the agent icon, name, model, a status pulse when
+     working, and a faint glow on the active path. Design the node, the edge (idle +
+     animated active states), and the empty-canvas state.
+
+  4. RIGHT PANEL — an inspector for the selected agent: model + provider, assigned
+     tools (as chips), max-steps, current task, recent activity, and enable/disable.
+     Clean key/value layout with generous whitespace. Collapsible.
+
+  5. BOTTOM LOG — a real-time streaming activity log (terminal-adjacent but refined):
+     timestamped entries, color-coded by level (info / tool-call / success / warning /
+     error), monospace for code/paths, auto-scroll, collapsible drawer.
+
+  Also design: an "Add Agent" modal (path input + scan/validate + confirm), status
+  badges, empty states, loading/skeleton states, and a toast/notification.
+
+  ── VISUAL DIRECTION ────────────────────────────────────────────────────────────
+  - Minimalist, lots of negative space, strong typographic hierarchy, near-zero
+    decoration. Every pixel earns its place.
+  - Dark-mode-first (this is a dev tool), with a fully designed light theme too.
+  - One restrained accent color used purposefully (active states, primary actions, the
+    "working" pulse) — propose the accent. Avoid rainbow; semantic colors only for
+    status (success/warn/error/info).
+  - Soft, layered surfaces (subtle elevation via low-contrast borders + very gentle
+    shadows), not heavy drop shadows. Crisp 1px hairlines.
+  - A quiet sense of "alive": tasteful micro-motion — status pulses, edge flow,
+    smooth panel transitions — never bouncy or playful.
+
+  ── DESIGN SYSTEM TO DELIVER (as tokens) ────────────────────────────────────────
+  - Color: full token set for both themes — bg (base/raised/overlay), border, text
+    (primary/secondary/muted), accent (default/hover/subtle), and semantic
+    success/warning/error/info. Give exact hex values.
+  - Typography: a clean geometric/grotesque sans for UI (e.g. Inter) + a monospace for
+    logs/code (e.g. JetBrains Mono). Define a type scale (sizes, weights, line-heights)
+    and where each is used.
+  - Spacing: a 4px base scale. Radius scale (small chips → cards → modal).
+  - Elevation: 3–4 levels. Define border + shadow per level per theme.
+  - Motion: durations + easing for hovers, panel collapse, status pulse, edge flow.
+  - Iconography: lucide-react, consistent stroke width.
+
+  ── INSPIRATION ─────────────────────────────────────────────────────────────────
+  Linear (restraint, hierarchy, dark surfaces), Vercel/Geist (typographic calm,
+  hairlines), Raycast (density done elegantly), Resend (premium minimal marketing-grade
+  polish). Do NOT copy any of them — synthesize a distinct Anet identity.
+
+  ── CONSTRAINTS ─────────────────────────────────────────────────────────────────
+  Must be implementable in React + Vite with ReactFlow and lucide-react. Real-time,
+  data-dense, but never cluttered. Accessible contrast in both themes.
+
+  ── DELIVERABLE ─────────────────────────────────────────────────────────────────
+  1. A short brand/mood statement (3–4 lines) and the chosen accent + rationale.
+  2. The full design-token sheet (both themes) as a table or :root CSS variables.
+  3. High-fidelity mockups of the full dashboard in BOTH dark and light themes.
+  4. Detailed component specs + states for: agent node, active edge, agent roster row,
+     inspector panel, log entry, status badge, Add-Agent modal, top bar.
+  5. One "everything working at once" hero shot (manager routing to 3 active agents,
+     log streaming, an agent selected in the inspector).
+
+  Present it as a clean, organized design spec I can hand to engineering.

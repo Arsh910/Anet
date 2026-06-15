@@ -30,3 +30,15 @@ on_confirm: ContextVar[Callable[[str, str, dict], Awaitable[bool]]] = ContextVar
 on_output: ContextVar[Callable[[str], None]] = ContextVar(
     "on_output", default=lambda _: None
 )
+
+# Ask-user callback — lets a tool pause mid-task and ask the user a clarifying
+# question, returning their free-text answer.
+# Signature: async (question: str, options: list[str]) -> str
+# Default (headless/non-interactive) returns a note so the agent proceeds on its
+# own best judgment instead of hanging. main.py installs the real prompt.
+async def _no_user(question: str, options=None) -> str:
+    return "[no user is available to answer — proceed with your best assumption and note it]"
+
+on_ask: ContextVar[Callable[[str, list], Awaitable[str]]] = ContextVar(
+    "on_ask", default=_no_user
+)

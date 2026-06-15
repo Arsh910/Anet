@@ -1,232 +1,120 @@
-import React, { useMemo, useCallback, useEffect, useRef } from 'react'
+import React, { useMemo, useState } from 'react'
 import ReactFlow, {
-  Background,
-  Controls,
-  useNodesState,
-  useEdgesState,
-  ReactFlowProvider,
-  useReactFlow,
-  BackgroundVariant,
+  Background, BackgroundVariant, ReactFlowProvider, useReactFlow, MarkerType,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { Minus, Plus, Maximize2, Circle } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import AgentNode from './graph/AgentNode'
-import AgentEdge from './graph/AgentEdge'
 
 const nodeTypes = { agentNode: AgentNode }
-const edgeTypes = { agentEdge: AgentEdge }
 
-const MANAGER_NODE = {
-  id: 'manager',
-  type: 'agentNode',
-  position: { x: 0, y: 0 },
-  data: {
-    agent: {
-      name: 'manager',
-      status: 'active',
-      model: 'system',
-      tasks_today: null,
-      tools: [],
-    },
-  },
+// Fractional positions (from design.js) mapped onto a virtual canvas.
+const POS = {
+  manager:         { x: 0.50, y: 0.55 },
+  code:            { x: 0.50, y: 0.18 },
+  research:        { x: 0.84, y: 0.36 },
+  checker:         { x: 0.40, y: 0.80 },
+  file:            { x: 0.84, y: 0.78 },
+  computer:        { x: 0.52, y: 0.96 },
+  'design-critic': { x: 0.14, y: 0.36 },
 }
+const CANVAS = { w: 900, h: 560 }
 
-function buildLayout(agents, containerWidth) {
-  const width = containerWidth || 800
-  const centerX = width / 2
-
-  // Manager at top center (subtract half node width ~24px)
-  const managerX = centerX - 24
-  const managerY = 40
-
-  const COLS = 4
-  const H_SPACING = 130
-  const V_SPACING = 120
-
-  const nodes = [
-    {
-      ...MANAGER_NODE,
-      position: { x: managerX, y: managerY },
-    },
-  ]
-
-  agents.forEach((agent, idx) => {
-    const row = Math.floor(idx / COLS)
-    const col = idx % COLS
-    const rowCount = Math.min(COLS, agents.length - row * COLS)
-    const rowWidth = (rowCount - 1) * H_SPACING
-    const rowStartX = centerX - rowWidth / 2 - 24
-    const x = rowStartX + col * H_SPACING
-    const y = managerY + 160 + row * V_SPACING
-
-    nodes.push({
-      id: agent.name,
-      type: 'agentNode',
-      position: { x, y },
-      data: { agent },
-    })
-  })
-
-  return nodes
-}
-
-function buildEdges(agents, setSelectedAgent) {
-  return agents.map(agent => {
-    const isActive = agent.status === 'running' || agent.status === 'async'
-    const isAsync = agent.status === 'async'
-    return {
-      id: `manager-${agent.name}`,
-      source: 'manager',
-      target: agent.name,
-      type: 'agentEdge',
-      data: { active: isActive, asyncWait: isAsync },
-    }
-  })
+function colorFor(state) {
+  if (state === 'active') return 'var(--accent)'
+  if (state === 'disabled') return 'rgba(120,120,128,0.18)'
+  return 'rgba(150,150,160,0.28)'
 }
 
 function GraphInner() {
-  const agents = useStore(s => s.agents)
-  const setSelectedAgent = useStore(s => s.setSelectedAgent)
-  const [nodes, setNodes, onNodesChange] = useNodesState([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const { fitView } = useReactFlow()
-  const containerRef = useRef(null)
-  const didFitRef = useRef(false)
+  const { agents, edges, setSelectedAgentId } = useStore()
+  const { zoomIn, zoomOut, fitView } = useReactFlow()
+  const [zoom, setZoom] = useState(100)
 
-  // Inject onSelect into node data
-  const agentsWithSelect = useMemo(() =>
-    agents.map(a => ({ ...a })),
-    [agents]
-  )
+  const flowNodes = useMemo(() => {
+    const nodes = agents
+      .filter(a => POS[a.id])
+      .map(a => ({
+        id: a.id,
+        type: 'agentNode',
+        position: { x: POS[a.id].x * CANVAS.w, y: POS[a.id].y * CANVAS.h },
+        data: { agent: a },
+      }))
+    // ephemeral spawned node above Code
+    nodes.push({
+      id: 'test-runner',
+      type: 'agentNode',
+      position: { x: 0.52 * CANVAS.w, y: 0.02 * CANVAS.h },
+      data: { agent: { id: 'test-runner', name: 'test-runner', variant: 'spawn' } },
+    })
+    return nodes
+  }, [agents])
 
-  const containerWidth = containerRef.current?.offsetWidth || 800
-
-  useEffect(() => {
-    const builtNodes = buildLayout(agentsWithSelect, containerWidth).map(n => ({
-      ...n,
-      data: {
-        ...n.data,
-        onSelect: setSelectedAgent,
+  const flowEdges = useMemo(() => {
+    const out = edges.map(e => ({
+      id: `${e.from}-${e.to}`,
+      source: e.from,
+      target: e.to,
+      className: e.state === 'active' ? 'active' : '',
+      animated: false,
+      style: {
+        stroke: colorFor(e.state),
+        strokeWidth: e.state === 'active' ? 1.8 : 1.2,
+        strokeDasharray: e.state === 'idle' ? '4 5' : undefined,
+        opacity: e.state === 'disabled' ? 0.5 : 1,
       },
+      markerEnd: { type: MarkerType.ArrowClosed, color: colorFor(e.state), width: 14, height: 14 },
     }))
-    const builtEdges = buildEdges(agentsWithSelect, setSelectedAgent)
-    setNodes(builtNodes)
-    setEdges(builtEdges)
-  }, [agentsWithSelect, containerWidth, setSelectedAgent])
+    // code -> spawned test-runner (vertical dashed)
+    out.push({
+      id: 'code-test-runner',
+      source: 'code',
+      target: 'test-runner',
+      className: 'active',
+      style: { stroke: 'var(--accent)', strokeWidth: 1.6, strokeDasharray: '5 4' },
+    })
+    return out
+  }, [edges])
 
-  // fitView after initial load
-  useEffect(() => {
-    if (nodes.length > 0 && !didFitRef.current) {
-      setTimeout(() => {
-        fitView({ padding: 0.2, duration: 300 })
-        didFitRef.current = true
-      }, 100)
-    }
-  }, [nodes, fitView])
+  const onNodeClick = (_e, node) => {
+    if (node.id !== 'test-runner') setSelectedAgentId(node.id)
+  }
 
-  const handleNodeClick = useCallback((event, node) => {
-    if (node.data?.agent) {
-      setSelectedAgent(node.data.agent)
-    }
-  }, [setSelectedAgent])
-
-  const handleFitView = useCallback(() => {
-    fitView({ padding: 0.2, duration: 300 })
-  }, [fitView])
+  const onMove = (_e, vp) => setZoom(Math.round(vp.zoom * 100))
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <>
+      <div className="graph-tab"><Circle size={8} fill="var(--accent)" color="var(--accent)" /> Orchestration graph</div>
+      <div className="graph-toolbar">
+        <button className="icon-btn" onClick={() => zoomOut()} title="Zoom out"><Minus size={15} /></button>
+        <span className="zoom-val">{zoom}%</span>
+        <button className="icon-btn" onClick={() => zoomIn()} title="Zoom in"><Plus size={15} /></button>
+        <button className="icon-btn" onClick={() => fitView({ padding: 0.2, duration: 300 })} title="Fit"><Maximize2 size={14} /></button>
+      </div>
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
+        nodes={flowNodes}
+        edges={flowEdges}
         nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        fitView={false}
-        attributionPosition="bottom-right"
-        proOptions={{ hideAttribution: true }}
-        style={{ background: '#0b0d10' }}
-        minZoom={0.3}
+        onNodeClick={onNodeClick}
+        onMove={onMove}
+        fitView
+        fitViewOptions={{ padding: 0.18 }}
+        minZoom={0.4}
         maxZoom={2}
+        proOptions={{ hideAttribution: true }}
+        nodesDraggable
+        nodesConnectable={false}
       >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={24}
-          size={1}
-          color="rgba(255,255,255,0.04)"
-        />
-        <Controls
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.07)',
-            borderRadius: 6,
-          }}
-        />
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="rgba(150,150,160,0.08)" />
       </ReactFlow>
-
-      {/* Fit view button */}
-      <button
-        onClick={handleFitView}
-        style={{
-          position: 'absolute',
-          top: 10,
-          right: 10,
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.07)',
-          borderRadius: 4,
-          color: 'rgba(255,255,255,0.4)',
-          fontSize: 10,
-          padding: '4px 9px',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          zIndex: 5,
-          transition: 'color 0.15s, background 0.15s',
-        }}
-        onMouseEnter={e => {
-          e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
-          e.currentTarget.style.color = '#e2e4e8'
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
-          e.currentTarget.style.color = 'rgba(255,255,255,0.4)'
-        }}
-      >
-        Fit
-      </button>
-
-      {/* Empty state overlay */}
-      {agents.length === 0 && (
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          pointerEvents: 'none',
-        }}>
-          <div style={{
-            fontSize: 11,
-            color: 'rgba(255,255,255,0.15)',
-            textAlign: 'center',
-          }}>
-            No agents connected
-          </div>
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.08)' }}>
-            Register an agent to visualize the network
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   )
 }
 
 export default function CenterGraph() {
   return (
-    <div style={{ flex: 1, height: '100%', background: '#0b0d10', position: 'relative', minWidth: 0 }}>
+    <div className="graph-wrap">
       <ReactFlowProvider>
         <GraphInner />
       </ReactFlowProvider>

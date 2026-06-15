@@ -1,28 +1,43 @@
-# Web dashboard (server.py)
+# ── Web dashboard (server.py) ──────────────────────────────────────────────────
 fastapi
 uvicorn[standard]
+pydantic              # request/response models in server.py
 pyyaml
 
-# mcp 
+# ── MCP ────────────────────────────────────────────────────────────────────────
 mcp
 
-# Core runtime
+# ── Core runtime ─────────────────────────────────────────────────────────────--
 openai
 anthropic
 python-dotenv
 httpx
 rich
 prompt_toolkit
-ddgs
+ddgs                  # web_search (DuckDuckGo, no API key)
 
-# Conversation persistence (replaces LangGraph AsyncSqliteSaver)
+# ── Conversation persistence (replaces LangGraph AsyncSqliteSaver) ──────────────
 aiosqlite
 
-# Vertex AI (optional — only needed for provider='vertex_google' or 'vertex_claude')
+# ── web_fetch (fetch a URL → clean markdown) ────────────────────────────────────
+beautifulsoup4        # HTML parsing
+lxml                  # preferred parser; falls back to stdlib html.parser if absent
+
+# ── file_tool ───────────────────────────────────────────────────────────────────
+send2trash            # safe delete (recycle bin) instead of permanent removal
+
+# ── Vertex AI (optional — only for provider='vertex_google' or 'vertex_claude') ─
 google-auth
 google-auth-httplib2
 
-# Desktop automation (open_app tool) — Windows only
+# ── Desktop automation (open_app tool) — Windows only ──────────────────────────
 pywinauto
 pyautogui
 Pillow
+
+# ── Dev / tests (optional) ──────────────────────────────────────────────────────
+# The tool unit tests under tests/AnetToolTests run on the stdlib alone:
+#   python tests/AnetToolTests/run_all.py
+# Install these only if you want pytest + mocked-HTTP (layer-3) tests later:
+# pytest
+# respx

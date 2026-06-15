@@ -30,6 +30,12 @@ TOOLS = [
         "enabled": True,
     },
     {
+        "name": "web_fetch",
+        "path": "anet.AnetTools.web_fetch",
+        "description": "Fetch a URL and read its content as clean markdown. Use after web_search to read a result, or for any doc/article/API-reference URL. For binaries use download_file.",
+        "enabled": True,
+    },
+    {
         "name": "file_tool",
         "path": "anet.AnetTools.file_tool",
         "description": "OS-level file operations: read/write files, create folders, copy/move/delete/rename, list directories, search, parse CSV/JSON, read line ranges, zip/unzip.",
@@ -99,6 +105,18 @@ TOOLS = [
         "name": "spawn_tool",
         "path": "anet.AnetTools.spawn_tool",
         "description": "Spawn a specialist sub-agent mid-task to delegate work and return its result. Auto-injected into every agent — no per-agent config needed.",
+        "enabled": True,
+    },
+    {
+        "name": "ask_user",
+        "path": "anet.AnetTools.ask_user",
+        "description": "Ask the user a clarifying question and wait for their answer. Use only when the task is genuinely ambiguous and guessing wrong would waste work.",
+        "enabled": True,
+    },
+    {
+        "name": "code_execution",
+        "path": "anet.AnetTools.code_execution",
+        "description": "Run a Python snippet and return its output (stdout + auto-printed trailing expression). Use for computation, data transforms, parsing, and verification.",
         "enabled": True,
     },
 ]

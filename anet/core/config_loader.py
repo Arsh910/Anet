@@ -51,7 +51,15 @@ def load_soul() -> str:
         _soul_cache = ""
         return _soul_cache
 
-    soul_path = _REPO_ROOT / cfg.get("soul_file", "SOUL.md")
+    # Prefer the user's home SOUL.md (seeded from the repo default on first run);
+    # fall back to the repo copy if the home one isn't there yet.
+    soul_file = cfg.get("soul_file", "SOUL.md")
+    try:
+        from anet.core.paths import soul_path as _home_soul_path
+        home_soul = _home_soul_path()
+    except Exception:
+        home_soul = None
+    soul_path = home_soul if (home_soul and home_soul.exists()) else _REPO_ROOT / soul_file
     if soul_path.exists():
         try:
             _soul_cache = soul_path.read_text(encoding="utf-8").strip()

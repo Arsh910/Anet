@@ -18,8 +18,6 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-_USER_PROFILE_PATH = Path(__file__).parents[2] / "memory" / "USER.md"
-
 _PROVIDERS = {
     "google":     ("https://generativelanguage.googleapis.com/v1beta/openai/", "GOOGLE_API_KEY"),
     "openrouter": ("https://openrouter.ai/api/v1",                             "OPENROUTER_API_KEY"),
@@ -100,6 +98,8 @@ async def run_memory_review(messages: list[dict], thread_id: str) -> None:
         if not history_text.strip():
             return
 
+        from anet.core.paths import user_profile_path
+        _USER_PROFILE_PATH = user_profile_path()
         current_md = (
             _USER_PROFILE_PATH.read_text(encoding="utf-8").strip()
             if _USER_PROFILE_PATH.exists() else ""

@@ -47,15 +47,35 @@ from anet.AnetAgents.agents_config import AGENTS
 from anet.core.tool_loader import load_tools
 from anet.core.engine import Engine, _manager_client as _engine_manager_client
 from anet.core.store import ConversationStore
-from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var
+from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var, on_ask as _ask_var
 from anet.core.config_loader import agent_overrides as _agent_overrides, manager_config as _manager_config
 from anet.core.ex_loader import load_ex_tools, load_ex_agents, get_extra_for_builtins
 from anet.core.mcp_loader import load_mcp_tools_for_agents
 
 _EX_CONFIG = Path(__file__).parent / "exanet.config.yaml"
 
-_MEMORY_DIR         = Path(__file__).parent / "memory"
-_USER_PROFILE_PATH  = _MEMORY_DIR / "USER.md"
+# Tools auto-added to EVERY agent (built-in or externally added) at startup,
+# so they never need to be listed per-agent in config. Only injected if the
+# tool actually loaded.
+_ALWAYS_TOOLS = ["ask_user"]
+
+from anet.core import paths as _anet_paths
+
+# Where user data lives. Default ~/.anet, overridable via the first-run prompt
+# or ANET_HOME. These module globals are re-resolved by _setup_anet_home() at
+# startup (after the prompt) and read by the session/profile helpers below.
+_MEMORY_DIR        = _anet_paths.sessions_dir()        # <home>/sessions/
+_SHARED_DB_PATH    = _MEMORY_DIR / "conversations.db"  # one db for all sessions, keyed by thread
+_USER_PROFILE_PATH = _anet_paths.user_profile_path()   # <home>/USER.md
+
+_USER_PROFILE_TEMPLATE = (
+    "## User Profile\n"
+    "<!-- Anet builds this automatically. Do not edit manually. -->\n\n"
+    "### Preferences\n\n"
+    "### Tech Stack\n\n"
+    "### Working Style\n\n"
+    "### Project Context\n"
+)
 
 # ── Memory nudge ──────────────────────────────────────────────────────────────
 _session_turn_count: int = 0   # increments on every real user message; reset on /new
@@ -112,8 +132,26 @@ console = Console()
 
 _LOG_TAIL = 6   # how many past steps to show above the spinner
 
-_CONTEXT_THRESHOLD = 40   # message count that triggers the compression prompt
-_CONTEXT_KEEP      = 20   # messages to retain after forget
+_CONTEXT_THRESHOLD = 40   # default: message count that triggers the prompt
+_CONTEXT_KEEP      = 20   # default: messages to retain after forget/compress
+
+# Tracks the message count at which we last prompted, so we don't nag on every
+# turn after the threshold is crossed. Reset to 0 on /new and after any
+# compress/forget action. See _context_check.
+_last_context_prompt_n: int = 0
+
+
+def _context_cfg() -> dict:
+    try:
+        from anet.core.config_loader import load as _load_cfg
+        return _load_cfg().get("context", {}) or {}
+    except Exception:
+        return {}
+
+
+def _ctx_enabled()   -> bool: return bool(_context_cfg().get("enabled", True))
+def _ctx_threshold() -> int:  return int(_context_cfg().get("threshold", _CONTEXT_THRESHOLD))
+def _ctx_keep()      -> int:  return int(_context_cfg().get("keep",      _CONTEXT_KEEP))
 
 class _LiveStatus:
     """Rich renderable: rolling step log + animated spinner + elapsed time."""
@@ -193,9 +231,10 @@ def _thinking_panel(steps: list[str]) -> Panel:
 # ── Context compression ───────────────────────────────────────────────────────
 
 async def _context_forget(store: ConversationStore, thread_id: str) -> None:
-    """Drop oldest messages, keep the last _CONTEXT_KEEP."""
+    """Drop oldest messages, keep the last `keep`."""
+    keep = _ctx_keep()
     messages = await store.load(thread_id)
-    kept = messages[-_CONTEXT_KEEP:]
+    kept = messages[-keep:]
     if len(kept) == len(messages):
         console.print("  [dim]Nothing old enough to forget.[/dim]\n")
         return
@@ -208,8 +247,9 @@ async def _context_forget(store: ConversationStore, thread_id: str) -> None:
 
 async def _context_compress(store: ConversationStore, thread_id: str) -> None:
     """Summarize old messages into one block, replace them in store."""
+    keep = _ctx_keep()
     messages = await store.load(thread_id)
-    to_compress = messages[:-_CONTEXT_KEEP]
+    to_compress = messages[:-keep]
     if not to_compress:
         console.print("  [dim]Nothing old enough to compress.[/dim]\n")
         return
@@ -245,29 +285,45 @@ async def _context_compress(store: ConversationStore, thread_id: str) -> None:
         console.print(f"  [red]Compression failed: {exc}[/red]\n")
         return
 
-    kept = messages[-_CONTEXT_KEEP:]
+    kept = messages[-keep:]
     new_messages = [{"role": "user", "content": f"[Earlier conversation — summarised]\n{summary}"}] + kept
     await store.replace_all(thread_id, new_messages)
     console.print(
         f"  [dim]Compressed {len(to_compress)} message(s) into a summary. "
-        f"{_CONTEXT_KEEP} recent messages kept.[/dim]\n"
+        f"{keep} recent messages kept.[/dim]\n"
     )
 
 
 async def _context_check(store: ConversationStore, thread_id: str) -> None:
-    """If message count exceeds threshold, offer forget / compress to the user."""
+    """When the conversation passes the threshold, offer compress / forget / skip.
+
+    Only prompts once per threshold crossing: after the user skips, it stays
+    quiet until the conversation grows by another `keep` messages, so it never
+    nags on every turn. Choosing compress/forget shrinks the history and resets
+    the tracker so the next crossing prompts normally.
+    """
+    global _last_context_prompt_n
+
+    if not _ctx_enabled():
+        return
     try:
         n = await store.message_count(thread_id)
     except Exception:
         return
 
-    if n < _CONTEXT_THRESHOLD:
+    threshold = _ctx_threshold()
+    keep      = _ctx_keep()
+    if n < threshold:
+        return
+    # Back-off: don't re-prompt until the history has grown another `keep`
+    # messages past where we last asked and the user chose to skip.
+    if _last_context_prompt_n and n < _last_context_prompt_n + keep:
         return
 
     console.print()
     console.print(f"  [yellow]Context is getting long ({n} messages).[/yellow]")
-    console.print(f"  [dim]  [f] forget   — drop oldest, keep last {_CONTEXT_KEEP}[/dim]")
-    console.print(f"  [dim]  [c] compress — summarise old messages into one block[/dim]")
+    console.print(f"  [dim]  [c] compress — summarise old messages, keep last {keep}[/dim]")
+    console.print(f"  [dim]  [f] forget   — drop oldest, keep last {keep}[/dim]")
     console.print(f"  [dim]  [s] skip     — continue as-is[/dim]")
 
     if _HAS_PT and _pt_session is not None:
@@ -279,10 +335,15 @@ async def _context_check(store: ConversationStore, thread_id: str) -> None:
     raw = raw.strip().lower()
     console.print()
 
-    if raw == "f":
-        await _context_forget(store, thread_id)
-    elif raw == "c":
+    if raw == "c":
         await _context_compress(store, thread_id)
+        _last_context_prompt_n = 0   # history shrank — let the next crossing prompt
+    elif raw == "f":
+        await _context_forget(store, thread_id)
+        _last_context_prompt_n = 0
+    else:
+        # skipped — remember where we asked so we don't prompt again every turn
+        _last_context_prompt_n = n
 
 
 # ── User profile update (called on any exit — clean, Ctrl+C, or interrupt) ────
@@ -529,34 +590,120 @@ def _confirm_summary(tool: str, action: str, args: dict) -> str:
     if tool == "file_tool":
         path = args.get("path") or args.get("src") or args.get("output_zip") or "?"
         return f"{action}: [bold]{path}[/bold]"
+    if tool == "download_file":
+        url = args.get("url", "?")
+        fn  = args.get("filename")
+        tail = f"\n  [dim]│[/dim]  [dim]save as: {fn}[/dim]" if fn else ""
+        return f"download: [bold]{url}[/bold]{tail}"
     if tool == "open_app":
         target = args.get("app_name") or args.get("window_title") or "?"
         return f"{action}: [bold]{target}[/bold]"
     return f"{tool}: {action}"
 
 
+def _dest_key(tool: str, args: dict) -> str | None:
+    """Return the argument key holding the destination path for a redirectable
+    create/place action, or None if this action has no path the user can redirect.
+    Used to offer the 'p = choose a different path' confirmation option."""
+    action = args.get("action", "")
+    if tool == "edit_tool":
+        return "path"
+    if tool == "file_tool":
+        return {
+            "write_file":    "path",
+            "create_folder": "path",
+            "copy_file":     "dst",
+            "move_file":     "dst",
+            "zip_files":     "output_zip",
+            "unzip_file":    "extract_to",
+        }.get(action)
+    return None
+
+
 def _make_confirm_fn(live: "Live") -> callable:
     """Returns a confirmation callback that pauses the spinner and asks the user.
     Uses an asyncio.Lock so concurrent tool calls queue up — never interleave."""
-    _allow_all = [False]
+    _allow_all      = [False]
+    _allow_download = [False]   # set after the first approved download — ask once per turn
     _lock = asyncio.Lock()
 
     async def _confirm(tool: str, action: str, args: dict) -> bool:
-        if _allow_all[0]:
+        if _allow_all[0] or (tool == "download_file" and _allow_download[0]):
             return True
 
         async with _lock:
-            # Another confirm may have set allow_all while we were waiting
-            if _allow_all[0]:
+            # Another confirm may have set allow_all / allow_download while we waited
+            if _allow_all[0] or (tool == "download_file" and _allow_download[0]):
                 return True
 
-            summary = _confirm_summary(tool, action, args)
+            summary  = _confirm_summary(tool, action, args)
+            dest_key = _dest_key(tool, args)
+            choices  = "y = yes · n = no · a = allow all remaining"
+            if dest_key:
+                choices += " · p = choose a different path"
 
             live.stop()
             console.print()
             console.print(f"  [bold cyan]┌─ Permission required[/bold cyan]")
             console.print(f"  [cyan]│[/cyan]  {summary}")
-            console.print(f"  [cyan]└─[/cyan] [dim]y = yes · n = no · a = allow all remaining[/dim]")
+            console.print(f"  [cyan]└─[/cyan] [dim]{choices}[/dim]")
+
+            async def _read(prompt: str) -> str:
+                if _HAS_PT and _pt_session is not None:
+                    return await _pt_session.prompt_async(prompt)
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(None, input, prompt)
+
+            raw = (await _read("  > ")).strip().lower()
+
+            # ── p = redirect the destination path, then proceed ───────────────
+            if dest_key and raw in ("p", "path"):
+                newp = (await _read("  new path > ")).strip().strip('"').strip("'")
+                console.print()
+                live.start()
+                if not newp:
+                    console.print("  [dim]no path given — cancelled[/dim]\n")
+                    return False
+                orig = str(args.get(dest_key) or "")
+                # A directory target keeps the original filename.
+                if orig and (newp.endswith(("/", "\\")) or os.path.isdir(newp)):
+                    newp = os.path.join(newp, os.path.basename(orig.rstrip("/\\")))
+                args[dest_key] = newp
+                console.print(f"  [green]→ using path:[/green] {newp}\n")
+                return True
+
+            console.print()
+            live.start()
+
+            if raw == "a":
+                _allow_all[0] = True
+                return True
+            approved = raw in ("y", "yes", "")
+            # First approved download covers the rest of this request (incl. retries).
+            if approved and tool == "download_file":
+                _allow_download[0] = True
+            return approved
+
+    return _confirm
+
+
+def _make_ask_fn(live: "Live") -> callable:
+    """Returns an ask-user callback that pauses the spinner, shows a clarifying
+    question (with optional numbered choices), and returns the user's answer.
+    Serialized with a Lock so concurrent agents never interleave prompts."""
+    _lock = asyncio.Lock()
+
+    async def _ask(question: str, options: list | None = None) -> str:
+        options = options or []
+        async with _lock:
+            live.stop()
+            console.print()
+            console.print("  [bold yellow]┌─ Anet needs your input[/bold yellow]")
+            console.print(f"  [yellow]│[/yellow]  {question}")
+            for i, opt in enumerate(options, 1):
+                console.print(f"  [yellow]│[/yellow]    [bold]{i}.[/bold] {opt}")
+            hint = "type your answer, or a number to pick" if options else "type your answer"
+            console.print(f"  [yellow]└─[/yellow] [dim]{hint}[/dim]")
 
             if _HAS_PT and _pt_session is not None:
                 raw = await _pt_session.prompt_async("  > ")
@@ -564,16 +711,18 @@ def _make_confirm_fn(live: "Live") -> callable:
                 loop = asyncio.get_event_loop()
                 raw = await loop.run_in_executor(None, input, "  > ")
 
-            raw = raw.strip().lower()
             console.print()
             live.start()
 
-            if raw == "a":
-                _allow_all[0] = True
-                return True
-            return raw in ("y", "yes", "")
+            raw = (raw or "").strip()
+            # A bare number selects the matching option.
+            if options and raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(options):
+                    return options[idx]
+            return raw
 
-    return _confirm
+    return _ask
 
 
 # ── Slash commands ────────────────────────────────────────────────────────────
@@ -589,6 +738,9 @@ _HELP_TEXT = """
   [bold cyan]/compress[/bold cyan]             Summarise old messages into one block
   [bold cyan]/profile[/bold cyan]              Show the current user profile (USER.md)
   [bold cyan]/skills[/bold cyan]               List all saved skills
+  [bold cyan]/newtool[/bold cyan] [dim]<path>[/dim]       Generate an ExTool __init__.py from existing code
+  [bold cyan]/addmcp[/bold cyan] [dim]<path>[/dim]        Draft + verify an MCP server config from its docs
+  [bold cyan]/mcptest[/bold cyan] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
   [bold cyan]/clear[/bold cyan]                Clear the screen
   [bold cyan]/help[/bold cyan]                 Show this message
 
@@ -618,8 +770,7 @@ def _list_session_dirs() -> list[Path]:
     """Return session dirs sorted newest first (by mtime)."""
     if not _MEMORY_DIR.exists():
         return []
-    dirs = [d for d in _MEMORY_DIR.iterdir()
-            if d.is_dir() and (d / "checkpoint.db").exists()]
+    dirs = [d for d in _MEMORY_DIR.iterdir() if d.is_dir()]
     return sorted(dirs, key=lambda d: d.stat().st_mtime, reverse=True)
 
 
@@ -653,8 +804,8 @@ def _print_sessions(current: str | None = None) -> None:
     console.print("  [bold]Saved sessions[/bold]")
     for d in dirs:
         sid    = d.name
-        db     = d / "checkpoint.db"
-        size   = f"{db.stat().st_size / 1024:.0f} KB" if db.exists() else "—"
+        count  = _session_msg_count(sid)
+        size   = f"{count} msg" if count else "empty"
         title  = _session_title(d)
         label  = f"[dim]{title}[/dim]" if title else ""
         marker = ""
@@ -697,10 +848,12 @@ async def _handle_slash(
         console.clear()
 
     elif command == "/new":
-        global _session_turn_count
+        global _session_turn_count, _last_context_prompt_n
         _session_turn_count = 0
+        _last_context_prompt_n = 0
         new_id = _new_session_id()
         _save_last_session(new_id)
+        (_MEMORY_DIR / new_id).mkdir(parents=True, exist_ok=True)
         config["configurable"]["thread_id"] = new_id
         console.print(f"\n  [dim]New session:[/dim] [bold]{new_id}[/bold]\n")
 
@@ -711,6 +864,7 @@ async def _handle_slash(
             console.print("  [dim]Usage: /session <name>[/dim]\n")
         else:
             _save_last_session(arg)
+            (_MEMORY_DIR / arg).mkdir(parents=True, exist_ok=True)
             config["configurable"]["thread_id"] = arg
             console.print(f"\n  [dim]Switched to session:[/dim] [bold]{arg}[/bold]\n")
 
@@ -718,6 +872,7 @@ async def _handle_slash(
         if arg:
             # /sessions <name> is an alias for /session <name>
             _save_last_session(arg)
+            (_MEMORY_DIR / arg).mkdir(parents=True, exist_ok=True)
             config["configurable"]["thread_id"] = arg
             console.print(f"\n  [dim]Switched to session:[/dim] [bold]{arg}[/bold]\n")
         else:
@@ -743,6 +898,20 @@ async def _handle_slash(
     elif command == "/skills":
         try:
             from anet.core import skill_manager as _sm
+            # /skills pin <name> | /skills unpin <name> — protect a skill from the curator
+            parts = arg.split(maxsplit=1) if arg else []
+            if parts and parts[0] in ("pin", "unpin"):
+                if len(parts) < 2:
+                    console.print(f"\n  [dim]Usage: /skills {parts[0]} <skill-name>[/dim]\n")
+                else:
+                    target = parts[1].strip().removesuffix(".md")
+                    ok = _sm.set_pinned(target, parts[0] == "pin")
+                    if ok:
+                        verb = "pinned" if parts[0] == "pin" else "unpinned"
+                        console.print(f"\n  [green]Skill '{target}' {verb}.[/green]\n")
+                    else:
+                        console.print(f"\n  [yellow]No skill named '{target}'.[/yellow]\n")
+                return False
             sdir = _sm._skills_dir()
             skill_files = sorted(sdir.glob("*.md")) if (sdir and sdir.exists()) else []
             if not skill_files:
@@ -752,12 +921,14 @@ async def _handle_slash(
                 t.add_column("Skill",      style="bold")
                 t.add_column("Applies to", style="dim")
                 t.add_column("Used",       justify="right", style="dim")
+                t.add_column("",           style="yellow")  # pin indicator
                 for f in skill_files:
                     name, applies_to, used = _sm.read_skill_header(f)
-                    t.add_row(name, applies_to or "—", str(used))
+                    pin = "📌" if _sm.is_pinned(f.stem) else ""
+                    t.add_row(name, applies_to or "—", str(used), pin)
                 console.print()
                 console.print(Panel(t, title="[bold]Skills[/bold]", border_style="cyan"))
-                console.print()
+                console.print("  [dim]/skills pin <name> to protect a skill from the curator[/dim]\n")
         except Exception as exc:
             console.print(f"\n  [red]Error: {exc}[/red]\n")
 
@@ -777,11 +948,190 @@ async def _handle_slash(
         else:
             console.print("\n  [dim]No user profile yet.[/dim]\n")
 
+    elif command == "/newtool":
+        if not arg:
+            console.print(
+                "\n  [yellow]Usage:[/yellow] /newtool <path-to-tool-source>\n"
+                "  [dim]Generates ExTools/<name>/__init__.py from existing code, validates it,[/dim]\n"
+                "  [dim]and prints the registration stanza. Example: /newtool ExTools/myzip/myzip_repo[/dim]\n"
+            )
+        else:
+            await _run_toolsmith(arg, tool_map)
+
+    elif command == "/addmcp":
+        if not arg:
+            console.print(
+                "\n  [yellow]Usage:[/yellow] /addmcp <path-to-mcp-repo-or-readme>\n"
+                "  [dim]Drafts mcps/<name>/config.yaml from the server's docs, verifies it[/dim]\n"
+                "  [dim]connects, and prints the wiring. Example: /addmcp ../some-mcp-server[/dim]\n"
+            )
+        else:
+            await _run_mcpsmith(arg, tool_map)
+
+    elif command == "/mcptest":
+        if not arg:
+            console.print(
+                "\n  [yellow]Usage:[/yellow] /mcptest <server-name>\n"
+                "  [dim]Connect-tests an existing mcps/<name>/config.yaml and lists its tools.[/dim]\n"
+            )
+        else:
+            await _run_mcp_doctor(arg.split()[0])
+
     else:
         console.print(f"\n  [yellow]Unknown command:[/yellow] {command}  "
                       f"[dim](type /help for a list)[/dim]\n")
 
     return False
+
+
+# ── Tool generator (/newtool) ─────────────────────────────────────────────────
+
+def _render_diff_panel(text: str) -> None:
+    """Print a colored unified diff (module-level so /newtool can reuse it)."""
+    lines   = text.splitlines()
+    summary = lines[0] if lines else ""
+    diff    = Text()
+    in_diff = False
+    for line in lines[1:]:
+        if line.startswith("---") or line.startswith("+++"):
+            in_diff = True
+            diff.append(line + "\n", style="bold")
+        elif line.startswith("@@"):
+            in_diff = True
+            diff.append(line + "\n", style="cyan")
+        elif line.startswith("+"):
+            diff.append(line + "\n", style="green")
+        elif line.startswith("-"):
+            diff.append(line + "\n", style="red")
+        elif in_diff:
+            diff.append(line + "\n", style="dim")
+    console.print(Panel(diff, title=f"[dim]{summary}[/dim]", border_style="dim",
+                        expand=False, padding=(0, 1)))
+
+
+async def _run_standalone_agent(agent_def: dict, user_message: str, tool_map: dict,
+                                banner: str) -> None:
+    """Run a standalone (non-manager) agent in a direct loop — shared by /newtool
+    and /addmcp. Bypasses the planner entirely.
+    """
+    from anet.core import orchestrator
+
+    agent = dict(agent_def)
+    name  = agent.get("name", "agent")
+    agent["tools"] = list(agent.get("tools") or [])
+    for t in _ALWAYS_TOOLS:                       # ask_user — needed for the confirm step
+        if t in tool_map and t not in agent["tools"]:
+            agent["tools"].append(t)
+
+    # Resolve model/provider: explicit agents.<name> override > manager model.
+    try:
+        from anet.core.config_loader import load as _cfg_load
+        override = (_cfg_load().get("agents") or {}).get(name) or {}
+    except Exception:
+        override = {}
+    try:
+        mcfg = _manager_config()
+    except Exception:
+        mcfg = {}
+    agent["model"]    = override.get("model")    or mcfg.get("model")    or "gemini-2.5-pro"
+    agent["provider"] = override.get("provider") or mcfg.get("provider") or "google"
+    if override.get("max_steps"):
+        agent["max_steps"] = int(override["max_steps"])
+
+    missing = [t for t in agent["tools"] if t not in tool_map]
+    if missing:
+        console.print(f"  [yellow]{name}: tools not loaded, skipping:[/yellow] {', '.join(missing)}")
+
+    console.print()
+    console.print(f"  [bold cyan]{name}[/bold cyan] [dim]{banner}[/dim]\n")
+
+    live_status = _LiveStatus()
+
+    def on_status(msg: str) -> None:
+        live_status.update(msg)
+
+    try:
+        with Live(live_status, console=console, refresh_per_second=12, transient=True) as live:
+            s_tk = _status_var.set(on_status)
+            t_tk = _token_var.set(lambda _: None)
+            c_tk = _confirm_var.set(_make_confirm_fn(live))
+            o_tk = _output_var.set(_render_diff_panel)
+            a_tk = _ask_var.set(_make_ask_fn(live))
+            try:
+                result = await orchestrator.run(
+                    agent=agent, tool_map=tool_map,
+                    user_message=user_message, history=[], on_status=on_status,
+                )
+            finally:
+                _status_var.reset(s_tk)
+                _token_var.reset(t_tk)
+                _confirm_var.reset(c_tk)
+                _output_var.reset(o_tk)
+                _ask_var.reset(a_tk)
+    except Exception as exc:
+        console.print(f"  [red]{name} error: {exc}[/red]\n")
+        return
+
+    text = (result or {}).get("text") or "Done."
+    console.print(Panel(Markdown(text), title=f"[bold]{name}[/bold]",
+                        border_style="green", padding=(1, 2)))
+    console.print()
+
+
+async def _run_toolsmith(repo_path: str, tool_map: dict) -> None:
+    """Scaffold an ExTool from existing code (the /newtool command)."""
+    from anet.AnetAgents.toolsmith import TOOLSMITH_AGENT
+    user_message = (
+        "Generate an ANet ExTool for the code at this path:\n"
+        f"{repo_path}\n\n"
+        "Follow your workflow exactly: explore the source, confirm the tool name and "
+        "capability with the user via ask_user, write ExTools/<tool_name>/__init__.py, "
+        "validate it with `python -m anet.core.extool_validator`, fix until it prints "
+        "PASS, then print the exanet.config.yaml registration stanza. "
+        "Do NOT edit any config files."
+    )
+    await _run_standalone_agent(
+        TOOLSMITH_AGENT, user_message, tool_map,
+        banner=f"scaffolding an ExTool from {repo_path}",
+    )
+
+
+async def _run_mcpsmith(source: str, tool_map: dict) -> None:
+    """Draft + verify an MCP server config from its docs/repo (the /addmcp command)."""
+    from anet.AnetAgents.mcpsmith import MCPSMITH_AGENT
+    user_message = (
+        "Integrate the MCP server documented at this path:\n"
+        f"{source}\n\n"
+        "Follow your workflow: read the docs/repo, confirm the server name and launch "
+        "command with the user via ask_user, write mcps/<name>/config.yaml, verify it "
+        "with `python -m anet.core.mcp_doctor <name>`, fix until it prints PASS, then "
+        "print the anet.config.yaml mcp: wiring. Do NOT edit any config files."
+    )
+    await _run_standalone_agent(
+        MCPSMITH_AGENT, user_message, tool_map,
+        banner=f"integrating an MCP server from {source}",
+    )
+
+
+async def _run_mcp_doctor(name: str) -> None:
+    """Connect-test an existing MCP server config (the /mcptest command)."""
+    from anet.core.mcp_doctor import diagnose
+    console.print()
+    console.print(f"  [bold cyan]mcp doctor[/bold cyan] [dim]testing[/dim] {name}\n")
+    try:
+        res = await diagnose(name)
+    except Exception as exc:
+        console.print(f"  [red]mcp doctor error: {exc}[/red]\n")
+        return
+    for line in res["messages"]:
+        style = "red" if line.startswith("FAIL") else ("green" if line.startswith("OK") else "dim")
+        console.print(f"  [{style}]{line}[/{style}]")
+    console.print()
+    if res["ok"]:
+        console.print(f"  [green]PASS[/green] — '{name}' connects with {len(res['tools'])} tool(s).")
+        console.print("  [dim]Add it to an agent's mcp: list in anet.config.yaml and restart ANet.[/dim]\n")
+    else:
+        console.print(f"  [red]INVALID[/red] — '{name}' did not connect (see FAIL lines).\n")
 
 
 # ── Chat turn (single request/response cycle) ─────────────────────────────────
@@ -884,6 +1234,7 @@ async def _chat_turn(
             token_tk   = _token_var.set(lambda _: None)
             confirm_tk = _confirm_var.set(_make_confirm_fn(live))
             output_tk  = _output_var.set(_render_diff)
+            ask_tk     = _ask_var.set(_make_ask_fn(live))
             try:
                 result = await engine.run_turn(thread_id, store, effective_input)
             finally:
@@ -891,6 +1242,7 @@ async def _chat_turn(
                 _token_var.reset(token_tk)
                 _confirm_var.reset(confirm_tk)
                 _output_var.reset(output_tk)
+                _ask_var.reset(ask_tk)
 
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted. Type 'exit' to quit.[/dim]")
@@ -916,7 +1268,7 @@ async def _chat_turn(
 
 # ── Session helpers ───────────────────────────────────────────────────────────
 
-_LAST_SESSION_FILE = Path(__file__).parent / "memory" / "last_session.txt"
+_LAST_SESSION_FILE = _anet_paths.sessions_dir() / "last_session.txt"
 
 
 def _new_session_id() -> str:
@@ -934,6 +1286,81 @@ def _load_last_session() -> str | None:
     return None
 
 
+def _session_msg_count(thread_id: str) -> int:
+    """Message count for a thread in the shared db (sync read, 0 if none/missing)."""
+    if not _SHARED_DB_PATH.exists():
+        return 0
+    import sqlite3
+    try:
+        con = sqlite3.connect(str(_SHARED_DB_PATH))
+        try:
+            cur = con.execute(
+                "SELECT COUNT(*) FROM messages WHERE thread = ?", (thread_id,)
+            )
+            row = cur.fetchone()
+            return row[0] if row else 0
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return 0
+
+
+def _migrate_per_session_dbs() -> None:
+    """One-time fold of legacy per-session <id>/checkpoint.db files into the
+    shared conversations.db. Rows are copied verbatim (thread, role, content),
+    which also repairs any rows misfiled by the old session-switch bug, since
+    the shared db keys purely by the thread column. Each migrated file is
+    renamed to checkpoint.db.migrated so it is never reprocessed."""
+    if not _MEMORY_DIR.exists():
+        return
+    import sqlite3
+
+    legacy = [
+        d / "checkpoint.db"
+        for d in _MEMORY_DIR.iterdir()
+        if d.is_dir() and (d / "checkpoint.db").exists()
+    ]
+    # Oldest first, so a conversation the old switch-bug split across two db
+    # files is reassembled in chronological order under its thread.
+    legacy.sort(key=lambda p: p.stat().st_mtime)
+    if not legacy:
+        return
+
+    try:
+        dst = sqlite3.connect(str(_SHARED_DB_PATH))
+    except sqlite3.Error:
+        return
+    try:
+        dst.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                thread  TEXT    NOT NULL,
+                role    TEXT    NOT NULL,
+                content TEXT    NOT NULL
+            )
+        """)
+        for db_file in legacy:
+            try:
+                src = sqlite3.connect(str(db_file))
+                try:
+                    rows = src.execute(
+                        "SELECT thread, role, content FROM messages ORDER BY id"
+                    ).fetchall()
+                finally:
+                    src.close()
+                if rows:
+                    dst.executemany(
+                        "INSERT INTO messages (thread, role, content) VALUES (?, ?, ?)",
+                        rows,
+                    )
+                    dst.commit()
+                db_file.rename(db_file.with_suffix(".db.migrated"))
+            except (sqlite3.Error, OSError):
+                continue
+    finally:
+        dst.close()
+
+
 def _resolve_session(args: argparse.Namespace) -> tuple[str, str]:
     """Return (thread_id, label) based on CLI args."""
     if args.session:
@@ -945,6 +1372,115 @@ def _resolve_session(args: argparse.Namespace) -> tuple[str, str]:
         console.print("[yellow]No previous session found — starting a new one.[/yellow]")
     sid = _new_session_id()
     return sid, f"[dim]new session:[/dim] [bold]{sid}[/bold]"
+
+
+# ── Anet home setup (first-run prompt + migration) ────────────────────────────
+
+def _prompt_for_home() -> Path:
+    """One-time prompt: ask where to store sessions, USER.md and SOUL.md."""
+    default = _anet_paths.DEFAULT_HOME
+    console.print()
+    console.print("  [bold]First-time setup[/bold]")
+    console.print(
+        "  [dim]Where should Anet store your sessions, USER.md and SOUL.md?[/dim]"
+    )
+    console.print(f"  [dim]Press Enter for the default:[/dim] [bold]{default}[/bold]")
+    try:
+        raw = input("  Path: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raw = ""
+    chosen = Path(raw).expanduser() if raw else default
+    try:
+        chosen.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        console.print(f"  [red]Could not create {chosen}: {exc} — using {default}[/red]")
+        chosen = default
+        chosen.mkdir(parents=True, exist_ok=True)
+    _anet_paths.save_home(chosen)
+    console.print(f"  [green]Saved.[/green] Anet will store data in [bold]{chosen}[/bold]\n")
+    return chosen
+
+
+def _seed_and_migrate(home: Path, repo: Path | None = None) -> None:
+    """On first run: seed SOUL.md/USER.md into the home dir and remove the old
+    in-repo sessions (the user opted to drop them)."""
+    import shutil
+    repo = repo or Path(__file__).parent
+    old_mem = repo / "memory"
+
+    # Seed SOUL.md from the repo default if the home copy is missing.
+    repo_soul, home_soul = repo / "SOUL.md", home / "SOUL.md"
+    if repo_soul.exists() and not home_soul.exists():
+        try:
+            shutil.copy2(repo_soul, home_soul)
+        except OSError:
+            pass
+
+    # Migrate the USER.md profile from the old in-repo location (preserve it),
+    # else create a fresh template.
+    home_user, old_user = home / "USER.md", old_mem / "USER.md"
+    if not home_user.exists():
+        try:
+            if old_user.exists():
+                shutil.copy2(old_user, home_user)
+            else:
+                home_user.write_text(_USER_PROFILE_TEMPLATE, encoding="utf-8")
+        except OSError:
+            pass
+
+    # Remove old in-repo sessions — the user asked to drop them, not migrate.
+    if old_mem.exists():
+        old_sessions = [
+            d for d in old_mem.iterdir()
+            if d.is_dir() and (d / "checkpoint.db").exists()
+        ]
+        if old_sessions:
+            console.print(
+                f"  [dim]Removing {len(old_sessions)} old session(s) from the repo...[/dim]"
+            )
+            for d in old_sessions:
+                shutil.rmtree(d, ignore_errors=True)
+        # Clean up legacy loose files now that USER.md is migrated.
+        for leftover in ("last_session.txt", "USER.md"):
+            p = old_mem / leftover
+            try:
+                if p.exists():
+                    p.unlink()
+            except OSError:
+                pass
+        try:
+            if not any(old_mem.iterdir()):
+                old_mem.rmdir()
+        except OSError:
+            pass
+
+
+def _setup_anet_home(interactive: bool = True) -> None:
+    """Resolve the home dir (prompting once on first run) and point the session
+    and profile globals at it."""
+    global _MEMORY_DIR, _SHARED_DB_PATH, _USER_PROFILE_PATH, _LAST_SESSION_FILE
+
+    home = _anet_paths.configured_home()
+    first_run = home is None
+    if first_run:
+        home = _prompt_for_home() if interactive else _anet_paths.DEFAULT_HOME
+
+    sessions = home / "sessions"
+    try:
+        sessions.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+
+    _MEMORY_DIR        = sessions
+    _SHARED_DB_PATH    = sessions / "conversations.db"
+    _USER_PROFILE_PATH = home / "USER.md"
+    _LAST_SESSION_FILE = sessions / "last_session.txt"
+
+    if first_run and interactive:
+        _seed_and_migrate(home)
+
+    # Fold any legacy per-session checkpoint.db files into the shared db.
+    _migrate_per_session_dbs()
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -959,23 +1495,21 @@ async def main() -> None:
                         help="List available saved sessions and exit")
     args, _ = parser.parse_known_args()
 
+    # Resolve where Anet stores user data (prompts once on first run).
+    # --list-sessions stays non-interactive: it just reads from the default/
+    # configured home without triggering setup.
+    _setup_anet_home(interactive=not args.list_sessions)
+
     # ── --list-sessions ───────────────────────────────────────────────────────
     if args.list_sessions:
         _list_sessions_cmd()
         return
 
-    # Create USER.md with initial structure on first run
+    # Ensure USER.md exists (first-run seeding handles the normal case; this
+    # also covers a user who deleted it).
     if not _USER_PROFILE_PATH.exists():
-        _MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-        _USER_PROFILE_PATH.write_text(
-            "## User Profile\n"
-            "<!-- Anet builds this automatically. Do not edit manually. -->\n\n"
-            "### Preferences\n\n"
-            "### Tech Stack\n\n"
-            "### Working Style\n\n"
-            "### Project Context\n",
-            encoding="utf-8",
-        )
+        _USER_PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _USER_PROFILE_PATH.write_text(_USER_PROFILE_TEMPLATE, encoding="utf-8")
 
     enabled_agents = [a for a in AGENTS if a.get("enabled", False)]
     if not enabled_agents:
@@ -989,12 +1523,12 @@ async def main() -> None:
     thread_id, session_label = _resolve_session(args)
     _save_last_session(thread_id)
 
-    # Each session gets its own subfolder: memory/<session_id>/
+    # All sessions share one db, keyed by thread_id. Each session keeps a
+    # subfolder (memory/<session_id>/) for metadata only (title.txt).
     session_dir = _MEMORY_DIR / thread_id
     session_dir.mkdir(parents=True, exist_ok=True)
-    db_path = str(session_dir / "checkpoint.db")
 
-    async with ConversationStore(db_path) as store:
+    async with ConversationStore(str(_SHARED_DB_PATH)) as store:
         config = {"configurable": {"thread_id": thread_id}}
         console.print(f"  {session_label}")
         console.print(f"  [dim]--resume to continue · /sessions to list · exit to quit[/dim]")
@@ -1021,7 +1555,7 @@ async def main() -> None:
             # ── 4. Merge all tools ────────────────────────────────────────────
             combined_tools = {**tool_map, **ex_tools}
 
-            # ── 5. Apply extra_tools/mcp from anet.config.yaml to built-ins ──
+            # ── 5. Apply extra_tools/mcp/task_types from anet.config.yaml to built-ins ──
             extra_map       = get_extra_for_builtins()
             merged_builtins = [dict(a) for a in enabled_agents]
             for agent in merged_builtins:
@@ -1029,6 +1563,9 @@ async def main() -> None:
                 for t in extra.get("tools", []):
                     if t not in agent["tools"]:
                         agent["tools"] = agent["tools"] + [t]
+                for tt in extra.get("task_types", []):
+                    if tt not in agent.get("task_types", []):
+                        agent["task_types"] = agent.get("task_types", []) + [tt]
                 if extra.get("mcp"):
                     agent["mcp"] = list(agent.get("mcp") or []) + extra["mcp"]
 
@@ -1038,6 +1575,17 @@ async def main() -> None:
             # ── 7. Connect MCP servers for every agent that needs them ────────
             mcp_tools = await load_mcp_tools_for_agents(all_agents)
             combined_tools.update(mcp_tools)
+
+            # ── 7.5 Auto-inject always-on tools into every agent ──────────────
+            # ask_user (and anything in _ALWAYS_TOOLS) is useful to every agent,
+            # so it's added here rather than listed in each agent's config —
+            # newly added agents pick it up automatically.
+            for agent in all_agents:
+                tools = list(agent.get("tools") or [])
+                for t in _ALWAYS_TOOLS:
+                    if t in combined_tools and t not in tools:
+                        tools.append(t)
+                agent["tools"] = tools
 
             # spawn_tool is not auto-injected — agents that need it declare it
             # explicitly in their tools list, same as any other tool.

@@ -18,14 +18,19 @@
             "   web_search(query='<topic>', type='image')\n"
             "   This returns a list with 'image_url' fields — these are direct downloadable URLs.\n"
             "   Results are pre-sorted: .jpeg first, then .png, then .webp, then .jpg.\n"
-            "   Pick the first result (highest priority format) and call download_file(url=<image_url>).\n\n"
+            "   PREFER an 'image_url' on upload.wikimedia.org — those are the most reliable\n"
+            "   public-domain direct files. Pick it and call download_file(url=<image_url>).\n\n"
             "2. If image search returns nothing useful, try Wikimedia Commons:\n"
-            "   web_search(query='site:commons.wikimedia.org File: <topic>')\n"
+            "   web_search(query='<topic> site:commons.wikimedia.org')\n"
             "   Results look like: https://commons.wikimedia.org/wiki/File:Name.jpg\n"
-            "   → Extract filename after 'File:' → build URL:\n"
+            "   → Extract the filename after 'File:' and build a direct URL:\n"
             "     https://commons.wikimedia.org/wiki/Special:FilePath/<filename>\n"
-            "   → download_file follows the redirect to the real file.\n\n"
-            "3. If all fail, report clearly: 'Could not find a downloadable image for <topic>.'\n"
+            "   download_file sends a real browser User-Agent and follows the redirect to the\n"
+            "   upload.wikimedia.org file, so this downloads cleanly (no 403). Use it only as a\n"
+            "   fallback to a direct upload.wikimedia.org URL from step 1.\n\n"
+            "3. If a download returns 403/blocked, try the NEXT image_url from step 1 — do NOT\n"
+            "   retry the same URL. After 2 distinct failures, stop and report:\n"
+            "   'Could not find a downloadable image for <topic>.'\n"
             "   DO NOT call download_file on HTML page URLs (.html, .htm, or ending in /).\n\n"
             "- On download failure: try the next image_url from the search results. After 2 failures, stop.\n"
             "- For images smaller than 256x256px, warn the user before confirming.\n"
@@ -49,7 +54,7 @@
             "data lookup",
             "general knowledge questions",
         ],
-        "tools": ["web_search", "download_file"],
+        "tools": ["web_search", "web_fetch", "download_file"],
         "max_steps": 10,
         "enabled": True,
     },
@@ -332,18 +337,6 @@
             "Prefer lsp_tool diagnostics over diagnose_tool when the server is already running — it's faster.\n"
             "Use rename instead of grep+edit for symbol renames — it updates all imports automatically.\n\n"
 
-            "═══ WIFI PENTESTING (wifi_pumpkin) ══════════════════════════════════════════\n"
-            "Use wifi_pumpkin for rogue AP and MITM attacks via wifipumpkin3.\n"
-            "This tool talks to a running REST API (Way B) or runs locally (Way A).\n\n"
-            "  wifi_pumpkin(action='scan')                  → scan for nearby SSIDs\n"
-            "  wifi_pumpkin(action='status')                → check current configuration\n"
-            "  wifi_pumpkin(action='ap_start')              → start the access point\n"
-            "  wifi_pumpkin(action='ap_stop')               → stop the access point\n"
-            "  wifi_pumpkin(action='execute', commands='...') → send raw shell commands\n\n"
-            "- Prefer API mode (default). Ensure the user has started 'wifipumpkin3 --rest'.\n"
-            "- For scans, it returns a JSON list of nearby access points.\n"
-            "- Use execute to set options: wifi_pumpkin(action='execute', commands='set ssid MyAP; set proxy noproxy')\n\n"
-
             "═══ GIT CONFLICTS ════════════════════════════════════════════════════════════\n"
             "When a file has merge conflict markers (<<<<<<<):\n"
             "  conflict_tool(action='list', path='C:\\\\project')              → find all conflicted files\n"
@@ -380,7 +373,7 @@
             "rename function",
             "add tests",
         ],
-        "tools": ["file_tool", "shell_tool", "edit_tool", "grep_tool", "glob_tool", "web_search", "todo_tool", "process_tool", "diagnose_tool", "memory_tool", "conflict_tool", "lsp_tool", "spawn_tool"],
+        "tools": ["file_tool", "shell_tool", "edit_tool", "grep_tool", "glob_tool", "web_search", "web_fetch", "todo_tool", "process_tool", "diagnose_tool", "memory_tool", "conflict_tool", "lsp_tool", "spawn_tool", "code_execution"],
         "max_steps": 60,
         "enabled": True,
     },

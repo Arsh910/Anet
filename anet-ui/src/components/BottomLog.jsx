@@ -1,165 +1,69 @@
 import React, { useEffect, useRef } from 'react'
+import { Activity, Trash2, ChevronDown } from 'lucide-react'
 import { useStore } from '../store/useStore'
 
-function getMessageColor(type) {
-  if (!type) return 'rgba(255,255,255,0.45)'
-  const t = type.toLowerCase()
-  if (t === 'ok' || t === 'success') return '#639922'
-  if (t === 'run') return '#BA7517'
-  if (t === 'err' || t === 'error') return '#E24B4A'
-  if (t === 'info') return '#378ADD'
-  return 'rgba(255,255,255,0.45)'
-}
-
-function formatTimestamp(raw) {
-  if (!raw) return '--:--:--'
-  // If it's already a time string like HH:MM:SS return as-is
-  if (typeof raw === 'string' && /^\d{2}:\d{2}(:\d{2})?$/.test(raw)) return raw
-  // If ISO string or timestamp
-  try {
-    const d = new Date(raw)
-    if (isNaN(d)) return String(raw).slice(0, 8)
-    return d.toTimeString().slice(0, 8)
-  } catch {
-    return String(raw).slice(0, 8)
-  }
-}
+const FILTERS = ['All', 'Tools', 'Errors']
 
 export default function BottomLog() {
-  const logs = useStore(s => s.logs)
+  const {
+    logs, logFilter, setLogFilter, autoScroll, toggleAutoScroll,
+    clearLogs, activityCollapsed, toggleActivity,
+  } = useStore()
   const scrollRef = useRef(null)
 
+  const filtered = logs.filter(l => {
+    if (logFilter === 'Tools') return l.level === 'TOOL'
+    if (logFilter === 'Errors') return l.level === 'ERR' || l.level === 'WARN'
+    return true
+  })
+
   useEffect(() => {
-    if (scrollRef.current) {
+    if (autoScroll && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [logs])
+  }, [filtered, autoScroll])
 
   return (
-    <div style={{
-      height: 100,
-      minHeight: 100,
-      width: '100%',
-      background: '#0b0d10',
-      borderTop: '1px solid rgba(255,255,255,0.06)',
-      display: 'flex',
-      flexDirection: 'column',
-      flexShrink: 0,
-    }}>
-      {/* Header */}
-      <div style={{
-        height: 28,
-        minHeight: 28,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 12px',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
-        flexShrink: 0,
-      }}>
-        <span style={{
-          fontSize: 9,
-          color: 'rgba(255,255,255,0.2)',
-          textTransform: 'uppercase',
-          letterSpacing: 0.8,
-        }}>
-          Live Execution Log
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <div style={{
-            width: 5,
-            height: 5,
-            borderRadius: '50%',
-            background: '#639922',
-            animation: 'pulse-fast 1.5s infinite',
-          }} />
-          <span style={{
-            fontSize: 9,
-            color: 'rgba(99,153,34,0.7)',
-            letterSpacing: 0.6,
-          }}>
-            STREAMING
-          </span>
+    <div className={`panel activity ${activityCollapsed ? 'collapsed' : ''}`}>
+      <div className="panel-header">
+        <Activity size={14} color="var(--accent)" />
+        <span className="panel-title">Activity</span>
+        <div className="filter-tabs" style={{ marginLeft: 8 }}>
+          {FILTERS.map(f => (
+            <button
+              key={f}
+              className={`filter-tab ${logFilter === f ? 'active' : ''}`}
+              onClick={() => setLogFilter(f)}
+            >{f}</button>
+          ))}
         </div>
+        <div className="spacer" />
+        <button className="conn" onClick={toggleAutoScroll} title="Toggle auto-scroll" style={{ background: 'none' }}>
+          <span className={`dot ${autoScroll ? 'success' : 'idle'}`} /> auto-scroll
+        </button>
+        <button className="icon-btn" onClick={clearLogs} title="Clear"><Trash2 size={14} /></button>
+        <button className="icon-btn" onClick={toggleActivity} title="Collapse"
+          style={{ transform: activityCollapsed ? 'rotate(180deg)' : 'none' }}>
+          <ChevronDown size={15} />
+        </button>
       </div>
 
-      {/* Log rows */}
-      <div
-        ref={scrollRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          minHeight: 0,
-        }}
-      >
-        {logs.length === 0 && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            fontSize: 9,
-            color: 'rgba(255,255,255,0.1)',
-          }}>
-            Waiting for log events…
-          </div>
-        )}
-        {logs.map((entry, idx) => (
-          <LogRow key={idx} entry={entry} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function LogRow({ entry }) {
-  const msgColor = getMessageColor(entry.type || entry.level)
-  const ts = formatTimestamp(entry.time || entry.timestamp || entry.ts)
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        padding: '2px 12px',
-        gap: 10,
-        animation: 'fadeIn 0.15s ease',
-        minHeight: 18,
-      }}
-      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
-      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-    >
-      <span style={{
-        fontSize: 9,
-        fontFamily: 'monospace',
-        color: 'rgba(255,255,255,0.2)',
-        minWidth: 52,
-        flexShrink: 0,
-        lineHeight: 1.6,
-      }}>
-        {ts}
-      </span>
-      <span style={{
-        fontSize: 9,
-        fontFamily: 'monospace',
-        color: '#7F77DD',
-        minWidth: 90,
-        flexShrink: 0,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        lineHeight: 1.6,
-      }}>
-        {entry.agent || entry.source || '—'}
-      </span>
-      <span style={{
-        fontSize: 9,
-        color: msgColor,
-        lineHeight: 1.6,
-        wordBreak: 'break-word',
-      }}>
-        {entry.message || entry.msg || entry.text || String(entry)}
-      </span>
+      {!activityCollapsed && (
+        <div className="log-body" ref={scrollRef}>
+          {filtered.length === 0 && <div className="empty">No activity yet.</div>}
+          {filtered.map((l, i) => (
+            <div className="log-row" key={i}>
+              <span className="log-time">{l.time}</span>
+              <span className={`log-level lvl-${l.level}`}>{l.level}</span>
+              <span className="log-agent">{l.agent}</span>
+              <span className="log-msg">
+                {l.message}
+                {l.chip && <span className="log-chip">{l.chip}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

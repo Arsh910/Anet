@@ -5,27 +5,31 @@ import LeftPanel from './components/LeftPanel'
 import CenterGraph from './components/CenterGraph'
 import RightPanel from './components/RightPanel'
 import BottomLog from './components/BottomLog'
+import AddAgentModal from './components/AddAgentModal'
 
 export default function App() {
-  const { fetchAgents, fetchTasks, connectWS } = useStore()
+  const { fetchAgents, fetchTasks, connectWS, showAddAgent, rightCollapsed } = useStore()
 
   useEffect(() => {
     connectWS()
     fetchAgents()
     fetchTasks()
-    const interval = setInterval(fetchAgents, 3000)
+    const interval = setInterval(fetchAgents, 5000)
     return () => clearInterval(interval)
   }, [])
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="app">
       <TopBar />
-      <div className="flex flex-1 overflow-hidden min-h-0">
+      <div className="main-row">
         <LeftPanel />
-        <CenterGraph />
-        <RightPanel />
+        <div className="center-col">
+          <CenterGraph />
+          <BottomLog />
+        </div>
+        {!rightCollapsed && <RightPanel />}
       </div>
-      <BottomLog />
+      {showAddAgent && <AddAgentModal />}
     </div>
   )
 }

@@ -4,7 +4,17 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-_DOWNLOADS_DIR = Path(__file__).parents[3] / "downloads"
+_ANET_FILES_DIR = Path(__file__).parents[3] / "anet_files"
+
+# Many hosts (Wikimedia in particular) return 403 to requests with no/default
+# User-Agent. Send a normal browser UA so direct file URLs and Commons
+# Special:FilePath redirects download cleanly.
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 ANet/1.0"
+    )
+}
 
 SCHEMA = {
     "type": "function",
@@ -36,11 +46,14 @@ SCHEMA = {
 async def run(input: dict) -> dict:
     url      = (input.get("url") or "").strip()
     filename = (input.get("filename") or "").strip()
+    agent    = (input.get("_agent_name") or "research_agent").strip()
 
     if not url:
         return {"error": "url is required"}
 
-    _DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    # NOTE: the directory is created lazily — only right before we actually write
+    # bytes (see below) — so a failed download never leaves an empty folder behind.
+    downloads_dir = _ANET_FILES_DIR / agent
 
     # Derive filename from URL if not provided
     if not filename:
@@ -48,12 +61,12 @@ async def run(input: dict) -> dict:
         if not filename or "." not in filename:
             filename = "download.jpg"
 
-    dest = _DOWNLOADS_DIR / filename
+    dest = downloads_dir / filename
 
     # Avoid overwriting existing files
     counter = 1
     while dest.exists():
-        dest = _DOWNLOADS_DIR / f"{dest.stem}_{counter}{dest.suffix}"
+        dest = downloads_dir / f"{dest.stem}_{counter}{dest.suffix}"
         counter += 1
 
     # Content-Type → correct extension mapping
@@ -68,7 +81,7 @@ async def run(input: dict) -> dict:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True, headers=_HEADERS) as client:
             resp = await client.get(url)
             resp.raise_for_status()
 
@@ -80,7 +93,7 @@ async def run(input: dict) -> dict:
                 correct_dest = dest.with_suffix(real_ext)
                 counter = 1
                 while correct_dest.exists():
-                    correct_dest = _DOWNLOADS_DIR / f"{correct_dest.stem}_{counter}{real_ext}"
+                    correct_dest = downloads_dir / f"{correct_dest.stem}_{counter}{real_ext}"
                     counter += 1
                 dest = correct_dest
 
@@ -89,6 +102,9 @@ async def run(input: dict) -> dict:
             if content[:15].lstrip().startswith((b"<!DOCTYPE", b"<html", b"<HTML")):
                 return {"error": f"URL returned an HTML page instead of a file — the server blocked the download or the URL is a webpage, not a direct file link: {url}"}
 
+            # Create the sandbox folder only now that we have real bytes to write —
+            # a failed/blocked download leaves no empty anet_files/<agent>/ behind.
+            downloads_dir.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(content)
     except httpx.TimeoutException:
         return {"error": "Download timed out"}

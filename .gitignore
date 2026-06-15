@@ -1,10 +1,16 @@
 # ── Secrets & config ──────────────────────────────────────────────────────────
 .env
 *.env
-anet.config.yaml          # user-specific model overrides — use anet.config.example.yaml
+# user-specific model overrides — use anet.config.example.yaml
+anet.config.yaml
 
 # ── Session memory ────────────────────────────────────────────────────────────
-memory/                   # all session checkpoints and titles
+# Legacy in-repo session store. Sessions now live in ~/.anet (or your ANET_HOME).
+memory/
+
+# ── Agent sandbox ─────────────────────────────────────────────────────────────
+# Runtime working dir: downloads and bare-filename writes land here.
+anet_files/
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
@@ -35,10 +41,12 @@ dist/
 *.tsbuildinfo
 
 # ── Project code graphs ───────────────────────────────────────────────────────
-.anet/                    # graph.json built locally — never commit
+# graph.json built locally — never commit
+.anet/
 
 # ── Plugin secrets ────────────────────────────────────────────────────────────
-plugins/*/.env            # each plugin has its own .env with credentials
+# each plugin has its own .env with credentials
+plugins/*/.env
 
 # ── Downloads / generated files ───────────────────────────────────────────────
 anet/agents/3dAgent/tasks/downloads/
@@ -53,8 +61,5 @@ desktop.ini
 *.swo
 
 
-#  Mcp 
+#  Mcp
 .mcps/codegraph/codegraph
-
-# Extools 
-.ExTools/wifi_punpkin/wifipumpkin3

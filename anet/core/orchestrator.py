@@ -62,6 +62,8 @@ def _is_read_only(tool_name: str, arguments: dict) -> bool:
 
 _CONFIRM_TOOLS: dict[str, set[str] | None] = {
     "shell_tool": None,   # every command needs approval
+    "code_execution": None,   # runs arbitrary Python — every run needs approval
+    "download_file": None,    # writes a file to disk — approve before downloading
     "file_tool": {        # only write/destructive actions
         "write_file", "create_folder", "delete_file",
         "copy_file", "move_file", "rename_file",
@@ -229,6 +231,9 @@ async def run(
             except json.JSONDecodeError:
                 arguments = {}
 
+            # Inject agent name for tools that need to know who is calling (e.g. for storage paths)
+            arguments["_agent_name"] = agent_name
+
             # ── Skill creation: track total calls and retries ─────────────────
             _total_tool_calls += 1
             _curr_hash = hashlib.md5(json.dumps(arguments, sort_keys=True).encode()).hexdigest()[:8]
@@ -377,17 +382,27 @@ async def run(
         }
 
     # ── Skill creation trigger (background, non-blocking) ────────────────────
+    # The counter is only a cheap PRE-FILTER to avoid reviewing trivial tasks.
+    # The real decision — did the task succeed, and is there a durable lesson —
+    # is made by the model inside create_skill_background, which can decline.
+    # _prev_failed (the last tool result) is passed as the outcome signal so a
+    # task that ended in failure never produces a skill.
     try:
         from anet.core import skill_manager as _sm
         _threshold = _sm._creation_threshold()
-        if _total_tool_calls >= _threshold and _had_retry:
+        if _total_tool_calls >= _threshold:
             _history_text = "\n".join(
                 f"{m['role'].upper()}: {(m.get('content') or '')[:300]}"
                 for m in messages
                 if m.get("content") and m["role"] in ("user", "assistant", "tool")
             )
             asyncio.create_task(
-                _sm.create_skill_background(_history_text, agent_name)
+                _sm.create_skill_background(
+                    _history_text,
+                    agent_name,
+                    outcome_failed=_prev_failed,
+                    had_retry=_had_retry,
+                )
             )
     except Exception:
         pass

@@ -37,10 +37,10 @@ _SOUL = _load_soul_once()
 
 # ── User profile (loaded once at import, re-read before incremental saves) ────
 
-_USER_PROFILE_PATH = Path(__file__).parents[2] / "memory" / "USER.md"
-
 def _load_user_profile() -> str:
     try:
+        from anet.core.paths import user_profile_path
+        _USER_PROFILE_PATH = user_profile_path()
         if not _USER_PROFILE_PATH.exists():
             return ""
         content = _USER_PROFILE_PATH.read_text(encoding="utf-8").strip()

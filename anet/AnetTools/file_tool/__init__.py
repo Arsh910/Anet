@@ -22,6 +22,28 @@ except ImportError:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+_ANET_FILES_DIR = Path(__file__).parents[3] / "anet_files"
+
+
+def _resolve_safe_path(path: str, agent: str) -> Path:
+    """
+    Redirect relative paths or bare filenames to anet_files/<agent>/
+    to keep the Anet codebase clean. Absolute paths are used as-is.
+    """
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    
+    # If it's a relative path starting with . or just a filename, redirect.
+    # We only do this if it's NOT the code_agent (which needs to work in the repo).
+    if agent != "code_agent":
+        safe_base = _ANET_FILES_DIR / agent
+        safe_base.mkdir(parents=True, exist_ok=True)
+        return safe_base / p
+    
+    return p
+
+
 def _fmt_size(n: int) -> str:
     if n < 1024:
         return f"{n} B"
@@ -350,8 +372,19 @@ _DISPATCH = {
 
 async def run(params: dict) -> dict:
     action = (params.get("action") or "").strip()
+    agent  = (params.get("_agent_name") or "agent").strip()
     if not action:
         return {"error": "action is required"}
+
+    # Pre-resolve common path parameters to keep agent files out of the Anet root
+    for key in ["path", "src", "dst", "root", "output_zip", "zip_path", "extract_to"]:
+        if key in params and isinstance(params[key], str) and params[key].strip():
+            params[key] = str(_resolve_safe_path(params[key], agent))
+
+    # zip_files uses a list of paths
+    if "paths" in params and isinstance(params["paths"], list):
+        params["paths"] = [str(_resolve_safe_path(p, agent)) for p in params["paths"]]
+
     handler = _DISPATCH.get(action)
     if handler is None:
         valid = ", ".join(_DISPATCH)

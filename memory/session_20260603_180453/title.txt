@@ -1,1 +1,0 @@
-can you analyze this code C:\Ikarus\extensionWoo\ikarusdeltashopify\ikarusdelta and tell me what improvements caan be done in it ui wise
