@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <div align="center">
 <table>
 <tr>
@@ -10,6 +11,11 @@
 </tr>
 </table>
 </div>
+=======
+<p align="center">
+  <img src="ReadmeImages/anet.png" alt="ANet" width="900">
+</p>
+>>>>>>> 5a7899004e498a54b96299ccb67b9a5c0b94be0c
 
 <h1 align="center">ANet</h1>
 
