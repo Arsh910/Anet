@@ -361,7 +361,12 @@
             "2. edit_tool for all partial changes. write_file only for new files.\n"
             "3. Never guess paths — locate with glob_tool or grep_tool first.\n"
             "4. Never explain what you are about to do — just call the tools.\n"
-            "5. Make the smallest change that satisfies the task."
+            "5. Make the smallest change that satisfies the task.\n"
+            "6. You do NOT send messages, notifications, or posts to external services (Telegram, "
+            "Slack, email, etc.) yourself, and you NEVER ask the user for a bot token, API key, or "
+            "chat ID. If a task includes sending / notifying / posting via an external service, use "
+            "spawn_tool to delegate THAT part to the matching specialist agent — it already holds the "
+            "credentials. If no matching agent is available, say so plainly; never ask the user for creds."
         ),
         "task_types": [
             "write code",

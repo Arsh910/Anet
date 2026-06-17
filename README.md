@@ -1,6 +1,15 @@
-<p align="center">
-  <img src="ReadmeImages/anet.jpg" alt="ANet" width="900">
-</p>
+<div align="center">
+<table>
+<tr>
+<td><img src="ReadmeImages/anet.png" width="430" alt="ANET — gradient on binary field"></td>
+<td><img src="ReadmeImages/anet-mono.png" width="430" alt="ANET — white on binary field"></td>
+</tr>
+<tr>
+<td><img src="ReadmeImages/anet-clean.png" width="430" alt="ANET — gradient, clean"></td>
+<td><img src="ReadmeImages/anet-mono-clean.png" width="430" alt="ANET — white, clean"></td>
+</tr>
+</table>
+</div>
 
 <h1 align="center">ANet</h1>
 
@@ -115,6 +124,20 @@ planner (manager model)
 - **Cycle detection** — same write operation repeated 3× in a sliding window stops the loop.
 - **Spawn depth limit** — `spawn_tool` nesting is capped at 2 to prevent infinite delegation chains.
 - **Confirmation policy** — `shell_tool` (every command), `edit_tool` (every edit), and destructive `file_tool` actions pause for explicit `y/n/a` approval.
+
+---
+
+## Startup screen
+
+On launch, Anet shows an animated block-art banner (green→cyan gradient reveal) followed by a **compact status line** instead of dumping every agent, tool, and server:
+
+```
+Agents   6/6 loaded       /agents to view
+Tools    16/16 ready      /tools to view
+MCP      2/2 connected    /mcps to view
+```
+
+Expand any of them on demand with `/agents`, `/tools`, or `/mcps`. The banner art is generated in pure Python (`anet/cli/banner.py`) and can also be exported to high-res PNG/JPEG for docs via `save_image()`.
 
 ---
 
@@ -332,6 +355,8 @@ ANet loads these automatically at startup.
 | Command | What it does |
 |---|---|
 | `/agents` | Show loaded agents, models, and tool lists |
+| `/tools` | Show loaded tools and their status |
+| `/mcps` | Show connected MCP servers and their tools |
 | `/skills` | List all saved skills with description and usage count |
 | `/profile` | Show the current user profile (`memory/USER.md`) |
 | `/sessions` | List all saved sessions |
@@ -428,9 +453,11 @@ Anet/
 │   ├── AnetAgents/          # Built-in agent definitions
 │   ├── AnetTools/           # Built-in tool implementations
 │   │   └── spawn_tool/      # Runtime subagent delegation
+│   ├── cli/
+│   │   └── banner.py        # Animated ANET startup banner + README image export
 │   └── core/
 │       ├── engine.py        # Pure-Python planner→executor→checker→synthesizer
-│       ├── store.py         # aiosqlite-backed conversation persistence
+│       ├── store.py         # aiosqlite conversation store — one shared db keyed by thread
 │       ├── memory_agent.py  # Background memory — updates USER.md + memory_tool
 │       ├── orchestrator.py  # Agentic loop, cycle detection, skill tracking
 │       ├── agent_runner.py  # Model calls, provider dispatch
@@ -447,10 +474,17 @@ Anet/
 ├── skills/                  # Auto-written skill procedures (grows over time)
 ├── ExAgents/                # Your custom agents
 ├── ExTools/                 # Your custom tools
-└── memory/
+└── memory/                  # (under your Anet home, e.g. ~/.anet)
     ├── USER.md              # Auto-built user profile
-    └── <session_id>.db      # Per-session SQLite conversation store
+    └── sessions/
+        ├── conversations.db    # One shared SQLite store for ALL sessions, keyed by thread
+        └── <session_id>/       # Per-session folder — metadata only (title.txt)
 ```
+
+> **Sessions** all share a single `conversations.db` keyed by `thread`, so
+> switching with `/session <name>` is instant and never loses context. Each
+> session keeps a small folder for its title and metadata. (Legacy per-session
+> `checkpoint.db` files are folded into the shared store automatically on first run.)
 
 ---
 

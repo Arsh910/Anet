@@ -14,6 +14,7 @@ Actions:
 from __future__ import annotations
 
 import json
+import os
 import re
 import uuid
 from datetime import datetime
@@ -73,7 +74,10 @@ SCHEMA = {
                     "items": {"type": "string"},
                     "description": (
                         "Short labels for easier retrieval, e.g. ['python', 'api', 'auth']. "
-                        "Used by: save."
+                        "Tag a standing preference (coding style, tone, conventions) with "
+                        "'preference' so it is applied automatically on relevant tasks even when "
+                        "its words don't match the request; add an agent name like 'code_agent' "
+                        "to scope it to that agent, or leave it global. Used by: save."
                     ),
                 },
                 "id": {
@@ -101,12 +105,17 @@ def _load() -> list[dict]:
         return []
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    """Write via a temp file + rename so a crash/concurrent write can never leave
+    a truncated or corrupt store behind."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.parent / (path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _persist(memories: list[dict]) -> None:
-    _MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _MEMORY_FILE.write_text(
-        json.dumps(memories, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    _atomic_write(_MEMORY_FILE, json.dumps(memories, indent=2, ensure_ascii=False))
 
 
 def _short_id() -> str:
@@ -115,30 +124,148 @@ def _short_id() -> str:
 
 # ── Scoring ────────────────────────────────────────────────────────────────────
 
+# Very common function words — ignored when scoring so "a/the/of/is" don't make
+# every memory look relevant.
+_STOPWORDS = {
+    "the", "and", "for", "that", "this", "are", "with", "you", "your", "from",
+    "have", "has", "had", "was", "were", "will", "would", "can", "could", "should",
+    "what", "which", "who", "how", "all", "any", "but", "not", "use", "using",
+    "make", "want", "need", "get", "got", "into", "over", "out", "about",
+}
+
+
+def _tokens(text: str) -> set[str]:
+    """Meaningful words: length > 2 and not a common stopword."""
+    return {
+        w for w in re.findall(r"\w+", text.lower())
+        if len(w) > 2 and w not in _STOPWORDS
+    }
+
+
 def _score(memory: dict, query: str) -> float:
-    """Keyword overlap score — higher is more relevant."""
-    words = set(re.findall(r"\w+", query.lower()))
-    if not words:
+    """Keyword overlap score (0–1) — fraction of meaningful query words that
+    appear as whole words in the memory's content / tags / project path."""
+    qwords = _tokens(query)
+    if not qwords:
         return 0.0
-    haystack = " ".join([
+    hwords = _tokens(" ".join([
         memory.get("content", ""),
         " ".join(memory.get("tags", [])),
         memory.get("project_path", "") or "",
-    ]).lower()
-    hits = sum(1 for w in words if w in haystack)
-    return hits / len(words)  # 0.0 – 1.0
+    ]))
+    return len(qwords & hwords) / len(qwords)
 
 
-# ── Public search (importable as a sync function by graph_builder) ─────────────
+# ── Optional semantic search (Phase A) ─────────────────────────────────────────
+# If `fastembed` is installed, search BLENDS keyword overlap with embedding
+# similarity, so paraphrases match too ("avg of a list" ↔ "mean of numbers").
+# Without it, search is pure keyword — the default, zero extra dependencies.
+#   pip install fastembed
+# Vectors are cached in a sidecar file next to memory.json so the memory store
+# stays human-readable.
+
+_EMBED_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+_SEM_FLOOR        = 0.55   # min cosine for a semantic-only match to count (tunable)
+_embedder         = None
+_embedder_tried   = False
+
+
+def _get_embedder():
+    """Lazy singleton. Returns the fastembed model, or None if unavailable."""
+    global _embedder, _embedder_tried
+    if _embedder_tried:
+        return _embedder
+    _embedder_tried = True
+    try:
+        from fastembed import TextEmbedding
+        _embedder = TextEmbedding(model_name=_EMBED_MODEL_NAME)
+    except Exception:
+        _embedder = None   # not installed / model download failed → keyword fallback
+    return _embedder
+
+
+def _embed(texts: list[str]) -> list[list[float]] | None:
+    emb = _get_embedder()
+    if emb is None:
+        return None
+    try:
+        return [list(map(float, v)) for v in emb.embed(texts)]
+    except Exception:
+        return None
+
+
+def _vector_file() -> Path:
+    # Computed dynamically so it follows _MEMORY_FILE (tests monkeypatch that).
+    return _MEMORY_FILE.parent / "memory_vectors.json"
+
+
+def _load_vectors() -> dict:
+    f = _vector_file()
+    if not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _persist_vectors(vectors: dict) -> None:
+    f = _vector_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(vectors), encoding="utf-8")
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    import math
+    dot = sum(x * y for x, y in zip(a, b))
+    na  = math.sqrt(sum(x * x for x in a))
+    nb  = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def _embed_text_for(memory: dict) -> str:
+    return " ".join([
+        memory.get("content", ""),
+        " ".join(memory.get("tags", [])),
+    ]).strip()
+
+
+def _semantic_scores(query: str, memories: list[dict]) -> dict:
+    """Return {id: cosine} for memories. Computes+caches any missing vectors.
+    Empty dict when embeddings are unavailable (→ pure keyword)."""
+    if not memories or _get_embedder() is None:
+        return {}
+    qv = _embed([query])
+    if not qv:
+        return {}
+    qvec    = qv[0]
+    vectors = _load_vectors()
+    missing = [m for m in memories if m["id"] not in vectors]
+    if missing:
+        new = _embed([_embed_text_for(m) for m in missing])
+        if new:
+            for m, v in zip(missing, new):
+                vectors[m["id"]] = v
+            _persist_vectors(vectors)
+    return {
+        m["id"]: _cosine(qvec, vectors[m["id"]])
+        for m in memories if m["id"] in vectors
+    }
+
+
+# ── Public search (importable as a sync function by the engine) ────────────────
 
 def search_memories(
     query: str,
     project_path: str | None = None,
     max_results: int = 5,
+    min_score: float = 0.0,
 ) -> list[dict]:
     """
-    Keyword search over stored memories.
-    Called synchronously by the planner before building a plan.
+    Keyword (+ optional semantic) search over stored memories.
+    Called synchronously by the planner and by agent memory injection.
+    `min_score` drops weak matches — raise it where precision matters (agent
+    injection) so a single generic word ("function") doesn't pull in a doc.
     """
     memories = _load()
     if project_path:
@@ -147,10 +274,28 @@ def search_memories(
             m for m in memories
             if not m.get("project_path") or m["project_path"] == project_path
         ]
-    scored = [(m, _score(m, query)) for m in memories]
-    scored = [(m, s) for m, s in scored if s > 0]
+
+    sem = _semantic_scores(query, memories)   # {} when fastembed isn't installed
+
+    scored = []
+    for m in memories:
+        kw = _score(m, query)                          # keyword always counts
+        s  = sem.get(m["id"], 0.0)                      # semantic only above the floor
+        combined = kw + (s if s >= _SEM_FLOOR else 0.0)
+        if combined > 0 and combined >= min_score:
+            scored.append((m, combined))
     scored.sort(key=lambda x: (-x[1], x[0].get("created_at", "")))
     return [m for m, _ in scored[:max_results]]
+
+
+def preference_memories() -> list[dict]:
+    """All memories tagged 'preference' — standing prefs (coding style, tone, …).
+    These are injected by agent-type (Phase B), independent of keyword/semantic
+    relevance, because a style preference rarely shares words with the task."""
+    return [
+        m for m in _load()
+        if "preference" in [t.lower() for t in m.get("tags", [])]
+    ]
 
 
 # ── Action handlers ────────────────────────────────────────────────────────────
@@ -226,6 +371,9 @@ def _do_delete(params: dict) -> dict:
         return {"error": f"No memory found with id '{mem_id}'"}
 
     _persist(memories)
+    vectors = _load_vectors()
+    if vectors.pop(mem_id, None) is not None:
+        _persist_vectors(vectors)
     return {"deleted": True, "id": mem_id}
 
 
@@ -233,6 +381,7 @@ def _do_clear(params: dict) -> dict:
     memories = _load()
     count    = len(memories)
     _persist([])
+    _persist_vectors({})
     return {"cleared": True, "count": count, "message": f"Cleared {count} memory(ies)."}
 
 

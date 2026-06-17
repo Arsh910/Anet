@@ -28,8 +28,8 @@
 
 tools:
   # ─ Example (Telegram sender) — needs creds in ExAgents/tele_agent/.env ─
-  # - name: tele_tool
-  #   path: ExTools/tele_tool
+  - name: tele_tool
+    path: ExTools/tele_tool
 
 
 # ── External Agents ──────────────────────────────────────────────────────────
@@ -49,17 +49,17 @@ agents:
   #     TELEGRAM_CHAT_ID=...
   # Then uncomment BOTH this block and the tele_tool entry above, and restart.
   #
-  # - name: tele_agent
-  #   model: openai/gpt-oss-20b:free
-  #   provider: openrouter
-  #   enabled: true
-  #   prompt_file: ExAgents/tele_agent/prompt.md
-  #   task_types:
-  #     - send telegram message
-  #     - notify via telegram
-  #     - telegram notification
-  #     - send file via telegram
-  #     - send photo via telegram
-  #     - send document via telegram
-  #   tools:
-  #     - tele_tool
+  - name: tele_agent
+    model: openai/gpt-oss-20b:free
+    provider: openrouter
+    enabled: true
+    prompt_file: ExAgents/tele_agent/prompt.md
+    task_types:
+      - send telegram message
+      - notify via telegram
+      - telegram notification
+      - send file via telegram
+      - send photo via telegram
+      - send document via telegram
+    tools:
+      - tele_tool

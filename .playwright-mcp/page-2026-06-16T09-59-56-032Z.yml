@@ -1,0 +1,227 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - navigation [ref=e4]:
+      - link "Go" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "Go" [ref=e6]
+      - link "Skip to main content" [ref=e7] [cursor=pointer]:
+        - /url: "#main-content"
+        - text: Skip to Main Content
+      - generic [ref=e8]:
+        - list
+        - button "Open navigation." [active] [ref=e9]
+  - complementary [ref=e10]:
+    - navigation [ref=e11]:
+      - link "Go." [ref=e13] [cursor=pointer]:
+        - /url: /
+        - img "Go." [ref=e14]
+      - list [ref=e15]:
+        - listitem [ref=e16]:
+          - link "Why Go navigate_next" [ref=e17] [cursor=pointer]:
+            - /url: "#"
+            - text: Why Go
+            - generic [ref=e18]: navigate_next
+          - navigation [ref=e20]:
+            - link "navigate_before Why Go" [ref=e22] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=e23]: navigate_before
+              - text: Why Go
+            - list [ref=e24]:
+              - listitem [ref=e25]:
+                - link "Case Studies" [ref=e26] [cursor=pointer]:
+                  - /url: /solutions/case-studies
+              - listitem [ref=e27]:
+                - link "Use Cases" [ref=e28] [cursor=pointer]:
+                  - /url: /solutions/use-cases
+              - listitem [ref=e29]:
+                - link "Security" [ref=e30] [cursor=pointer]:
+                  - /url: /security/
+        - listitem [ref=e31]:
+          - link "Learn" [ref=e32] [cursor=pointer]:
+            - /url: /learn/
+        - listitem [ref=e33]:
+          - link "Docs navigate_next" [ref=e34] [cursor=pointer]:
+            - /url: "#"
+            - text: Docs
+            - generic [ref=e35]: navigate_next
+          - navigation [ref=e37]:
+            - link "navigate_before Docs" [ref=e39] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=e40]: navigate_before
+              - text: Docs
+            - list [ref=e41]:
+              - listitem [ref=e42]:
+                - link "Go Spec" [ref=e43] [cursor=pointer]:
+                  - /url: /ref/spec
+              - listitem [ref=e44]:
+                - link "Go User Manual" [ref=e45] [cursor=pointer]:
+                  - /url: /doc
+              - listitem [ref=e46]:
+                - link "Standard library" [ref=e47] [cursor=pointer]:
+                  - /url: https://pkg.go.dev/std
+              - listitem [ref=e48]:
+                - link "Release Notes" [ref=e49] [cursor=pointer]:
+                  - /url: /doc/devel/release
+              - listitem [ref=e50]:
+                - link "Effective Go" [ref=e51] [cursor=pointer]:
+                  - /url: /doc/effective_go
+        - listitem [ref=e52]:
+          - link "Packages" [ref=e53] [cursor=pointer]:
+            - /url: https://pkg.go.dev
+        - listitem [ref=e54]:
+          - link "Community navigate_next" [ref=e55] [cursor=pointer]:
+            - /url: "#"
+            - text: Community
+            - generic [ref=e56]: navigate_next
+          - navigation [ref=e58]:
+            - link "navigate_before Community" [ref=e60] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=e61]: navigate_before
+              - text: Community
+            - list [ref=e62]:
+              - listitem [ref=e63]:
+                - link "Recorded Talks" [ref=e64] [cursor=pointer]:
+                  - /url: /talks/
+              - listitem [ref=e65]:
+                - link "Meetups open_in_new" [ref=e66] [cursor=pointer]:
+                  - /url: https://www.meetup.com/pro/go
+                  - text: Meetups
+                  - generic [ref=e67]: open_in_new
+              - listitem [ref=e68]:
+                - link "Conferences open_in_new" [ref=e69] [cursor=pointer]:
+                  - /url: /wiki/Conferences
+                  - text: Conferences
+                  - generic [ref=e70]: open_in_new
+              - listitem [ref=e71]:
+                - link "Go blog" [ref=e72] [cursor=pointer]:
+                  - /url: /blog
+              - listitem [ref=e73]:
+                - link "Go project" [ref=e74] [cursor=pointer]:
+                  - /url: /help
+              - listitem [ref=e75]:
+                - generic [ref=e76]: Get connected
+                - generic [ref=e77]:
+                  - link [ref=e78] [cursor=pointer]:
+                    - /url: https://groups.google.com/g/golang-nuts
+                    - img [ref=e79]
+                  - link [ref=e80] [cursor=pointer]:
+                    - /url: https://github.com/golang
+                    - img [ref=e81]
+                  - link [ref=e82] [cursor=pointer]:
+                    - /url: https://bsky.app/profile/golang.org
+                    - img [ref=e83]
+                  - link [ref=e84] [cursor=pointer]:
+                    - /url: https://hachyderm.io/@golang
+                    - img [ref=e85]
+                  - link [ref=e86] [cursor=pointer]:
+                    - /url: https://twitter.com/golang
+                    - img [ref=e87]
+                  - link [ref=e88] [cursor=pointer]:
+                    - /url: https://www.reddit.com/r/golang/
+                    - img [ref=e89]
+                  - link [ref=e90] [cursor=pointer]:
+                    - /url: https://invite.slack.golangbridge.org/
+                    - img [ref=e91]
+                  - link [ref=e92] [cursor=pointer]:
+                    - /url: https://stackoverflow.com/tags/go
+                    - img [ref=e93]
+  - main [ref=e94]:
+    - article [ref=e95]:
+      - heading "Text file VERSION" [level=1] [ref=e96]
+      - generic [ref=e97]:
+        - generic [ref=e98]: "1"
+        - text: go1.26.4
+        - generic [ref=e99]: "2"
+        - text: time 2026-05-29T15:26:39Z
+        - generic [ref=e100]: "3"
+      - paragraph [ref=e101]:
+        - link "View as plain text" [ref=e102] [cursor=pointer]:
+          - /url: /VERSION?m=text
+  - contentinfo [ref=e103]:
+    - generic [ref=e106]:
+      - generic [ref=e107]:
+        - link "Why Go" [ref=e108] [cursor=pointer]:
+          - /url: /solutions/
+        - link "Use Cases" [ref=e109] [cursor=pointer]:
+          - /url: /solutions/use-cases
+        - link "Case Studies" [ref=e110] [cursor=pointer]:
+          - /url: /solutions/case-studies
+      - generic [ref=e111]:
+        - link "Get Started" [ref=e112] [cursor=pointer]:
+          - /url: /learn/
+        - link "Playground" [ref=e113] [cursor=pointer]:
+          - /url: /play
+        - link "Tour" [ref=e114] [cursor=pointer]:
+          - /url: /tour/
+        - link "Stack Overflow" [ref=e115] [cursor=pointer]:
+          - /url: https://stackoverflow.com/questions/tagged/go?tab=Newest
+        - link "Help" [ref=e116] [cursor=pointer]:
+          - /url: /help/
+      - generic [ref=e117]:
+        - link "Packages" [ref=e118] [cursor=pointer]:
+          - /url: https://pkg.go.dev
+        - link "Standard Library" [ref=e119] [cursor=pointer]:
+          - /url: /pkg/
+        - link "About Go Packages" [ref=e120] [cursor=pointer]:
+          - /url: https://pkg.go.dev/about
+      - generic [ref=e121]:
+        - link "About" [ref=e122] [cursor=pointer]:
+          - /url: /project
+        - link "Download" [ref=e123] [cursor=pointer]:
+          - /url: /dl/
+        - link "Blog" [ref=e124] [cursor=pointer]:
+          - /url: /blog/
+        - link "Issue Tracker" [ref=e125] [cursor=pointer]:
+          - /url: https://github.com/golang/go/issues
+        - link "Release Notes" [ref=e126] [cursor=pointer]:
+          - /url: /doc/devel/release
+        - link "Brand Guidelines" [ref=e127] [cursor=pointer]:
+          - /url: /brand
+        - link "Code of Conduct" [ref=e128] [cursor=pointer]:
+          - /url: /conduct
+      - generic [ref=e129]:
+        - link "Connect" [ref=e130] [cursor=pointer]:
+          - /url: /wiki/#the-go-community
+        - link "Bluesky" [ref=e131] [cursor=pointer]:
+          - /url: https://bsky.app/profile/golang.org
+        - link "Mastodon" [ref=e132] [cursor=pointer]:
+          - /url: https://hachyderm.io/@golang
+        - link "Twitter" [ref=e133] [cursor=pointer]:
+          - /url: https://www.twitter.com/golang
+        - link "GitHub" [ref=e134] [cursor=pointer]:
+          - /url: https://github.com/golang
+        - link "Slack" [ref=e135] [cursor=pointer]:
+          - /url: https://invite.slack.golangbridge.org/
+        - link "r/golang" [ref=e136] [cursor=pointer]:
+          - /url: https://reddit.com/r/golang
+        - link "Meetup" [ref=e137] [cursor=pointer]:
+          - /url: https://www.meetup.com/pro/go
+        - link "Golang Weekly" [ref=e138] [cursor=pointer]:
+          - /url: https://golangweekly.com/
+    - generic [ref=e141]:
+      - img "The Go Gopher" [ref=e142]
+      - list [ref=e143]:
+        - listitem [ref=e144]:
+          - link "Copyright" [ref=e145] [cursor=pointer]:
+            - /url: /copyright
+        - listitem [ref=e146]:
+          - link "Terms of Service" [ref=e147] [cursor=pointer]:
+            - /url: /tos
+        - listitem [ref=e148]:
+          - link "Privacy Policy" [ref=e149] [cursor=pointer]:
+            - /url: http://www.google.com/intl/en/policies/privacy/
+        - listitem [ref=e150]:
+          - link "Report an Issue" [ref=e151] [cursor=pointer]:
+            - /url: /s/website-issue
+        - listitem [ref=e152]:
+          - button "Toggle theme" [ref=e153] [cursor=pointer]:
+            - img "System theme" [ref=e154]
+      - link "Google logo" [ref=e155] [cursor=pointer]:
+        - /url: https://google.com
+        - img "Google logo" [ref=e156]
+  - generic [ref=e157]:
+    - generic [ref=e158]:
+      - text: go.dev uses cookies from Google to deliver and enhance the quality of its services and to analyze traffic.
+      - link "Learn more." [ref=e159] [cursor=pointer]:
+        - /url: https://policies.google.com/technologies/cookies
+    - button "Okay" [ref=e161] [cursor=pointer]

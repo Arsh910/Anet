@@ -421,18 +421,30 @@ def _can_import(pkg: str) -> bool:
         return False
 
 
-def _print_startup_summary(enabled_agents: list[dict], tool_map: dict) -> None:
+def _split_tools(tool_map: dict) -> tuple[dict, set[str]]:
+    """Return (regular_tools, mcp_tool_names) — MCP-backed tools split out."""
     from anet.core.mcp_loader import _connections as _mcp_connections
-
-    # Split tool_map into MCP-backed vs regular AnetTools
     mcp_tool_names: set[str] = set()
     for conn in _mcp_connections.values():
         for t in conn.tools:
             mcp_tool_names.add(t.name)
     regular_tools = {k: v for k, v in tool_map.items() if k not in mcp_tool_names}
+    return regular_tools, mcp_tool_names
+
+
+def _print_startup_summary(enabled_agents: list[dict], tool_map: dict, n_external: int = 0) -> None:
+    from anet.core.mcp_loader import _connections as _mcp_connections
+
+    regular_tools, _ = _split_tools(tool_map)
 
     console.print()
-    console.rule(f"[bold green]{_ASSISTANT_NAME}[/bold green]")
+    try:
+        from anet.cli.banner import show_banner
+        _bannered = show_banner(console, _ASSISTANT_NAME.upper())
+    except Exception:
+        _bannered = False
+    if not _bannered:
+        console.rule(f"[bold green]{_ASSISTANT_NAME}[/bold green]")
     _mcfg     = _manager_config()
     _m_model  = _mcfg.get("model") or "gemini-2.5-pro"
     _m_prov   = _mcfg.get("provider") or "google"
@@ -440,37 +452,22 @@ def _print_startup_summary(enabled_agents: list[dict], tool_map: dict) -> None:
     console.print(f"[dim]Manager: {_m_label} — plans and coordinates all requests[/dim]")
     console.print()
 
-    at = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
-    at.add_column("Agent",   style="bold")
-    at.add_column("Model",   style="dim")
-    at.add_column("Tools")
-    at.add_column("Handles")
-    for a in enabled_agents:
-        # Show only non-MCP tools in the agent row (MCP tools shown separately below)
-        agent_tools = [t for t in a.get("tools", []) if t not in mcp_tool_names]
-        preview = ", ".join(a.get("task_types", [])[:3])
-        if len(a.get("task_types", [])) > 3:
-            preview += ", …"
-        at.add_row(a["name"], a["model"], ", ".join(agent_tools) or "—", preview)
-    console.print(Panel(at, title="[bold]Loaded Agents[/bold]", border_style="green"))
+    # Compact counts — full menus available via /agents, /tools, /mcps.
+    agents_loaded = len(enabled_agents)
+    agents_total  = len(AGENTS) + n_external
+    tools_loaded  = len(regular_tools)
+    mcp_ready     = sum(1 for c in _mcp_connections.values() if not c.error)
+    mcp_total     = len(_mcp_connections)
 
-    tt = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
-    tt.add_column("Tool",   style="bold")
-    tt.add_column("Status")
-    for name in regular_tools:
-        tt.add_row(name, "[green]ready[/green]")
-    console.print(Panel(tt, title="[bold]Loaded Tools[/bold]", border_style="blue"))
-
-    if _mcp_connections:
-        mt = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
-        mt.add_column("Server",  style="bold")
-        mt.add_column("Tools",   style="dim")
-        mt.add_column("Status")
-        for srv_name, conn in _mcp_connections.items():
-            tool_names = ", ".join(t.name for t in conn.tools) or "—"
-            status = "[red]error[/red]" if conn.error else "[green]ready[/green]"
-            mt.add_row(srv_name, tool_names, status)
-        console.print(Panel(mt, title="[bold]MCP Servers[/bold]", border_style="magenta"))
+    s = Table(show_header=False, box=None, padding=(0, 2))
+    s.add_column(style="bold")
+    s.add_column()
+    s.add_column(style="dim")
+    s.add_row("Agents", f"[green]{agents_loaded}[/green]/{agents_total} loaded", "/agents to view")
+    s.add_row("Tools",  f"[green]{tools_loaded}[/green]/{tools_loaded} ready",   "/tools to view")
+    s.add_row("MCP",    f"[green]{mcp_ready}[/green]/{mcp_total} connected",      "/mcps to view")
+    console.print(s)
+    console.print()
 
     console.print(
         f"[dim]Type your message and press Enter. "
@@ -596,6 +593,12 @@ def _confirm_summary(tool: str, action: str, args: dict) -> str:
         fn  = args.get("filename")
         tail = f"\n  [dim]│[/dim]  [dim]save as: {fn}[/dim]" if fn else ""
         return f"download: [bold]{url}[/bold]{tail}"
+    if tool == "memory_tool":
+        if action == "clear":
+            return "memory: [bold red]CLEAR ALL memories[/bold red]"
+        if action == "delete":
+            return f"memory: delete [bold]{args.get('id', '?')}[/bold]"
+        return f"memory: [bold]{action}[/bold]"
     if tool == "open_app":
         target = args.get("app_name") or args.get("window_title") or "?"
         return f"{action}: [bold]{target}[/bold]"
@@ -863,6 +866,8 @@ _HELP_TEXT = """
   [bold cyan]/session[/bold cyan] [dim]<name>[/dim]        Switch to a named session (creates if new)
   [bold cyan]/sessions[/bold cyan]             List all saved sessions
   [bold cyan]/agents[/bold cyan]               Show loaded agents and their tools
+  [bold cyan]/tools[/bold cyan]                Show loaded tools
+  [bold cyan]/mcps[/bold cyan]                 Show connected MCP servers and their tools
   [bold cyan]/forget[/bold cyan]               Drop oldest messages, keep last 20
   [bold cyan]/compress[/bold cyan]             Summarise old messages into one block
   [bold cyan]/profile[/bold cyan]              Show the current user profile (USER.md)
@@ -892,6 +897,36 @@ def _cmd_agents(enabled_agents: list[dict], tool_map: dict) -> None:
         t.add_row(a["name"], a.get("model", "?"), tools, preview)
     console.print()
     console.print(Panel(t, title="[bold]Loaded Agents[/bold]", border_style="green"))
+    console.print()
+
+
+def _cmd_tools(tool_map: dict) -> None:
+    regular_tools, _ = _split_tools(tool_map)
+    t = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
+    t.add_column("Tool",   style="bold")
+    t.add_column("Status")
+    for name in regular_tools:
+        t.add_row(name, "[green]ready[/green]")
+    console.print()
+    console.print(Panel(t, title="[bold]Loaded Tools[/bold]", border_style="blue"))
+    console.print()
+
+
+def _cmd_mcps() -> None:
+    from anet.core.mcp_loader import _connections as _mcp_connections
+    if not _mcp_connections:
+        console.print("\n  [dim]No MCP servers configured.[/dim]\n")
+        return
+    t = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
+    t.add_column("Server",  style="bold")
+    t.add_column("Tools",   style="dim")
+    t.add_column("Status")
+    for srv_name, conn in _mcp_connections.items():
+        tool_names = ", ".join(tl.name for tl in conn.tools) or "—"
+        status = "[red]error[/red]" if conn.error else "[green]ready[/green]"
+        t.add_row(srv_name, tool_names, status)
+    console.print()
+    console.print(Panel(t, title="[bold]MCP Servers[/bold]", border_style="magenta"))
     console.print()
 
 
@@ -1010,6 +1045,12 @@ async def _handle_slash(
 
     elif command == "/agents":
         _cmd_agents(enabled_agents, tool_map)
+
+    elif command == "/tools":
+        _cmd_tools(tool_map)
+
+    elif command == "/mcps":
+        _cmd_mcps()
 
     elif command == "/forget":
         if store is None:
@@ -1744,7 +1785,7 @@ async def main() -> None:
         all_agents, all_tools, manager_tools, n_external = await _merge_all()
         engine = Engine(all_agents, all_tools, manager_tools=manager_tools)
         # Reprint summary now that MCP tools have been injected into agent tool lists
-        _print_startup_summary(all_agents, all_tools)
+        _print_startup_summary(all_agents, all_tools, n_external)
         if n_external:
             console.print(f"[dim]  + {n_external} external agent(s) loaded[/dim]\n")
 

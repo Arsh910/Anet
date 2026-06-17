@@ -73,6 +73,9 @@ _CONFIRM_TOOLS: dict[str, set[str] | None] = {
     "open_app": {         # only actions that change desktop state
         "launch_and_type", "type_text", "click_element", "keyboard_shortcut",
     },
+    "memory_tool": {      # destructive memory ops — never wipe/forget silently
+        "clear", "delete",
+    },
 }
 
 
@@ -149,6 +152,69 @@ def _message_to_dict(message) -> dict:
     return d
 
 
+# ── Memory injection (Phase A retrieval + Phase B preferences) ────────────────
+
+def _memory_block(agent: dict, task: str) -> str:
+    """Build a 'relevant memory' block for an agent's prompt: task-relevant facts
+    (keyword + optional semantic) plus standing preferences scoped to this agent.
+
+    Returns '' when nothing is relevant, so memory-free tasks stay clean and small
+    models aren't handed noise. This is how memory reaches EVERY agent without
+    giving them the memory_tool or dumping the whole store.
+    """
+    try:
+        from anet.AnetTools.memory_tool import search_memories, preference_memories
+    except Exception:
+        return ""
+
+    agent_name = (agent.get("name") or "").lower()
+
+    # Standing preferences: a 'preference'-tagged memory applies if it is global
+    # (no *_agent scope tag) or explicitly scoped to this agent.
+    prefs: list[dict] = []
+    try:
+        for m in preference_memories():
+            tags        = {t.lower() for t in m.get("tags", [])}
+            agent_scope = {t for t in tags if t.endswith("_agent")}
+            if not agent_scope or agent_name in agent_scope:
+                prefs.append(m)
+    except Exception:
+        prefs = []
+
+    # Task-relevant facts. min_score drops weak single-generic-word matches so a
+    # task like "write a function" doesn't pull in every memory mentioning code.
+    try:
+        facts = search_memories(task, max_results=4, min_score=0.34)
+    except Exception:
+        facts = []
+
+    seen: set[str] = set()
+    picked: list[dict] = []
+    for m in prefs + facts:          # preferences first
+        if m["id"] in seen:
+            continue
+        seen.add(m["id"])
+        picked.append(m)
+    if not picked:
+        return ""
+
+    def _snip(text: str, limit: int = 240) -> str:
+        # Collapse whitespace and cap length — a single huge memory must never
+        # dump hundreds of lines into an agent's prompt.
+        text = " ".join((text or "").split())
+        return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+    lines = []
+    for m in picked:
+        tag  = " (preference)" if "preference" in [t.lower() for t in m.get("tags", [])] else ""
+        proj = f"  [project: {m['project_path']}]" if m.get("project_path") else ""
+        lines.append(f"  • {_snip(m['content'])}{tag}{proj}")
+    return (
+        "RELEVANT MEMORY (apply where it makes sense; ignore if not relevant):\n"
+        + "\n".join(lines)
+    )
+
+
 # ── Main loop ──────────────────────────────────────────────────────────────────
 
 async def run(
@@ -182,6 +248,12 @@ async def run(
     _sys_content = f"{date_ctx}\n\n{agent['system_prompt']}"
     if _skill_block:
         _sys_content += f"\n\n{_skill_block}"
+
+    # Inject relevant memory (facts + preferences) so it reaches agents that don't
+    # carry the memory_tool, scoped to relevance so memory-free tasks stay clean.
+    _mem_block = _memory_block(agent, user_message)
+    if _mem_block:
+        _sys_content += f"\n\n{_mem_block}"
 
     messages: list[dict] = [{"role": "system", "content": _sys_content}]
     messages.extend(history)

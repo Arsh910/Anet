@@ -12,12 +12,18 @@ openai
 anthropic
 python-dotenv
 httpx
-rich
+rich                  # terminal UI + animated startup banner (anet/cli/banner.py)
 prompt_toolkit
 ddgs                  # web_search (DuckDuckGo, no API key)
 
 # ── Conversation persistence (replaces LangGraph AsyncSqliteSaver) ──────────────
 aiosqlite
+
+# ── Optional: semantic memory retrieval (memory_tool) ───────────────────────────
+# Without this, memory search is keyword-only (the default). Install to also match
+# paraphrases via local embeddings (ONNX, no torch, no API key, no network at query
+# time after the one-time model download):
+# fastembed
 
 # ── web_fetch (fetch a URL → clean markdown) ────────────────────────────────────
 beautifulsoup4        # HTML parsing

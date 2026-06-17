@@ -286,6 +286,16 @@ RULES:
   generate a new plan and dispatch to the appropriate agent. NEVER respond with type:"simple" for
   corrections. The user is demanding action, not an explanation.
 
+ROUTING — match each sub-task to the most specific agent (works for ANY agent, including ones added later):
+- Each agent advertises what it handles via its task_types (listed above). Break the request into
+  sub-tasks and route EACH sub-task to the agent whose task_types most specifically match it.
+- A general-purpose agent (code_agent) must NOT absorb a sub-task that clearly matches a more
+  specialized agent's task_types. Delivering / sending / notifying / posting via an external service —
+  or any action another listed agent advertises — MUST be its OWN separate step routed to that agent,
+  with depends_on set to the step that produced the content.
+- NEVER have one agent improvise another agent's job, write code to do that job, or ask the user for
+  credentials that a specialized agent already holds.
+
 CRITICAL — agent routing for code vs desktop:
 - code_agent handles ALL programming and command-line work: writing/editing code, running npm/pip/
   python/git commands, scaffolding projects, creating files with content, running tests.
@@ -304,6 +314,9 @@ CRITICAL — agent routing for file management vs code editing:
   Any task inside a software project (React, Python, Node, HTML/CSS/JS/TS, config files, etc.)
   must go to code_agent — never file_agent.
 - When in doubt between file_agent and code_agent → ALWAYS choose code_agent.
+- BUT "code_agent does everything" covers programming/file work ONLY — it does NOT mean code_agent
+  should perform an action another agent advertises (e.g. sending a message/notification via an
+  external service). Split those into a separate step for the matching agent, even inside a coding pipeline.
 - NEVER route to file_agent: editing UI, fixing layouts, adding components, modifying source code,
   changing HTML/CSS/JS/Python/TypeScript files, or ANY task inside a software project folder.
 
@@ -382,7 +395,18 @@ def _synthesis_system_prompt(interim: bool = False) -> str:
         "- NEVER invent capability limitations. If a task failed, say WHAT failed (e.g. "
         "'research_agent could not find a direct downloadable image URL') — do NOT claim "
         "the system 'cannot' do something (like 'cannot send images to Telegram') unless "
-        "the agent explicitly returned that error. Stick to what the agent results actually say."
+        "the agent explicitly returned that error. Stick to what the agent results actually say.\n\n"
+        "TRUTHFULNESS — the agent outputs below are your ONLY source of truth:\n"
+        "- Report ONLY what the agent outputs actually contain. The 'Original request' tells you "
+        "what was ASKED, NOT what was done — never treat the request as evidence of completion.\n"
+        "- If the request asked for an action that has NO matching agent output (a file written, a "
+        "test run, code executed, a message sent), you MUST NOT claim it happened. Say plainly that "
+        "that part was not completed, and which agent would have done it.\n"
+        "- NEVER fabricate file paths, code, test results, numbers/statistics, or delivery "
+        "confirmations (e.g. 'sent to Telegram', 'tests passed') that are not present in the agent "
+        "outputs below.\n"
+        "- If only some steps ran, report exactly those and clearly list which parts of the request "
+        "were NOT done."
     )
     if interim:
         base += (

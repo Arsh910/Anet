@@ -27,9 +27,9 @@ _PROVIDERS = {
 _SYSTEM_PROMPT = """\
 You are a memory extraction system for an AI assistant. Analyze the recent conversation and return a JSON object with exactly two keys:
 
-"user_md": The complete updated USER.md content. Preserve ALL existing sections and entries — never remove anything. Only ADD new facts about the user: preferences, tech stack, projects, working style, tools they use. If nothing new, return the current USER.md unchanged.
+"user_md": The complete updated USER.md content. This is the user's PROFILE — who they are. Preserve ALL existing sections and entries — never remove anything. Only ADD new profile facts: identity (name, role), interests, tech stack, languages, working style, standing preferences, tools they use. If nothing new, return the current USER.md unchanged.
 
-"facts": An array of NEW discrete facts worth saving as persistent memories. Each fact must be a self-contained sentence useful in a future session (e.g. "User's main project is at C:\\projects\\myapp, a React + FastAPI app"). Only include facts NOT already present in USER.md or the existing memory list. Return [] if nothing new.
+"facts": An array of NEW, concrete facts worth RETRIEVING for a future TASK — and ONLY those. Good facts: a project's location/path, a specific project's stack, key technical decisions, important file paths, environment/setup details, task context (e.g. "User's main project is at C:\\projects\\myapp, a React + FastAPI app"). Do NOT put identity, interests, preferences, languages, skills, or working style here — those belong in USER.md ONLY; never duplicate profile material as facts. Only include facts not already in USER.md or the existing memory list. Return [] if nothing new.
 
 Respond with ONLY the JSON object — no prose, no markdown fences."""
 
