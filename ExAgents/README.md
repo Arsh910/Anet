@@ -16,8 +16,9 @@ prompt file beside it. No Python required unless the agent needs a custom tool
 
 ANet's **planner** routes each user request to an agent by matching the request
 against that agent's `task_types`. So `task_types` is the most important field —
-it's how the planner "discovers" your agent. `spawn_tool` is injected
-automatically, so any agent can also delegate to yours at runtime.
+it's how the planner "discovers" your agent. `ask_user` is added to every agent
+automatically; to let an agent delegate a sub-task to another agent at runtime,
+add `spawn_tool` to its `tools:` list explicitly.
 
 ## Define an agent
 
