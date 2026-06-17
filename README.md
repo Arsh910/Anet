@@ -5,8 +5,8 @@
 <td><img src="ReadmeImages/anet-mono.png" width="430" alt="ANET — white on binary field"></td>
 </tr>
 <tr>
-<td><img src="ReadmeImages/anet-clean.png" width="430" alt="ANET — gradient, clean"></td>
 <td><img src="ReadmeImages/anet-mono-clean.png" width="430" alt="ANET — white, clean"></td>
+<td><img src="ReadmeImages/anet-clean.png" width="430" alt="ANET — gradient, clean"></td>
 </tr>
 </table>
 </div>
