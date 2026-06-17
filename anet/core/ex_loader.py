@@ -15,18 +15,27 @@ import importlib.util
 import sys
 from pathlib import Path
 
-_ROOT      = Path(__file__).parents[2]
-_EX_CONFIG = _ROOT / "exanet.config.yaml"
+
+def _ws() -> Path:
+    """Workspace root (Anet home) — where ExTools/ExAgents and config live."""
+    from anet.core import paths as _paths
+    return _paths.workspace_root()
+
+
+def _ex_config_path() -> Path:
+    from anet.core import paths as _paths
+    return _paths.exanet_path()
 
 
 # ── Config reader ─────────────────────────────────────────────────────────────
 
 def _load_ex_config() -> dict:
-    if not _EX_CONFIG.exists():
+    cfg_file = _ex_config_path()
+    if not cfg_file.exists():
         return {}
     try:
         import yaml
-        return yaml.safe_load(_EX_CONFIG.read_text(encoding="utf-8")) or {}
+        return yaml.safe_load(cfg_file.read_text(encoding="utf-8")) or {}
     except Exception as exc:
         print(f"[ex_loader] could not read exanet.config.yaml: {exc}", file=sys.stderr)
         return {}
@@ -71,7 +80,7 @@ def load_ex_tools() -> dict[str, dict]:
             print(f"[ex_loader] skipping tool entry with missing name/path: {spec}", file=sys.stderr)
             continue
 
-        init_file = (_ROOT / path / "__init__.py")
+        init_file = (_ws() / path / "__init__.py")
         if not init_file.exists():
             print(f"[ex_loader] ExTool '{name}': __init__.py not found at {init_file}", file=sys.stderr)
             continue
@@ -118,7 +127,7 @@ def load_ex_agents() -> list[dict]:
         system_prompt = (spec.get("system_prompt") or "").strip()
         prompt_file   = spec.get("prompt_file", "")
         if not system_prompt and prompt_file:
-            pf = _ROOT / prompt_file
+            pf = _ws() / prompt_file
             if pf.exists():
                 system_prompt = pf.read_text(encoding="utf-8").strip()
         if not system_prompt:

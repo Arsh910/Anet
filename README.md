@@ -19,6 +19,7 @@ Use any model, per agent. Claude for code, Gemini for research, GPT for planning
 <table>
 <tr><td><b>Multi-agent, multi-model</b></td><td>Five built-in agents (research, code, file, computer, checker) plus your own. Each picks its own model + provider in <code>anet.config.yaml</code>. The manager plans a DAG and runs independent steps in parallel.</td></tr>
 <tr><td><b>Builds its own integrations</b></td><td>The <b>ToolSmith</b> (<code>/newtool</code>), <b>MCPSmith</b> (<code>/addmcp</code>), and <b>AgentSmith</b> (<code>/newagent</code>) scaffold a new tool, MCP server, or agent from your code/description, validate it, then wire it into the agents you pick — editing only <code>exanet.config.yaml</code>, never the core.</td></tr>
+<tr><td><b>Shareable packs</b></td><td>Your whole setup — tools, agents, skills, MCP wiring, persona — is one folder. <b>PackSmith</b> (<code>/packsmith share</code>) bundles it into a zip (secrets stripped, README written); anyone runs <code>/packsmith add</code> + <code>/changepack</code> to get your exact setup. Switch between packs anytime.</td></tr>
 <tr><td><b>Safe by default</b></td><td>Every shell command, file edit, and destructive file op pauses for explicit <code>y/n/a</code> approval. Per-agent step caps and cycle detection stop runaways.</td></tr>
 <tr><td><b>Remembers you</b></td><td>Auto-built user profile (<code>USER.md</code>), cross-session memory, and a 10-turn memory nudge — so it knows your stack and preferences next time.</td></tr>
 <tr><td><b>Learns from experience</b></td><td>After a complex, self-corrected task it writes a reusable <b>skill</b>; relevant skills are injected into future tasks, and a Curator improves them over time.</td></tr>
@@ -99,6 +100,8 @@ You: open notepad and type today's AI headlines
 | `/newagent <description>` | **AgentSmith** — design + register a new agent |
 | `/addmcp <path>` | **MCPSmith** — draft, connect-test + register an MCP server |
 | `/mcptest <name>` | Connect-test an MCP server |
+| `/packsmith share <path?>` · `/packsmith add <zip>` | **PackSmith** — bundle your setup to share, or install someone's |
+| `/changepack <name?>` | Switch the active pack (your workspace) |
 | `/clear` | Clear the screen and redraw the startup view |
 | `/help` | Show the command list |
 | `ESC` | Stop the running task, return to the prompt |
@@ -160,12 +163,67 @@ Add your own tools, agents, MCP servers, and skills **without touching the core 
 
 | Guide | Add via smith | Add manually |
 |---|---|---|
-| 🔧 **[ExTools](ExTools/README.md)** — custom tools | `/newtool <path>` | `ExTools/<name>/__init__.py` + register in `exanet.config.yaml` |
-| 🤖 **[ExAgents](ExAgents/README.md)** — custom agents | `/newagent <description>` | inline block under `agents:` in `exanet.config.yaml` |
-| 🔌 **[mcps](mcps/README.md)** — MCP servers | `/addmcp <path>` | `mcps/<name>/config.yaml` + wire to an agent |
-| 🧠 **[skills](skills/README.md)** — learned procedures | written automatically | drop a `skills/<name>.md` file |
+| 🔧 **[ExTools](anet_pack/ExTools/README.md)** — custom tools | `/newtool <path>` | `ExTools/<name>/__init__.py` + register in `exanet.config.yaml` |
+| 🤖 **[ExAgents](anet_pack/ExAgents/README.md)** — custom agents | `/newagent <description>` | inline block under `agents:` in `exanet.config.yaml` |
+| 🔌 **[mcps](anet_pack/mcps/README.md)** — MCP servers | `/addmcp <path>` | `mcps/<name>/config.yaml` + wire to an agent |
+| 🧠 **[skills](anet_pack/skills/README.md)** — learned procedures | written automatically | drop a `skills/<name>.md` file |
 
 > The smiths now **finish the integration for you**: after creating and validating, they show you the available agents (built-in + your own) and attach the new tool/MCP to the ones you pick (multi-select). They only ever write `exanet.config.yaml` — never `anet.config.yaml` or the core `anet/` package.
+
+---
+
+## 📦 Packs — share your whole setup
+
+A **pack** is your entire ANet workspace as one self-contained folder: your config, your custom tools and agents, your MCP wiring, your learned skills, and your persona. It lives at `~/.anet/anet_pack/` (separate from the read-only engine), so it's trivially portable.
+
+That makes a hard-won setup **shareable**. Spend a week building a great "DevOps" or "research analyst" workspace? Hand it to a teammate — or the community — and they get your *exact* capabilities in one step.
+
+```
+~/.anet/anet_pack/          ← a pack is just this folder
+├── anet.config.yaml        models / providers
+├── exanet.config.yaml      which tools & agents are wired up
+├── ExTools/   ExAgents/     your custom tools and agents (real code)
+├── mcps/                    MCP server configs
+├── skills/                  learned procedures
+└── SOUL.md                  persona
+```
+
+### Share one
+
+```text
+You:  /packsmith share
+Anet: inspects the pack, writes a README, strips every secret,
+      → ~/.anet/anet_files/anet_pack.zip
+```
+
+`PackSmith` bundles the folder into a zip — **all `.env` secrets removed**, a step-by-step README generated from what's inside (which tools/agents it has, which API keys the recipient must supply, any prerequisites).
+
+### Install one
+
+```text
+Friend: /packsmith add ./devops-pack.zip
+Anet:   extracts it to ~/.anet/shared_packs/devops-pack,
+        shows what's inside, asks for the API keys it needs,
+        runs only the setup its README documents (with your approval)
+Friend: /changepack devops-pack      ← now using your exact setup
+```
+
+### Switch between packs
+
+```text
+/changepack            → lists: anet_pack (default), devops-pack, research-pack …
+/changepack research-pack
+```
+
+Keep several packs and flip between them — your own default, a teammate's, a community one. Great for testing, too: try a shared pack, then `/changepack` back.
+
+### Why it's safe
+
+- **Secrets never travel.** Export strips every `.env`; the README lists which keys *you* supply on your machine.
+- **Nothing auto-runs.** Installing only unpacks and (with your `y/n/a` approval) runs the setup steps the README documents — it never executes the pack's tools.
+- **It's a trust decision, like a VS Code extension.** A pack contains real, runnable code; PackSmith shows you what's inside before you activate it.
+
+> **Example pack idea:** a "Frontend" pack = a Lighthouse-audit tool + a component-scaffolding agent + a Playwright MCP + skills for your team's conventions. Share it, and every teammate's ANet can audit and scaffold the same way on day one.
 
 ---
 
@@ -174,10 +232,10 @@ Add your own tools, agents, MCP servers, and skills **without touching the core 
 | Doc | What's inside |
 |---|---|
 | 🏗️ **[Architecture](architecture/README.md)** | Request lifecycle, component diagram, memory loop, sessions, project layout |
-| 🔧 **[ExTools guide](ExTools/README.md)** | Tool contract, `/newtool`, registration, credentials |
-| 🤖 **[ExAgents guide](ExAgents/README.md)** | Agent fields, prompts, routing, worked example |
-| 🔌 **[mcps guide](mcps/README.md)** | Launch config, `/addmcp`, `/mcptest`, constraints |
-| 🧠 **[skills guide](skills/README.md)** | How skills are created, injected, curated, and hand-authored |
+| 🔧 **[ExTools guide](anet_pack/ExTools/README.md)** | Tool contract, `/newtool`, registration, credentials |
+| 🤖 **[ExAgents guide](anet_pack/ExAgents/README.md)** | Agent fields, prompts, routing, worked example |
+| 🔌 **[mcps guide](anet_pack/mcps/README.md)** | Launch config, `/addmcp`, `/mcptest`, constraints |
+| 🧠 **[skills guide](anet_pack/skills/README.md)** | How skills are created, injected, curated, and hand-authored |
 
 ---
 

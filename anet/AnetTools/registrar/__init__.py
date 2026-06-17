@@ -4,10 +4,10 @@ registrar — the smiths' safe integration tool.
 Lets the toolsmith / mcpsmith / agentsmith agents register ExTools and ExAgents
 and attach tools / MCP servers to agents by editing **exanet.config.yaml only**.
 
-HARD GUARANTEE: this tool writes to exactly one file — `exanet.config.yaml` at
-the repo root. It can never modify the core `anet/` package or `anet.config.yaml`.
-The smiths route every config change through here precisely so that guarantee
-holds, even if the model is told otherwise.
+HARD GUARANTEE: this tool writes to exactly one file — `exanet.config.yaml` in
+the user's Anet home (workspace). It can never modify the core `anet/` package or
+`anet.config.yaml`. The smiths route every config change through here precisely so
+that guarantee holds, even if the model is told otherwise.
 
 Attaching a tool/MCP to a BUILT-IN agent (defined inside `anet/`) is recorded
 under an `attach:` section in `exanet.config.yaml`, which the loader merges at
@@ -17,8 +17,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_ROOT   = Path(__file__).resolve().parents[3]   # …/AnetTools/registrar → repo root
-_EXANET = _ROOT / "exanet.config.yaml"
+def _exanet() -> Path:
+    """The exanet.config.yaml in the user's workspace (Anet home)."""
+    from anet.core import paths as _paths
+    return _paths.exanet_path()
+
+
+def _mcps_root() -> Path:
+    from anet.core import paths as _paths
+    return _paths.mcps_dir()
 
 # Only these smiths may attach tools/MCP to BUILT-IN (internal) agents. Attaching
 # to a built-in agent extends the core anet/ agents, so it's deliberately limited
@@ -81,9 +88,9 @@ def _yaml():
 
 def _load():
     y = _yaml()
-    if not _EXANET.exists():
+    if not _exanet().exists():
         return {}, y
-    text = _EXANET.read_text(encoding="utf-8")
+    text = _exanet().read_text(encoding="utf-8")
     if y is not None:
         return (y.load(text) or {}), y
     import yaml as pyyaml
@@ -92,11 +99,11 @@ def _load():
 
 def _save(data, y) -> None:
     if y is not None:
-        with open(_EXANET, "w", encoding="utf-8") as f:
+        with open(_exanet(), "w", encoding="utf-8") as f:
             y.dump(data, f)
     else:
         import yaml as pyyaml
-        _EXANET.write_text(pyyaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        _exanet().write_text(pyyaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
 # ── Discovery helpers ─────────────────────────────────────────────────────────
@@ -118,7 +125,7 @@ def _builtin_tools() -> list[str]:
 
 
 def _mcp_servers() -> list[str]:
-    d = _ROOT / "mcps"
+    d = _mcps_root()
     if not d.exists():
         return []
     return sorted(p.name for p in d.iterdir() if p.is_dir() and (p / "config.yaml").exists())

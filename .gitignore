@@ -63,3 +63,20 @@ desktop.ini
 
 #  Mcp
 .mcps/codegraph/codegraph
+
+# MCP server data dirs. Playwright's output now lands under the Anet home
+# (<home>/mcp/playwright/); codegraph's graph is project-local by design (it walks
+# parent dirs to find it, like .git), so it stays in the repo — ignore it here.
+.code-review-graph/
+.codegraph/
+.playwright-mcp/
+
+# ── anet_pack (the dev workspace) — keep source defaults, ignore heavy/runtime bits ──
+# The vendored codegraph MCP must never be committed or shipped (huge,
+# machine-specific, carries its own .git + node_modules). Users install MCP
+# servers themselves via /addmcp. (node_modules/ and .env/*.env are already
+# ignored globally above — secrets never ship.)
+anet_pack/mcps/codegraph/
+# Runtime artifacts created while developing against anet_pack/.
+anet_pack/skills/.usage.json
+anet_pack/skills/archived/

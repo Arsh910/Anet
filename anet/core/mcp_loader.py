@@ -18,8 +18,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_ROOT    = Path(__file__).parents[2]
-_MCP_DIR = _ROOT / "mcps"
+def _mcp_dir() -> Path:
+    """Directory of MCP server configs (mcps/<name>/config.yaml) in the workspace."""
+    from anet.core import paths as _paths
+    return _paths.mcps_dir()
 
 # Registry of live connections: server_name → _MCPConnection
 _connections: dict[str, "_MCPConnection"] = {}
@@ -73,8 +75,15 @@ class _MCPConnection:
             self._ready.set()
             return
 
+        # Working directory for the server subprocess. Default: a per-server data
+        # dir under the Anet home (<home>/mcp/<name>/) so any folders the server
+        # creates (e.g. .code-review-graph, .playwright-mcp) don't litter the
+        # launch directory. A `cwd:` key in config.yaml overrides this (relative
+        # paths resolve against the dir ANet was launched from).
+        cwd = self._resolve_cwd()
+
         try:
-            params = StdioServerParameters(command=command, args=args, env=env)
+            params = StdioServerParameters(command=command, args=args, env=env, cwd=cwd)
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
@@ -103,6 +112,28 @@ class _MCPConnection:
                 self.error = str(exc)
             self._ready.set()
 
+    def _resolve_cwd(self) -> str:
+        """Resolve the subprocess working directory and ensure it exists.
+
+        A `cwd:` override resolves relative paths against the directory the user
+        launched ANet from (their project), so e.g. `cwd: "."` makes codegraph
+        index the current project. With no override, a per-server data dir under
+        the Anet home is used, keeping the launch dir clean.
+        """
+        override = self.cfg.get("cwd")
+        if override:
+            p = Path(override).expanduser()
+            if not p.is_absolute():
+                p = (Path.cwd() / p).resolve()
+        else:
+            from anet.core import paths as _paths
+            p = _paths.mcp_data_dir(self.name)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        return str(p)
+
     async def call(self, tool_name: str, arguments: dict) -> dict:
         if self.error:
             return {"error": f"MCP server '{self.name}' unavailable: {self.error}"}
@@ -115,7 +146,7 @@ class _MCPConnection:
 # ── Config reader ─────────────────────────────────────────────────────────────
 
 def _read_server_config(server_name: str) -> dict | None:
-    config_file = _MCP_DIR / server_name / "config.yaml"
+    config_file = _mcp_dir() / server_name / "config.yaml"
     if not config_file.exists():
         print(f"[mcp_loader] no config.yaml found at {config_file}", file=sys.stderr)
         return None
@@ -227,9 +258,9 @@ async def load_mcp_tools_for_agents(agents: list[dict]) -> dict[str, dict]:
 
 def list_available_servers() -> list[str]:
     """Return names of all MCP servers that have a config.yaml in mcps/."""
-    if not _MCP_DIR.exists():
+    if not _mcp_dir().exists():
         return []
     return [
-        d.name for d in _MCP_DIR.iterdir()
+        d.name for d in _mcp_dir().iterdir()
         if d.is_dir() and (d / "config.yaml").exists()
     ]

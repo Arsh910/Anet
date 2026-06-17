@@ -2,8 +2,8 @@
 
 Internals and design of ANet. For installation and day-to-day usage, see the
 [main README](../README.md). For extending ANet, see the per-folder guides:
-[ExTools](../ExTools/README.md) · [ExAgents](../ExAgents/README.md) ·
-[mcps](../mcps/README.md) · [skills](../skills/README.md).
+[ExTools](../anet_pack/ExTools/README.md) · [ExAgents](../anet_pack/ExAgents/README.md) ·
+[mcps](../anet_pack/mcps/README.md) · [skills](../anet_pack/skills/README.md).
 
 ---
 
@@ -109,7 +109,7 @@ flowchart TD
   is prompted to persist genuinely new facts to `memory_tool`.
 - **Context compression** — past ~40 messages, ANet offers **[f] forget**
   (keep last 20) or **[c] compress** (summarise). Also `/forget`, `/compress`.
-- **Self-improving skills** — see [skills/README.md](../skills/README.md).
+- **Self-improving skills** — see [skills/README.md](../anet_pack/skills/README.md).
 
 ---
 
@@ -154,6 +154,7 @@ flowchart LR
 | **ToolSmith** | `/newtool <path>` | `extool_validator` | registers the ExTool, attaches it to agents you pick |
 | **MCPSmith** | `/addmcp <path>` | `mcp_doctor` | attaches the server to agents you pick |
 | **AgentSmith** | `/newagent <desc>` | — | writes the prompt + registers the agent with your chosen tools/MCP |
+| **PackSmith** | `/packsmith share` / `add` | `pack_tool` | bundles the pack to a zip (secrets stripped) / installs a received zip |
 
 ### The `registrar` tool — the safety boundary
 
@@ -176,7 +177,35 @@ to the **ToolSmith and MCPSmith** — the registrar checks the calling agent's n
 (injected as `_agent_name`) and refuses a built-in attach from anyone else
 (e.g. the AgentSmith). External ExAgents have no such limit.
 
-Details: [ExTools](../ExTools/README.md) · [ExAgents](../ExAgents/README.md) · [mcps](../mcps/README.md).
+Details: [ExTools](../anet_pack/ExTools/README.md) · [ExAgents](../anet_pack/ExAgents/README.md) · [mcps](../anet_pack/mcps/README.md).
+
+---
+
+## Packs & the active workspace
+
+A **pack** is a self-contained workspace folder (config + ExTools/ExAgents/mcps/
+skills + SOUL.md). Which pack is "live" is resolved by `paths.workspace_root()`:
+
+```mermaid
+flowchart TD
+    R["workspace_root()"] --> A{"active_pack.txt"}
+    A -->|"'anet_pack' (default)"| D{"source checkout?"}
+    D -->|"yes (dev)"| RP["&lt;repo&gt;/anet_pack/"]
+    D -->|"no (installed)"| HP["&lt;home&gt;/anet_pack/"]
+    A -->|"a shared pack name"| SP["&lt;home&gt;/shared_packs/&lt;name&gt;/"]
+```
+
+- **`<home>/active_pack.txt`** holds the selected pack name (default `anet_pack`).
+- `/changepack` writes that pointer, calls `config_loader.reset_cache()`, and sets a
+  reload flag so the main loop rebuilds the engine against the new pack before the
+  next turn. Every loader reads `workspace_root()`, so the switch is global.
+- **Sharing** (`anet/AnetTools/pack_tool/`): `export` copies a pack → zip with all
+  `.env`/secrets and heavy junk stripped + an embedded README; `import_pack`
+  extracts into `shared_packs/<name>`; both are pure file ops — **pack code is never
+  executed**. The PackSmith agent adds the judgment (README writing, secret
+  collection, README-documented setup via the approval-gated `shell_tool`).
+- First-run **seeding** always targets the *default* pack (`default_pack_root()`), so
+  switching the active pack never affects what gets seeded.
 
 ---
 
@@ -186,19 +215,31 @@ Details: [ExTools](../ExTools/README.md) · [ExAgents](../ExAgents/README.md) ·
 Anet/
 ├── main.py                  # CLI entry point
 ├── server.py                # Web dashboard
-├── anet.config.yaml         # Models, persona, memory, skills, per-agent overrides
-├── exanet.config.yaml       # External tools + agents
-├── SOUL.md                  # Manager persona
 │
-├── anet/
+├── anet/                    # the read-only core (engine + built-ins)
 │   ├── AnetAgents/          # Built-in agent definitions
-│   ├── AnetTools/           # Built-in tool implementations
+│   ├── AnetTools/           # Built-in tool implementations (+ registrar)
 │   ├── cli/banner.py        # Animated startup banner + README image export
-│   └── core/                # engine, orchestrator, agent_runner, store, memory, skills, loaders
+│   └── core/                # engine, orchestrator, agent_runner, store, memory, skills, loaders, paths, workspace
+│
+├── anet_pack/               # the DEFAULT PACK (ships with ANet; the dev workspace)
+│   ├── __init__.py          # makes it an importable package (so it ships in the wheel)
+│   ├── anet.config.yaml     # default models/persona/memory/skills config
+│   ├── exanet.config.yaml   # external tools/agents registry (+ attach: for built-ins)
+│   ├── SOUL.md              # default persona
+│   ├── ExTools/             # example tools (wordcount, tele_tool) + ExTools guide
+│   ├── ExAgents/            # example agents (tele_agent) + ExAgents guide
+│   ├── mcps/                # example MCP configs (playwright) + mcps guide
+│   └── skills/              # example skill + skills guide
 │
 ├── architecture/            # ← you are here
-├── mcps/                    # MCP servers (codegraph, playwright)
-├── skills/                  # Auto-written procedures (grows over time)
-├── ExAgents/  ExTools/      # Your custom agents and tools
-└── memory/ → <anet-home>    # USER.md + sessions/ (see above)
+└── <anet-home>/             # the user's data, e.g. ~/.anet  (NOT in the repo)
+    ├── anet_pack/           # the user's editable pack (seeded from the bundled one)
+    ├── USER.md              # auto-built user profile
+    ├── anet_files/          # downloads + agent output
+    └── sessions/            # conversations.db + per-session metadata
 ```
+
+> **Dev vs installed:** running `python main.py` from a checkout uses the repo's
+> `anet_pack/` as the live workspace (edit-and-test instantly). An installed
+> `anet` uses `<home>/anet_pack/`, seeded once from the bundled default pack.

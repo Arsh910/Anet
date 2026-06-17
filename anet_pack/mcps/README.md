@@ -34,6 +34,25 @@ agents:
 That's it. On boot the server starts once, stays alive for the session, and its
 tools are injected into every agent that declares it.
 
+## Where a server writes its data
+
+By default each server is launched with its **working directory set to
+`<anet-home>/mcp/<name>/`** (e.g. `~/.anet/mcp/playwright/`). So any folders a
+server drops in its cwd (playwright's `.playwright-mcp` logs/screenshots, etc.)
+land there instead of cluttering the repo root.
+
+Override per server with a `cwd:` key in `config.yaml`:
+
+```yaml
+cwd: "."          # run in the repo root (relative paths resolve against it)
+# cwd: /abs/path  # or an absolute directory
+```
+
+> **codegraph is special:** it stores its graph *inside the indexed project root*
+> (`.code-review-graph/`, located by walking parent dirs — like `.git`), so its
+> config pins `cwd: "."`. That folder is git-ignored rather than relocated; moving
+> it would break codegraph's project lookup.
+
 ## Important constraints
 
 - **stdio transport only.** ANet speaks MCP over a subprocess's stdin/stdout.

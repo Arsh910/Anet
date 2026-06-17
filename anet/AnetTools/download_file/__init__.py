@@ -4,7 +4,13 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-_ANET_FILES_DIR = Path(__file__).parents[3] / "anet_files"
+def _anet_files_dir() -> Path:
+    """Base download dir — <home>/anet_files/."""
+    try:
+        from anet.core import paths as _paths
+        return _paths.anet_files_dir()
+    except Exception:
+        return Path(__file__).parents[3] / "anet_files"
 
 # Many hosts (Wikimedia in particular) return 403 to requests with no/default
 # User-Agent. Send a normal browser UA so direct file URLs and Commons
@@ -53,7 +59,7 @@ async def run(input: dict) -> dict:
 
     # NOTE: the directory is created lazily — only right before we actually write
     # bytes (see below) — so a failed download never leaves an empty folder behind.
-    downloads_dir = _ANET_FILES_DIR / agent
+    downloads_dir = _anet_files_dir() / agent
 
     # Derive filename from URL if not provided
     if not filename:

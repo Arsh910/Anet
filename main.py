@@ -54,7 +54,10 @@ from anet.core.config_loader import agent_overrides as _agent_overrides, manager
 from anet.core.ex_loader import load_ex_tools, load_ex_agents, get_extra_for_builtins, get_builtin_attachments
 from anet.core.mcp_loader import load_mcp_tools_for_agents
 
-_EX_CONFIG = Path(__file__).parent / "exanet.config.yaml"
+# exanet.config.yaml lives in the workspace (Anet home); resolved at runtime so
+# the hot-reload watcher follows the real file, not a stale repo-root path.
+def _ex_config_file() -> Path:
+    return _anet_paths.exanet_path()
 
 # Tools auto-added to EVERY agent (built-in or externally added) at startup,
 # so they never need to be listed per-agent in config. Only injected if the
@@ -69,6 +72,10 @@ from anet.core import paths as _anet_paths
 _MEMORY_DIR        = _anet_paths.sessions_dir()        # <home>/sessions/
 _SHARED_DB_PATH    = _MEMORY_DIR / "conversations.db"  # one db for all sessions, keyed by thread
 _USER_PROFILE_PATH = _anet_paths.user_profile_path()   # <home>/USER.md
+
+# Set by /changepack to force the hot-reload loop to rebuild the engine against
+# the newly-selected active pack on its next iteration.
+_force_reload: bool = False
 
 _USER_PROFILE_TEMPLATE = (
     "## User Profile\n"
@@ -565,6 +572,8 @@ _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/newagent", "AgentSmith — design + register a new agent <description>"),
     ("/addmcp",   "MCPSmith — draft + register an MCP server <path>"),
     ("/mcptest",  "Connect-test an MCP server <name>"),
+    ("/changepack", "Switch the active pack (workspace) <name?>"),
+    ("/packsmith", "Share a pack as a zip, or install one: share <path?> | add <zip>"),
     ("/clear",    "Clear screen and redraw the startup view"),
     ("/help",     "Show the slash command list"),
 ]
@@ -927,6 +936,9 @@ _HELP_TEXT = """
   [bold cyan]/newagent[/bold cyan] [dim]<desc>[/dim]      AgentSmith: design + register a new agent
   [bold cyan]/addmcp[/bold cyan] [dim]<path>[/dim]        MCPSmith: draft + register an MCP server from its docs
   [bold cyan]/mcptest[/bold cyan] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
+  [bold cyan]/changepack[/bold cyan] [dim]<name>[/dim]    Switch the active pack (workspace) — lists packs if no name
+  [bold cyan]/packsmith share[/bold cyan] [dim]<path?>[/dim]  Bundle a pack into a shareable zip (secrets stripped)
+  [bold cyan]/packsmith add[/bold cyan] [dim]<zip>[/dim]      Install a received pack into shared_packs/
   [bold cyan]/clear[/bold cyan]                Clear the screen
   [bold cyan]/help[/bold cyan]                 Show this message
 
@@ -980,6 +992,50 @@ def _cmd_mcps() -> None:
     console.print()
     console.print(Panel(t, title="[bold]MCP Servers[/bold]", border_style="magenta"))
     console.print()
+
+
+async def _cmd_changepack(arg: str = "") -> None:
+    """List available packs and switch the active one (the workspace ANet reads).
+    Triggers an engine rebuild so the new pack's tools/agents take effect."""
+    global _force_reload
+    packs  = _anet_paths.list_packs()
+    active = _anet_paths.active_pack()
+
+    # Resolve the target: an explicit arg (name or number), else show a picker.
+    target = None
+    choice = arg.strip()
+    if not choice:
+        console.print("\n  [bold]Available packs[/bold]")
+        for i, p in enumerate(packs, 1):
+            marker = "  [green]← active[/green]" if p == active else ""
+            kind = "[dim](default)[/dim]" if p == "anet_pack" else "[dim](shared)[/dim]"
+            console.print(f"   [cyan]{i}[/cyan]. {p} {kind}{marker}")
+        console.print()
+        choice = (await _read_input("  pick a pack (number or name, blank to cancel): ")).strip()
+
+    if not choice:
+        console.print("  [dim]no change[/dim]\n")
+        return
+    if choice.isdigit() and 1 <= int(choice) <= len(packs):
+        target = packs[int(choice) - 1]
+    elif choice in packs:
+        target = choice
+    else:
+        console.print(f"  [yellow]unknown pack:[/yellow] {choice}  [dim](see the list above)[/dim]\n")
+        return
+
+    if target == active:
+        console.print(f"  [dim]already on '{target}'[/dim]\n")
+        return
+
+    _anet_paths.set_active_pack(target)
+    try:
+        from anet.core.config_loader import reset_cache
+        reset_cache()                      # drop cached config/soul from the old pack
+    except Exception:
+        pass
+    _force_reload = True                   # hot-reload loop rebuilds before the next turn
+    console.print(f"\n  [green]switched to pack:[/green] [bold]{target}[/bold] — reloading on next message…\n")
 
 
 
@@ -1064,6 +1120,9 @@ async def _handle_slash(
     elif command == "/clear":
         console.clear()
         _print_startup_summary(enabled_agents, tool_map)
+
+    elif command == "/changepack":
+        await _cmd_changepack(arg)
 
     elif command == "/new":
         global _session_turn_count, _last_context_prompt_n
@@ -1210,6 +1269,25 @@ async def _handle_slash(
             )
         else:
             await _run_mcp_doctor(arg.split()[0])
+
+    elif command == "/packsmith":
+        sub_parts = arg.split(None, 1)
+        sub  = sub_parts[0].lower() if sub_parts else ""
+        rest = sub_parts[1].strip() if len(sub_parts) > 1 else ""
+        if sub == "share":
+            await _run_packsmith("share", rest, tool_map)
+        elif sub == "add":
+            if not rest:
+                console.print("\n  [yellow]Usage:[/yellow] /packsmith add <path-to-pack.zip>\n")
+            else:
+                await _run_packsmith("add", rest, tool_map)
+        else:
+            console.print(
+                "\n  [yellow]Usage:[/yellow] /packsmith share [dim]<pack path — blank = active pack>[/dim]\n"
+                "          /packsmith add [dim]<path-to-pack.zip>[/dim]\n"
+                "  [dim]share: bundle a pack into a shareable zip (secrets stripped, README added).[/dim]\n"
+                "  [dim]add:   install a received pack zip into shared_packs/, then /changepack to it.[/dim]\n"
+            )
 
     else:
         console.print(f"\n  [yellow]Unknown command:[/yellow] {command}  "
@@ -1364,6 +1442,36 @@ async def _run_agentsmith(description: str, tool_map: dict) -> None:
     await _run_standalone_agent(
         AGENTSMITH_AGENT, user_message, tool_map,
         banner="designing a new ExAgent",
+    )
+
+
+async def _run_packsmith(mode: str, arg: str, tool_map: dict) -> None:
+    """Share a pack as a zip, or install a received pack zip (the /packsmith command)."""
+    from anet.AnetAgents.packsmith import PACKSMITH_AGENT
+    if mode == "share":
+        target = arg.strip() or "the active pack"
+        user_message = (
+            "SHARE a pack as a distributable .zip.\n"
+            f"Pack to share: {target}.\n\n"
+            "Follow your SHARE workflow: inspect the pack with pack_tool, write a clear "
+            "recipient README (what it does, required env vars + where, prerequisites, how to "
+            "/packsmith add + /changepack, a trust note), then pack_tool action='export' with "
+            "that README (secrets are stripped automatically). Report the final .zip path."
+        )
+        banner = f"packaging {target} for sharing"
+    else:  # add
+        user_message = (
+            "ADD (install) a shared pack from this zip:\n"
+            f"{arg.strip()}\n\n"
+            "Follow your ADD workflow: import it with pack_tool (it extracts to shared_packs/ "
+            "and never runs pack code), read its README, summarise what's inside + the trust "
+            "implication, collect any required secrets via ask_user and write the .env files, "
+            "run only the setup the README documents (via shell_tool, user-approved), then tell "
+            "the user to /changepack to activate it."
+        )
+        banner = f"installing pack from {arg.strip()}"
+    await _run_standalone_agent(
+        PACKSMITH_AGENT, user_message, tool_map, banner=banner,
     )
 
 
@@ -1666,19 +1774,12 @@ def _prompt_for_home() -> Path:
 
 
 def _seed_and_migrate(home: Path, repo: Path | None = None) -> None:
-    """On first run: seed SOUL.md/USER.md into the home dir and remove the old
-    in-repo sessions (the user opted to drop them)."""
+    """On first run: seed USER.md into the home dir and remove the old in-repo
+    sessions (the user opted to drop them). SOUL.md is part of the pack and is
+    handled by workspace.ensure_workspace()."""
     import shutil
     repo = repo or Path(__file__).parent
     old_mem = repo / "memory"
-
-    # Seed SOUL.md from the repo default if the home copy is missing.
-    repo_soul, home_soul = repo / "SOUL.md", home / "SOUL.md"
-    if repo_soul.exists() and not home_soul.exists():
-        try:
-            shutil.copy2(repo_soul, home_soul)
-        except OSError:
-            pass
 
     # Migrate the USER.md profile from the old in-repo location (preserve it),
     # else create a fresh template.
@@ -1742,6 +1843,17 @@ def _setup_anet_home(interactive: bool = True) -> None:
 
     if first_run and interactive:
         _seed_and_migrate(home)
+
+    # Seed the workspace (config + ExTools/ExAgents/mcps/skills) from bundled
+    # templates, or migrate an existing clone's content — idempotent, so it only
+    # fills in what's missing and never clobbers the user's edits.
+    try:
+        from anet.core.workspace import ensure_workspace
+        seeded = ensure_workspace()
+        if seeded:
+            console.print(f"  [dim]pack ready in {_anet_paths.workspace_root()} — seeded: {', '.join(seeded)}[/dim]")
+    except Exception as exc:
+        print(f"[setup] workspace seeding failed: {exc}", file=sys.stderr)
 
     # Fold any legacy per-session checkpoint.db files into the shared db.
     _migrate_per_session_dbs()
@@ -1809,9 +1921,9 @@ async def main() -> None:
             ex_agents = load_ex_agents()
 
             # ── 3. Load .env files for ExAgents that have one ─────────────────
-            _repo_root = Path(__file__).parent
+            _exagents_dir = _anet_paths.exagents_dir()
             for agent in ex_agents:
-                env_file = _repo_root / "ExAgents" / agent["name"] / ".env"
+                env_file = _exagents_dir / agent["name"] / ".env"
                 if env_file.exists():
                     from dotenv import load_dotenv as _ldenv
                     _ldenv(env_file, override=True)
@@ -1891,7 +2003,7 @@ async def main() -> None:
             pass
 
         try:
-            mtime = _EX_CONFIG.stat().st_mtime if _EX_CONFIG.exists() else 0.0
+            mtime = _ex_config_file().stat().st_mtime if _ex_config_file().exists() else 0.0
         except OSError:
             mtime = 0.0
 
@@ -1906,16 +2018,19 @@ async def main() -> None:
                 cur_agents = all_agents
                 cur_tools  = all_tools
                 while True:
-                    # Check if registry changed (anet connect / disconnect in another terminal)
+                    # Rebuild when the active pack's exanet.config.yaml changes
+                    # (smith edits) OR when /changepack switched the active pack.
+                    global _force_reload
                     try:
-                        new_mtime = _EX_CONFIG.stat().st_mtime if _EX_CONFIG.exists() else 0.0
+                        new_mtime = _ex_config_file().stat().st_mtime if _ex_config_file().exists() else 0.0
                     except OSError:
                         new_mtime = 0.0
-                    if new_mtime != mtime:
+                    if new_mtime != mtime or _force_reload:
                         mtime = new_mtime
+                        _force_reload = False
                         cur_agents, cur_tools, mgr_tools2, n2 = await _merge_all()
                         engine_box[0] = Engine(cur_agents, cur_tools, manager_tools=mgr_tools2)
-                        console.print(f"[dim]  ✓ registry updated — {n2} external agent(s) active[/dim]")
+                        console.print(f"[dim]  ✓ pack loaded — {n2} external agent(s) active[/dim]")
 
                     # Run one chat turn
                     done = await _chat_turn(engine_box[0], store, config, cur_agents, cur_tools)

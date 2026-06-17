@@ -10,25 +10,34 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_CONFIG_FILE = Path(__file__).parents[2] / "anet.config.yaml"
-_REPO_ROOT   = Path(__file__).parents[2]
 _cache: dict | None = None
 _soul_cache: str | None = None
 
 
+def reset_cache() -> None:
+    """Drop cached config + soul so the next load re-reads from the (possibly
+    switched) active pack. Called by /changepack."""
+    global _cache, _soul_cache
+    _cache = None
+    _soul_cache = None
+
+
 def load() -> dict:
-    """Load and cache anet.config.yaml. Returns {} if file is absent or invalid."""
+    """Load and cache anet.config.yaml from the Anet home. Returns {} if absent/invalid."""
     global _cache
     if _cache is not None:
         return _cache
 
-    if not _CONFIG_FILE.exists():
+    from anet.core import paths as _paths
+    cfg_file = _paths.config_path()
+
+    if not cfg_file.exists():
         _cache = {}
         return _cache
 
     try:
         import yaml
-        with _CONFIG_FILE.open("r", encoding="utf-8") as f:
+        with cfg_file.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         _cache = data
     except Exception as exc:
@@ -51,15 +60,21 @@ def load_soul() -> str:
         _soul_cache = ""
         return _soul_cache
 
-    # Prefer the user's home SOUL.md (seeded from the repo default on first run);
-    # fall back to the repo copy if the home one isn't there yet.
-    soul_file = cfg.get("soul_file", "SOUL.md")
+    # SOUL.md lives in the Anet home (seeded from the default pack on first run);
+    # fall back to the bundled default pack if the home copy isn't there yet.
     try:
         from anet.core.paths import soul_path as _home_soul_path
         home_soul = _home_soul_path()
     except Exception:
         home_soul = None
-    soul_path = home_soul if (home_soul and home_soul.exists()) else _REPO_ROOT / soul_file
+    if home_soul and home_soul.exists():
+        soul_path = home_soul
+    else:
+        try:
+            import importlib.resources as _ir
+            soul_path = Path(str(_ir.files("anet_pack"))) / "SOUL.md"
+        except Exception:
+            soul_path = Path(__file__).resolve().parents[2] / "anet_pack" / "SOUL.md"
     if soul_path.exists():
         try:
             _soul_cache = soul_path.read_text(encoding="utf-8").strip()

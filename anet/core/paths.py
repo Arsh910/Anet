@@ -70,9 +70,128 @@ def sessions_dir() -> Path:
     return home() / "sessions"
 
 
+def mcp_data_dir(name: str) -> Path:
+    """Per-server working/data directory: <home>/mcp/<name>/.
+
+    MCP servers are launched with this as their cwd so any data folders they
+    create (codegraph's `.code-review-graph`, playwright's `.playwright-mcp`,
+    etc.) land here instead of polluting the repo root.
+    """
+    return home() / "mcp" / name
+
+
+# ── Workspace (the user's editable extension area, seeded from templates) ─────
+# Everything the user/agents add lives under the Anet home, NOT inside the
+# installed package: config files, ExTools, ExAgents, mcps, skills, anet_files.
+
+def _dev_repo_root() -> Path | None:
+    """Repo root if ANet is running from a source checkout, else None.
+
+    Detected by a dev marker (main.py / pyproject.toml / .git) sitting beside the
+    `anet/` package, alongside an `anet_pack/` source dir. A pip/pipx install in
+    site-packages has none of these markers, so this returns None there.
+    """
+    repo = Path(__file__).resolve().parents[2]  # anet/core/paths.py → repo root
+    markers = ("main.py", "pyproject.toml", ".git")
+    if (repo / "anet_pack").is_dir() and any((repo / m).exists() for m in markers):
+        return repo
+    return None
+
+
+def default_pack_root() -> Path:
+    """The bundled default pack's location: the repo's `anet_pack/` in a source
+    checkout, else `<home>/anet_pack/`. This is what first-run seeding targets."""
+    dev = _dev_repo_root()
+    return (dev / "anet_pack") if dev is not None else (home() / "anet_pack")
+
+
+def shared_packs_dir() -> Path:
+    """Where imported/shared packs live: <home>/shared_packs/<name>/."""
+    return home() / "shared_packs"
+
+
+def _active_pack_file() -> Path:
+    return home() / "active_pack.txt"
+
+
+def active_pack() -> str:
+    """Name of the currently-selected pack. Default 'anet_pack'."""
+    try:
+        name = _active_pack_file().read_text(encoding="utf-8").strip()
+        return name or "anet_pack"
+    except Exception:
+        return "anet_pack"
+
+
+def set_active_pack(name: str) -> None:
+    f = _active_pack_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text((name or "anet_pack").strip(), encoding="utf-8")
+
+
+def list_packs() -> list[str]:
+    """All selectable packs: the default 'anet_pack' plus any under shared_packs/."""
+    packs = ["anet_pack"]
+    sp = shared_packs_dir()
+    if sp.exists():
+        packs += sorted(d.name for d in sp.iterdir() if d.is_dir())
+    return packs
+
+
+def workspace_root() -> Path:
+    """The ACTIVE pack — what the loaders read and the smiths write.
+
+    Defaults to the bundled pack (`default_pack_root()`); `/changepack` switches
+    it to a shared pack under `<home>/shared_packs/<name>/`. In a source checkout
+    the default pack is the repo's `anet_pack/` (edit-and-test instantly); when
+    installed it's `<home>/anet_pack/`.
+
+    Holds config + ExTools/ExAgents/mcps/skills + SOUL.md — everything that
+    defines a workspace and can be shared. Personal/generated data (USER.md,
+    sessions/, anet_files/, mcp/ runtime) lives at the home root, OUTSIDE any pack.
+    """
+    active = active_pack()
+    if active and active != "anet_pack":
+        p = shared_packs_dir() / active
+        if p.exists():
+            return p
+        # Active pack went missing → fall back to the default.
+    return default_pack_root()
+
+
+def config_path() -> Path:
+    return workspace_root() / "anet.config.yaml"
+
+
+def exanet_path() -> Path:
+    return workspace_root() / "exanet.config.yaml"
+
+
+def extools_dir() -> Path:
+    return workspace_root() / "ExTools"
+
+
+def exagents_dir() -> Path:
+    return workspace_root() / "ExAgents"
+
+
+def mcps_dir() -> Path:
+    return workspace_root() / "mcps"
+
+
+def skills_dir() -> Path:
+    return workspace_root() / "skills"
+
+
+def anet_files_dir() -> Path:
+    # Generated output — stays at the home root, outside the shareable pack.
+    return home() / "anet_files"
+
+
 def user_profile_path() -> Path:
     return home() / "USER.md"
 
 
 def soul_path() -> Path:
-    return home() / "SOUL.md"
+    # Persona is part of the shareable pack.
+    return workspace_root() / "SOUL.md"

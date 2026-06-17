@@ -125,4 +125,10 @@ TOOLS = [
         "description": "Smith-only: register ExTools/ExAgents and attach tools/MCP servers to agents by safely editing exanet.config.yaml. Never touches the core anet/ package or anet.config.yaml.",
         "enabled": True,
     },
+    {
+        "name": "pack_tool",
+        "path": "anet.AnetTools.pack_tool",
+        "description": "PackSmith-only: inspect/export/import shareable ANet packs. Export strips all secrets (.env) and heavy junk; import extracts into shared_packs/. Never runs pack code.",
+        "enabled": True,
+    },
 ]

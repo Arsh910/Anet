@@ -22,7 +22,13 @@ except ImportError:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-_ANET_FILES_DIR = Path(__file__).parents[3] / "anet_files"
+def _anet_files_dir() -> Path:
+    """Sandbox base for agent-written relative paths — <home>/anet_files/."""
+    try:
+        from anet.core import paths as _paths
+        return _paths.anet_files_dir()
+    except Exception:
+        return Path(__file__).parents[3] / "anet_files"
 
 
 def _resolve_safe_path(path: str, agent: str) -> Path:
@@ -37,7 +43,7 @@ def _resolve_safe_path(path: str, agent: str) -> Path:
     # If it's a relative path starting with . or just a filename, redirect.
     # We only do this if it's NOT the code_agent (which needs to work in the repo).
     if agent != "code_agent":
-        safe_base = _ANET_FILES_DIR / agent
+        safe_base = _anet_files_dir() / agent
         safe_base.mkdir(parents=True, exist_ok=True)
         return safe_base / p
     

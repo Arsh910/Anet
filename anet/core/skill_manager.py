@@ -17,8 +17,6 @@ import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).parents[2]
-
 
 # ── Config helpers ─────────────────────────────────────────────────────────────
 
@@ -34,7 +32,8 @@ def _skills_dir() -> Path | None:
     c = _cfg()
     if not c.get("enabled", True):
         return None
-    return _REPO_ROOT / c.get("skills_dir", "skills")
+    from anet.core import paths as _paths
+    return _paths.skills_dir()
 
 
 def _max_injected()         -> int: return int(_cfg().get("max_injected",          3))
