@@ -179,6 +179,24 @@ A **pack** is your entire ANet workspace as one self-contained folder: your conf
 
 That makes a hard-won setup **shareable**. Spend a week building a great "DevOps" or "research analyst" workspace? Hand it to a teammate — or the community — and they get your *exact* capabilities in one step.
 
+**The full lifecycle:**
+
+```text
+/packsmith new   →   build with the smiths   →   /packsmith share   →   /packsmith add   →   /changepack
+   create a            /newtool /newagent          zip it (secrets         a friend installs     activate it
+   blank pack          /addmcp                      stripped, README)        your pack             anywhere
+```
+
+Packs live under your Anet home, never in the engine:
+
+| Location | Holds | Created by |
+|---|---|---|
+| `~/.anet/anet_pack/` | the **default** pack | ships with ANet |
+| `~/.anet/yourpacks/<name>/` | packs **you author** | `/packsmith new` |
+| `~/.anet/shared_packs/<name>/` | packs **you received** | `/packsmith add` |
+
+`/changepack` switches the active one (the workspace ANet reads); everything below walks each step.
+
 ### Start a new pack
 
 ```text
