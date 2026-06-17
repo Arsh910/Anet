@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "anet"
+version = "0.0.1"
+description = "A local, multi-agent AI assistant — run a different model per agent, with self-built tools, MCP, memory, and shareable packs."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Arsh" }]
+keywords = ["ai", "agent", "assistant", "llm", "mcp", "multi-agent", "cli"]
+
+# Core runtime — everything the `anet` CLI needs. Windows-only desktop automation
+# deps are platform-gated so `pip install` succeeds on Linux/macOS too.
+dependencies = [
+    "openai",
+    "anthropic",
+    "python-dotenv",
+    "httpx",
+    "rich",
+    "prompt_toolkit",
+    "ddgs",
+    "aiosqlite",
+    "ruamel.yaml",
+    "pyyaml",
+    "mcp",
+    "beautifulsoup4",
+    "lxml",
+    "send2trash",
+    "Pillow",
+    "google-auth",
+    "google-auth-httplib2",
+    "pywinauto; sys_platform == 'win32'",
+    "pyautogui; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+# Web dashboard (python server.py / anet-server). Install with: pip install "anet[dashboard]"
+dashboard = ["fastapi", "uvicorn[standard]", "pydantic"]
+
+[project.scripts]
+anet = "anet.cli.app:run_cli"
+
+[project.urls]
+Homepage = "https://github.com/Arsh910/Anet"
+Repository = "https://github.com/Arsh910/Anet"
+
+# ── Build: ship the engine + the default pack, but never the heavy vendored bits ──
+[tool.hatch.build.targets.wheel]
+packages = ["anet", "anet_pack"]
+
+[tool.hatch.build]
+exclude = [
+    # The vendored codegraph MCP is huge, machine-specific, and carries its own
+    # .git/node_modules — users install MCP servers themselves via /addmcp.
+    "anet_pack/mcps/codegraph",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/*.pyc",
+    # Secrets must never ship (.env.example is kept — it doesn't match *.env).
+    "**/.env",
+    "**/*.env",
+    # Dev/runtime artifacts inside the pack.
+    "anet_pack/skills/.usage.json",
+    "anet_pack/skills/archived",
+]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "anet_pack/mcps/codegraph",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/*.pyc",
+    "**/.env",
+    "**/*.env",
+    "tests",
+    "ReadmeImages",
+    "design",
+    "anet-ui",
+]

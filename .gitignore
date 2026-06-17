@@ -1,8 +1,9 @@
 # ── Secrets & config ──────────────────────────────────────────────────────────
 .env
 *.env
-# user-specific model overrides — use anet.config.example.yaml
-anet.config.yaml
+# A user's personal root config (legacy / local dev override). Anchored to the
+# repo root so it does NOT match the shipped default at anet_pack/anet.config.yaml.
+/anet.config.yaml
 
 # ── Session memory ────────────────────────────────────────────────────────────
 # Legacy in-repo session store. Sessions now live in ~/.anet (or your ANET_HOME).

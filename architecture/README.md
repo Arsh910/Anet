@@ -58,7 +58,7 @@ flowchart LR
     SY --> IN
     EX --> LOOP
     LOOP --> TOOLS[("Built-in tools<br/>+ ExTools")]
-    LOOP --> MCP[("MCP servers<br/>codegraph · playwright")]
+    LOOP --> MCP[("MCP servers<br/>(from the active pack)")]
     ENG --> STORE[("conversations.db<br/>shared, keyed by thread")]
     RUN --> MEM[("USER.md<br/>+ memory_tool")]
     RUN --> SK[("skills/<br/>learned procedures")]

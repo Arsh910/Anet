@@ -6,15 +6,15 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/Engine-pure_Python-1a1a2e?style=for-the-badge" alt="Pure Python">
-  <img src="https://img.shields.io/badge/OpenRouter-300%2B_models-FF6B35?style=for-the-badge" alt="OpenRouter">
-  <img src="https://img.shields.io/badge/MCP-codegraph_%7C_playwright-8B5CF6?style=for-the-badge" alt="MCP">
-  <img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT">
+  <img src="https://img.shields.io/badge/multi--agent-orchestration-8B5CF6?style=for-the-badge" alt="Multi-agent">
+  <img src="https://img.shields.io/badge/any_model-any_provider-FF6B35?style=for-the-badge" alt="Any model, any provider">
+  <img src="https://img.shields.io/badge/MCP-compatible-22c55e?style=for-the-badge" alt="MCP compatible">
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT">
 </p>
 
-**A local, multi-agent AI assistant that routes each request to the right specialist — on the model and provider _you_ choose.** One prompt can research the web, write and run code, drive a browser, automate your Windows desktop, and notify you on Telegram — planned and coordinated automatically, with a confirmation gate before anything touches your shell or files.
+**A local, multi-agent AI assistant that routes each request to the right specialist — on the model and provider _you_ choose.** Out of the box it researches the web, writes and runs code, manages files, and automates your Windows desktop — planned and coordinated automatically, with a confirmation gate before anything touches your shell or files. Anything beyond that (browsers, messaging, your own APIs) you add as tools, agents, and MCP servers — and bundle into shareable **packs**.
 
-Use any model, per agent. Claude for code, Gemini for research, GPT for planning, a free model for the rest — set it in one YAML file via [OpenRouter](https://openrouter.ai) (300+ models), Google, OpenAI, Anthropic, or Vertex AI. No framework lock-in, no LangChain — a pure-Python engine you can read end to end.
+Use any model, per agent. Claude for code, Gemini for research, GPT for planning, a free model for the rest — set it in one YAML file via [OpenRouter](https://openrouter.ai), Google, OpenAI, Anthropic, or Vertex AI. No framework lock-in, no LangChain.
 
 <table>
 <tr><td><b>Multi-agent, multi-model</b></td><td>Five built-in agents (research, code, file, computer, checker) plus your own. Each picks its own model + provider in <code>anet.config.yaml</code>. The manager plans a DAG and runs independent steps in parallel.</td></tr>
@@ -23,47 +23,58 @@ Use any model, per agent. Claude for code, Gemini for research, GPT for planning
 <tr><td><b>Safe by default</b></td><td>Every shell command, file edit, and destructive file op pauses for explicit <code>y/n/a</code> approval. Per-agent step caps and cycle detection stop runaways.</td></tr>
 <tr><td><b>Remembers you</b></td><td>Auto-built user profile (<code>USER.md</code>), cross-session memory, and a 10-turn memory nudge — so it knows your stack and preferences next time.</td></tr>
 <tr><td><b>Learns from experience</b></td><td>After a complex, self-corrected task it writes a reusable <b>skill</b>; relevant skills are injected into future tasks, and a Curator improves them over time.</td></tr>
-<tr><td><b>Real developer tooling</b></td><td>LSP code intelligence (go-to-def, rename, references), ripgrep search, ruff/pyright/eslint diagnostics, git conflict resolution, and a <code>codegraph</code> MCP for whole-repo symbol/dependency analysis.</td></tr>
+<tr><td><b>Real developer tooling</b></td><td>Built in: LSP code intelligence (go-to-def, rename, references), ripgrep search, ruff/pyright/eslint diagnostics, git conflict resolution. Plug in any MCP server for more (e.g. a code-graph or browser server).</td></tr>
 <tr><td><b>A real terminal UI</b></td><td>Animated banner, slash-command autocomplete, live status spinner, session resume, and <code>ESC</code> to interrupt.</td></tr>
 </table>
 
 ---
 
-## Quick install
+## Install
 
 > **One API key is all you need to start.** Free models are on OpenRouter, and web search uses DuckDuckGo — no paid search key.
+
+**Recommended — global `anet` command via [pipx](https://pipx.pypa.io):**
+
+```bash
+pipx install https://github.com/Arsh910/Anet/releases/latest/download/anet-0.0.1-py3-none-any.whl
+```
+
+<sub>(or install straight from a tag without a release upload: `pipx install git+https://github.com/Arsh910/Anet.git@v0.0.1` — `pip install …` works too if you prefer.)</sub>
+
+Then set one API key (ANet reads your shell env / a `.env` in the working directory):
+
+```bash
+export OPENROUTER_API_KEY=your_key_here     # Windows: setx OPENROUTER_API_KEY your_key_here
+anet
+```
+
+On first run ANet creates your workspace at `~/.anet/` (config + a starter pack) and starts chatting. **Node.js** is optional — only needed if you add MCP servers later. Telegram, Vertex AI, and extra providers are all opt-in.
+
+---
+
+## Usage
+
+```bash
+anet                      # start a conversation
+anet --resume             # continue your last session
+anet --session my-project # open (or create) a named session
+anet --list-sessions      # list saved sessions
+```
+
+---
+
+## Run from source (contributors)
 
 ```bash
 git clone https://github.com/Arsh910/Anet.git
 cd Anet
-pip install -r requirements.txt
+pip install -e .          # editable install (or: pip install -r requirements.txt)
+python main.py            # same CLI; uses the repo's anet_pack/ as the live workspace
 ```
 
-Create a `.env` with one key:
+`python main.py` is a thin shim over `anet/cli/app.py`. From a checkout, your workspace is the repo's `anet_pack/` (edit a tool and test instantly); when installed, it's `~/.anet/anet_pack/`.
 
-```env
-OPENROUTER_API_KEY=your_key_here
-```
-
-Start it:
-
-```bash
-python main.py
-```
-
-That's it. Telegram, Vertex AI, MCP servers, and extra providers are all optional, added only when you want them.
-
----
-
-## Getting started
-
-```bash
-python main.py                      # start a conversation
-python main.py --resume             # continue your last session
-python main.py --session my-project # open (or create) a named session
-python main.py --list-sessions      # list saved sessions
-python server.py                    # optional web dashboard → http://localhost:8000
-```
+> **⚠️ Work in progress:** the web dashboard (`anet-server`) and the web UI (`anet-ui`) are **not functional yet** — they're under active development. The CLI is the supported way to use ANet today.
 
 ### What you'll see on launch
 
@@ -115,14 +126,16 @@ You: open notepad and type today's AI headlines
 | Agent | Does | Key tools |
 |---|---|---|
 | **research_agent** | Web research, news, image downloads | `web_search`, `web_fetch`, `download_file` |
-| **code_agent** | Write, edit, refactor, test, debug | `edit_tool`, `shell_tool`, `grep_tool`, `lsp_tool`, `diagnose_tool` + codegraph MCP |
+| **code_agent** | Write, edit, refactor, test, debug | `edit_tool`, `shell_tool`, `grep_tool`, `lsp_tool`, `diagnose_tool` |
 | **file_agent** | File ops on non-code files | `file_tool`, `conflict_tool` |
 | **computer_agent** | Windows desktop automation | `open_app` *(Windows only)* |
 | **checker_agent** | Validates other agents' results | `checker` |
 
-20+ built-in tools span files & code, web, desktop, and coordination (`todo_tool`, `memory_tool`, `spawn_tool`, `ask_user`). Run `/tools` to see them all. MCP servers (`codegraph`, `playwright`) extend the surface with no code changes.
+These five agents and ~20 built-in tools (files & code, web, desktop, coordination — `todo_tool`, `memory_tool`, `spawn_tool`, `ask_user`, …) are **core** — always present. Run `/tools` to see them all.
 
-Each agent defaults to `gemini-2.5-flash` via OpenRouter unless overridden.
+Everything else is per-**pack**: your own tools/agents and any MCP servers you wire in (no core changes). The default pack ships small examples (a `wordcount` tool, a Telegram agent, a playwright MCP config) to learn from — see [Packs](#-packs--share-your-whole-setup).
+
+Each agent defaults to a model set in `anet.config.yaml` unless overridden per agent.
 
 ---
 
@@ -140,7 +153,7 @@ agents:
     model: claude-opus-4-7
     provider: anthropic
     max_steps: 80
-    mcp: [codegraph]
+    mcp: [my_mcp_server]      # any MCP server you've added to the pack
   research_agent:
     model: google/gemini-2.5-flash
     provider: openrouter
@@ -271,18 +284,18 @@ Keep several packs and flip between them — your own default, a teammate's, a c
 
 ## Requirements
 
-- **Python 3.11+**
-- **Node.js** — only for MCP servers (codegraph, playwright)
-- `pip install -r requirements.txt`
-- **Windows only** for `computer_agent`: `pip install pyautogui pywinauto Pillow`
-- **Vertex AI** providers: `pip install google-auth` + `gcloud auth application-default login`
+- **Python 3.11+** (that's it for the base install — `pipx install …` pulls every dependency).
+- **Node.js** — optional, only if you add MCP servers (e.g. playwright via `npx`).
+- **Windows** is required only for `computer_agent` (desktop automation); its deps install automatically there and are skipped elsewhere.
+- **Web dashboard & UI** (`anet-server`, `anet-ui`): **under development — not working yet.** Use the CLI for now.
+- **Vertex AI** providers: run `gcloud auth application-default login` once and set `VERTEX_PROJECT_ID`.
 
 ---
 
 ## Contributing
 
-Issues and PRs welcome. The engine is pure Python with no framework dependency — start with [`architecture/README.md`](architecture/README.md) to find your way around, then the relevant `anet/core/` module.
+Issues and PRs welcome. The engine has no heavy framework dependency (no LangChain) — start with [`architecture/README.md`](architecture/README.md) to find your way around, then the relevant `anet/core/` module.
 
 ---
 
-<p align="center"><sub>MIT licensed · pure-Python engine · no LangChain, no lock-in.</sub></p>
+<p align="center"><sub>MIT licensed · multi-agent · any model · no LangChain, no lock-in.</sub></p>
