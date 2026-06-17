@@ -100,6 +100,7 @@ You: open notepad and type today's AI headlines
 | `/newagent <description>` | **AgentSmith** — design + register a new agent |
 | `/addmcp <path>` | **MCPSmith** — draft, connect-test + register an MCP server |
 | `/mcptest <name>` | Connect-test an MCP server |
+| `/packsmith new <name>` | **PackSmith** — create a blank pack and switch to it |
 | `/packsmith share <path?>` · `/packsmith add <zip>` | **PackSmith** — bundle your setup to share, or install someone's |
 | `/changepack <name?>` | Switch the active pack (your workspace) |
 | `/clear` | Clear the screen and redraw the startup view |
@@ -177,6 +178,17 @@ Add your own tools, agents, MCP servers, and skills **without touching the core 
 A **pack** is your entire ANet workspace as one self-contained folder: your config, your custom tools and agents, your MCP wiring, your learned skills, and your persona. It lives at `~/.anet/anet_pack/` (separate from the read-only engine), so it's trivially portable.
 
 That makes a hard-won setup **shareable**. Spend a week building a great "DevOps" or "research analyst" workspace? Hand it to a teammate — or the community — and they get your *exact* capabilities in one step.
+
+### Start a new pack
+
+```text
+/packsmith new devops          → creates a blank pack and switches to it
+/newtool ./scripts/deploy.py   → add a tool with ToolSmith
+/addmcp ../k8s-mcp             → add an MCP server with MCPSmith
+/newagent an agent that triages alerts and pings Slack   → add an agent
+```
+
+`/packsmith new <name>` scaffolds a fresh pack in `~/.anet/yourpacks/<name>/` (base config + empty `ExTools`/`ExAgents`/`mcps`/`skills`) and switches you to it. From there you build it up with the smiths — a clean base for authoring something you'll share. `/changepack` flips between all your packs (default, yours, and ones you've installed).
 
 ```
 ~/.anet/anet_pack/          ← a pack is just this folder

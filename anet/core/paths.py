@@ -105,9 +105,24 @@ def default_pack_root() -> Path:
     return (dev / "anet_pack") if dev is not None else (home() / "anet_pack")
 
 
+def yourpacks_dir() -> Path:
+    """Where packs YOU create live: <home>/yourpacks/<name>/."""
+    return home() / "yourpacks"
+
+
 def shared_packs_dir() -> Path:
-    """Where imported/shared packs live: <home>/shared_packs/<name>/."""
+    """Where imported/received packs live: <home>/shared_packs/<name>/."""
     return home() / "shared_packs"
+
+
+def _named_pack_path(name: str) -> Path | None:
+    """Resolve a (non-default) pack name to its dir, searching yourpacks/ then
+    shared_packs/. Returns None if not found."""
+    for base in (yourpacks_dir(), shared_packs_dir()):
+        p = base / name
+        if p.exists():
+            return p
+    return None
 
 
 def _active_pack_file() -> Path:
@@ -130,12 +145,26 @@ def set_active_pack(name: str) -> None:
 
 
 def list_packs() -> list[str]:
-    """All selectable packs: the default 'anet_pack' plus any under shared_packs/."""
+    """All selectable packs: the default 'anet_pack' plus packs under yourpacks/
+    and shared_packs/ (deduped, default first)."""
     packs = ["anet_pack"]
-    sp = shared_packs_dir()
-    if sp.exists():
-        packs += sorted(d.name for d in sp.iterdir() if d.is_dir())
+    for base in (yourpacks_dir(), shared_packs_dir()):
+        if base.exists():
+            for d in sorted(base.iterdir()):
+                if d.is_dir() and d.name not in packs:
+                    packs.append(d.name)
     return packs
+
+
+def pack_kind(name: str) -> str:
+    """'default' | 'yours' | 'shared' | 'missing' — for display in the picker."""
+    if name == "anet_pack":
+        return "default"
+    if (yourpacks_dir() / name).exists():
+        return "yours"
+    if (shared_packs_dir() / name).exists():
+        return "shared"
+    return "missing"
 
 
 def workspace_root() -> Path:
@@ -152,8 +181,8 @@ def workspace_root() -> Path:
     """
     active = active_pack()
     if active and active != "anet_pack":
-        p = shared_packs_dir() / active
-        if p.exists():
+        p = _named_pack_path(active)
+        if p is not None:
             return p
         # Active pack went missing → fall back to the default.
     return default_pack_root()

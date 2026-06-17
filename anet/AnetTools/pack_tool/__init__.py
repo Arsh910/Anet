@@ -35,7 +35,7 @@ SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["inspect", "export", "import_pack"]},
+                "action": {"type": "string", "enum": ["inspect", "export", "import_pack", "create"]},
                 "path":   {"type": "string", "description": "inspect/export: path to the pack folder. Blank on export = the active pack."},
                 "out":    {"type": "string", "description": "export: output .zip path (default: <home>/anet_files/<name>.zip)."},
                 "readme": {"type": "string", "description": "export: README.md text to embed in the zip (the usage guide you wrote)."},
@@ -196,5 +196,40 @@ async def run(params: dict) -> dict:
         return {"result": {"path": str(dest), "name": dest.name,
                             "manifest": manifest, "readme": readme,
                             "env_files_needed": list(manifest.get("env_files", {}).keys())}}
+
+    if action == "create":
+        name = _safe_name((params.get("name") or "").strip())
+        if not name:
+            return {"error": "create requires a 'name'"}
+        dest = _paths.yourpacks_dir() / name
+        if dest.exists():
+            return {"error": f"a pack named '{name}' already exists at {dest}"}
+
+        default = _paths.default_pack_root()
+        dest.mkdir(parents=True)
+        for sub in ("ExTools", "ExAgents", "mcps", "skills"):
+            (dest / sub).mkdir()
+
+        # Base config + persona: copy the default pack's, so the new pack is a valid,
+        # working workspace from the start. The user edits/builds it from here.
+        for fname in ("anet.config.yaml", "SOUL.md"):
+            src = default / fname
+            if src.exists():
+                shutil.copy2(src, dest / fname)
+
+        # Start with an EMPTY extension registry — the smiths fill it in.
+        (dest / "exanet.config.yaml").write_text(
+            "# exanet.config.yaml — external tools/agents for this pack.\n"
+            "# Empty to start. Build it up with /newtool, /newagent, /addmcp\n"
+            "# (or by hand). See anet_pack's guides for the format.\n\n"
+            "tools: []\n\n"
+            "agents: []\n\n"
+            "# attach extra tools/MCP to built-in agents (code_agent, research_agent, …)\n"
+            "# attach:\n"
+            "#   code_agent:\n"
+            "#     tools: [my_tool]\n",
+            encoding="utf-8",
+        )
+        return {"result": {"name": name, "path": str(dest)}}
 
     return {"error": f"unknown action '{action}'"}

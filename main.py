@@ -573,7 +573,7 @@ _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/addmcp",   "MCPSmith — draft + register an MCP server <path>"),
     ("/mcptest",  "Connect-test an MCP server <name>"),
     ("/changepack", "Switch the active pack (workspace) <name?>"),
-    ("/packsmith", "Share a pack as a zip, or install one: share <path?> | add <zip>"),
+    ("/packsmith", "Packs: new <name> | share <path?> | add <zip>"),
     ("/clear",    "Clear screen and redraw the startup view"),
     ("/help",     "Show the slash command list"),
 ]
@@ -937,6 +937,7 @@ _HELP_TEXT = """
   [bold cyan]/addmcp[/bold cyan] [dim]<path>[/dim]        MCPSmith: draft + register an MCP server from its docs
   [bold cyan]/mcptest[/bold cyan] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
   [bold cyan]/changepack[/bold cyan] [dim]<name>[/dim]    Switch the active pack (workspace) — lists packs if no name
+  [bold cyan]/packsmith new[/bold cyan] [dim]<name>[/dim]     Create a blank pack in yourpacks/ and switch to it
   [bold cyan]/packsmith share[/bold cyan] [dim]<path?>[/dim]  Bundle a pack into a shareable zip (secrets stripped)
   [bold cyan]/packsmith add[/bold cyan] [dim]<zip>[/dim]      Install a received pack into shared_packs/
   [bold cyan]/clear[/bold cyan]                Clear the screen
@@ -1008,7 +1009,7 @@ async def _cmd_changepack(arg: str = "") -> None:
         console.print("\n  [bold]Available packs[/bold]")
         for i, p in enumerate(packs, 1):
             marker = "  [green]← active[/green]" if p == active else ""
-            kind = "[dim](default)[/dim]" if p == "anet_pack" else "[dim](shared)[/dim]"
+            kind = f"[dim]({_anet_paths.pack_kind(p)})[/dim]"
             console.print(f"   [cyan]{i}[/cyan]. {p} {kind}{marker}")
         console.print()
         choice = (await _read_input("  pick a pack (number or name, blank to cancel): ")).strip()
@@ -1028,14 +1029,39 @@ async def _cmd_changepack(arg: str = "") -> None:
         console.print(f"  [dim]already on '{target}'[/dim]\n")
         return
 
-    _anet_paths.set_active_pack(target)
+    _switch_pack(target)
+    console.print(f"\n  [green]switched to pack:[/green] [bold]{target}[/bold] — reloading on next message…\n")
+
+
+def _switch_pack(name: str) -> None:
+    """Set the active pack, drop the config cache, and flag an engine rebuild."""
+    global _force_reload
+    _anet_paths.set_active_pack(name)
     try:
         from anet.core.config_loader import reset_cache
-        reset_cache()                      # drop cached config/soul from the old pack
+        reset_cache()
     except Exception:
         pass
-    _force_reload = True                   # hot-reload loop rebuilds before the next turn
-    console.print(f"\n  [green]switched to pack:[/green] [bold]{target}[/bold] — reloading on next message…\n")
+    _force_reload = True
+
+
+async def _cmd_packsmith_new(name: str) -> None:
+    """Create a blank pack in yourpacks/<name> and switch to it (the /packsmith new
+    command). Build it up afterward with /newtool, /newagent, /addmcp."""
+    import anet.AnetTools.pack_tool as _pack_tool
+    r = await _pack_tool.run({"action": "create", "name": name})
+    if "error" in r:
+        console.print(f"\n  [red]{r['error']}[/red]\n")
+        return
+    created = r["result"]["name"]
+    path    = r["result"]["path"]
+    console.print(f"\n  [green]created pack:[/green] [bold]{created}[/bold]  [dim]{path}[/dim]")
+    _switch_pack(created)
+    console.print(
+        f"  [green]switched to[/green] [bold]{created}[/bold] — build it with "
+        f"[cyan]/newtool[/cyan] · [cyan]/newagent[/cyan] · [cyan]/addmcp[/cyan]. "
+        f"Reloading on next message…\n"
+    )
 
 
 
@@ -1274,7 +1300,12 @@ async def _handle_slash(
         sub_parts = arg.split(None, 1)
         sub  = sub_parts[0].lower() if sub_parts else ""
         rest = sub_parts[1].strip() if len(sub_parts) > 1 else ""
-        if sub == "share":
+        if sub == "new":
+            if not rest:
+                console.print("\n  [yellow]Usage:[/yellow] /packsmith new <name>\n")
+            else:
+                await _cmd_packsmith_new(rest.split()[0])
+        elif sub == "share":
             await _run_packsmith("share", rest, tool_map)
         elif sub == "add":
             if not rest:
@@ -1283,8 +1314,10 @@ async def _handle_slash(
                 await _run_packsmith("add", rest, tool_map)
         else:
             console.print(
-                "\n  [yellow]Usage:[/yellow] /packsmith share [dim]<pack path — blank = active pack>[/dim]\n"
+                "\n  [yellow]Usage:[/yellow] /packsmith new [dim]<name>[/dim]\n"
+                "          /packsmith share [dim]<pack path — blank = active pack>[/dim]\n"
                 "          /packsmith add [dim]<path-to-pack.zip>[/dim]\n"
+                "  [dim]new:   create a blank pack in yourpacks/ and switch to it — build it with the smiths.[/dim]\n"
                 "  [dim]share: bundle a pack into a shareable zip (secrets stripped, README added).[/dim]\n"
                 "  [dim]add:   install a received pack zip into shared_packs/, then /changepack to it.[/dim]\n"
             )

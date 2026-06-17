@@ -154,7 +154,7 @@ flowchart LR
 | **ToolSmith** | `/newtool <path>` | `extool_validator` | registers the ExTool, attaches it to agents you pick |
 | **MCPSmith** | `/addmcp <path>` | `mcp_doctor` | attaches the server to agents you pick |
 | **AgentSmith** | `/newagent <desc>` | — | writes the prompt + registers the agent with your chosen tools/MCP |
-| **PackSmith** | `/packsmith share` / `add` | `pack_tool` | bundles the pack to a zip (secrets stripped) / installs a received zip |
+| **PackSmith** | `/packsmith new` / `share` / `add` | `pack_tool` | scaffolds a blank pack / bundles a pack to a zip (secrets stripped) / installs a received zip |
 
 ### The `registrar` tool — the safety boundary
 
@@ -192,9 +192,12 @@ flowchart TD
     A -->|"'anet_pack' (default)"| D{"source checkout?"}
     D -->|"yes (dev)"| RP["&lt;repo&gt;/anet_pack/"]
     D -->|"no (installed)"| HP["&lt;home&gt;/anet_pack/"]
-    A -->|"a shared pack name"| SP["&lt;home&gt;/shared_packs/&lt;name&gt;/"]
+    A -->|"a named pack"| SP["&lt;home&gt;/yourpacks/&lt;name&gt;/<br/>or shared_packs/&lt;name&gt;/"]
 ```
 
+- Packs you **create** (`/packsmith new`) live in `<home>/yourpacks/<name>/`; packs you
+  **receive** (`/packsmith add`) live in `<home>/shared_packs/<name>/`. Resolving a named
+  active pack searches `yourpacks/` then `shared_packs/`.
 - **`<home>/active_pack.txt`** holds the selected pack name (default `anet_pack`).
 - `/changepack` writes that pointer, calls `config_loader.reset_cache()`, and sets a
   reload flag so the main loop rebuilds the engine against the new pack before the
