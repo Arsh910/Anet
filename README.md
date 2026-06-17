@@ -1,9 +1,9 @@
 <div align="center">
-<img src="ReadmeImages/anet-clean.png" width="100%" alt="ANET — gradient, clean">
+<img src="ReadmeImages/anet-clean.png" width="100%" alt="ANET">
 </div>
 
 <p align="center">
-  <strong>Run Claude for code. Gemini for research. GPT-4o for planning.<br>
+  <strong>Run Claude for code. Gemini for research. GPT for planning.<br>
   All from a single YAML file. No framework lock-in.</strong>
 </p>
 
@@ -18,17 +18,34 @@
   <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=flat" alt="MIT">
 </p>
 
-<p align="center">Six specialized agents. Nineteen built-in tools. Persistent memory. Self-improving skills.</p>
+<p align="center">5 built-in agents · 20+ built-in tools · MCP servers · persistent memory · self-improving skills</p>
+
+<p align="center">
+  <a href="#-quick-start">Quick start</a> ·
+  <a href="#-how-it-works">How it works</a> ·
+  <a href="#-agents">Agents</a> ·
+  <a href="#-tools">Tools</a> ·
+  <a href="#-extending-anet">Extending</a> ·
+  <a href="#-memory--intelligence">Memory</a> ·
+  <a href="#-configuration">Configuration</a> ·
+  <a href="#-command-reference">Commands</a>
+</p>
 
 ---
 
-## Demo
+## What is ANet?
+
+ANet is a **local, multi-agent assistant** that routes each request to the right
+specialist agent — and each agent can run on the model and provider *you* choose.
+One prompt can research the web, write and run code, drive a browser, automate
+your desktop, and notify you on Telegram — coordinated automatically, with a
+confirmation gate before anything touches your shell or files.
+
+> *“research FastAPI best practices → refactor `routes.py` → run the tests → send me a Telegram when done”* — one prompt.
 
 <p align="center">
-  <img src="ReadmeImages/demo.gif" alt="ANet Demo" width="900">
+  <img src="ReadmeImages/demo.gif" alt="ANet demo" width="850">
 </p>
-
-> *research FastAPI best practices → refactor routes.py → run tests → send Telegram notification. All in one prompt.*
 
 ---
 
@@ -36,24 +53,25 @@
 
 Most agent frameworks lock you into one model, one provider, and one way of working. ANet doesn't.
 
-| | ANet | Most others |
+| | ANet | Typical framework |
 |---|---|---|
-| Per-agent model selection | ✅ YAML config, swap anytime | ❌ hardcoded or global |
-| Web search without API keys | ✅ DuckDuckGo built-in | ❌ paid API required |
-| Bring your own tools | ✅ ExTools — or let the AI **ToolSmith** scaffold + validate one | ⚠️ framework-specific, hand-written |
-| Add an MCP server | ✅ **MCPSmith** drafts + connect-tests the config | ⚠️ manual wiring |
-| Confirmation before shell/file ops | ✅ always, `y/n/a` prompt | ❌ runs blind |
-| Real LSP code intelligence | ✅ go-to-def, rename, references | ❌ grep-based |
-| Session resume | ✅ `--resume` flag | ❌ starts fresh every time |
-| Agents spawning sub-agents | ✅ `spawn_tool`, depth-limited | ❌ not available |
-| Self-improving skills | ✅ agent writes its own procedures | ❌ not available |
-| User profile across sessions | ✅ auto-built `USER.md` | ❌ no memory of you |
+| **Per-agent model** | ✅ pick model + provider per agent in YAML | ❌ one global model |
+| **Web search** | ✅ DuckDuckGo built-in, no key | ❌ paid search API |
+| **New tools** | ✅ AI **ToolSmith** scaffolds + validates it | ⚠️ hand-written boilerplate |
+| **New MCP server** | ✅ **MCPSmith** drafts + connect-tests config | ⚠️ manual wiring |
+| **Safety** | ✅ `y/n/a` confirm before shell/file/edit | ❌ runs blind |
+| **Code intelligence** | ✅ real LSP (go-to-def, rename, refs) | ❌ grep-based |
+| **Sessions** | ✅ named, resumable, shared store | ❌ fresh every run |
+| **Sub-agents** | ✅ `spawn_tool`, depth-limited | ❌ not available |
+| **Learns over time** | ✅ self-improving skills + user profile | ❌ no memory of you |
 
 ---
 
-## Quickstart
+## 🚀 Quick start
 
-**One API key is all you need to start.**
+> **One API key is all you need to start.** Free models are available on OpenRouter, and web search uses DuckDuckGo — no paid search key.
+
+**1. Install**
 
 ```bash
 git clone https://github.com/Arsh910/Anet.git
@@ -61,197 +79,286 @@ cd Anet
 pip install -r requirements.txt
 ```
 
-Create a `.env` file with just one key:
+**2. Add one key** — create a `.env` file:
 
 ```env
 OPENROUTER_API_KEY=your_key_here
 ```
 
-> Free models are available on OpenRouter. Web search uses DuckDuckGo — no Exa key, no paid search API needed.
+**3. Run**
 
 ```bash
 python main.py
 ```
 
-That's it. Everything else (Telegram, Vertex AI, MCP servers) is optional and added only when you need it.
+That's it. Everything else — Telegram, Vertex AI, MCP servers, extra providers — is optional and added only when you need it.
+
+### What you'll see on launch
+
+```text
+   █████  ███   █████      (animated green→cyan banner)
+
+Manager: anthropic/claude-sonnet-4.6 — plans and coordinates all requests
+
+  Agents   6/6 loaded       /agents to view
+  Tools    20/20 ready      /tools to view
+  MCP      2/2 connected    /mcps to view
+```
+
+A compact status line — not a wall of text. Type `/agents`, `/tools`, or `/mcps` to expand any of them. Then just talk to it:
+
+```text
+You: find the latest Node.js LTS and write it to version.txt
+You: open notepad and type today's AI headlines
+You: refactor src/api.py and run the tests
+```
+
+### Resume & sessions
+
+```bash
+python main.py --resume               # continue your last session
+python main.py --session my-project   # open (or create) a named session
+python main.py --list-sessions        # list all saved sessions
+```
 
 ---
 
-## How it works
+## 🧠 How it works
 
-ANet routes your request through a planning layer that decides which agents to run, in what order, and in parallel where possible. Each agent has its own model, its own tool surface, and its own job.
+ANet routes your request through a **planning layer** that decides which agents run, in what order, and which can run in parallel. Each agent has its own model, its own tools, and its own job.
 
-```
-You: "refactor this module, run the tests, and send me a Telegram when done"
-  ↓
-Manager (plans the work)
-  ├─ code_agent    → edits code, runs tests, checks diagnostics
-  ├─ checker_agent → validates the result
-  └─ tele_agent    → sends the notification
-  ↓
-Anet: "Done. Tests pass. Message sent."
-```
-
-```
-planner (manager model)
-  │
-  ├─ simple request → direct reply → done
-  │
-  └─ complex request → DAG of steps
-        │
-        ├─ step A (agent 1) ─── parallel ──── step B (agent 2)
-        │         ↓                                   ↓
-        │   spawn_tool → sub-agent (depth ≤ 2)        │
-        │                                             │
-        └─ checker_agent validates ← ← ← retry if partial
-                   ↓
-            synthesizer → final reply
+```mermaid
+flowchart TD
+    U([You: natural-language request]) --> M{Manager · Planner}
+    M -->|greeting / simple fact| R([Direct reply])
+    M -->|real task| P[Plan a DAG of steps]
+    P --> A1[research_agent]
+    P --> A2[code_agent]
+    P --> A3[computer_agent]
+    A1 --> C{checker_agent}
+    A2 --> C
+    A3 --> C
+    C -->|partial / failed| P
+    C -->|success| S[Synthesizer]
+    S --> O([Final reply])
+    A2 -. spawn_tool .-> A1
 ```
 
-**Safety mechanisms**
+Independent steps run **concurrently**; dependent steps wait. After each step the **checker** classifies the result (success / partial / failure) and can trigger a retry with an adjustment before the **synthesizer** writes your final answer.
 
-- **Per-agent step cap** — each agent has a configurable `max_steps` (defaults: research 10, code 60, file 25, computer 20, checker 8).
-- **Cycle detection** — same write operation repeated 3× in a sliding window stops the loop.
-- **Spawn depth limit** — `spawn_tool` nesting is capped at 2 to prevent infinite delegation chains.
-- **Confirmation policy** — `shell_tool` (every command), `edit_tool` (every edit), and destructive `file_tool` actions pause for explicit `y/n/a` approval.
+### Architecture
+
+```mermaid
+flowchart LR
+    subgraph CLI["CLI · main.py"]
+        IN[Prompt + slash commands]
+    end
+    subgraph ENG["Engine · engine.py"]
+        PL[Planner] --> EX[Executor] --> CH[Checker] --> SY[Synthesizer]
+    end
+    subgraph RUN["Orchestrator + agent_runner"]
+        LOOP[Agentic loop · cycle detection]
+    end
+
+    IN --> PL
+    SY --> IN
+    EX --> LOOP
+    LOOP --> TOOLS[("Built-in tools<br/>+ ExTools")]
+    LOOP --> MCP[("MCP servers<br/>codegraph · playwright")]
+    ENG --> STORE[("conversations.db<br/>shared, keyed by thread")]
+    RUN --> MEM[("USER.md<br/>+ memory_tool")]
+    RUN --> SK[("skills/<br/>learned procedures")]
+```
+
+### Safety mechanisms
+
+| Guard | Behaviour |
+|---|---|
+| **Confirmation gate** | `shell_tool` (every command), `edit_tool` (every edit), and destructive `file_tool` actions pause for explicit `y` / `n` / `a` approval |
+| **Per-agent step cap** | each agent has a `max_steps` limit (defaults: research 10, code 60, file 25, computer 20, checker 8) |
+| **Cycle detection** | the same write operation repeated 3× in a sliding window stops the loop |
+| **Spawn depth limit** | `spawn_tool` nesting is capped at 2 to prevent runaway delegation |
 
 ---
 
-## Startup screen
-
-On launch, Anet shows an animated block-art banner (green→cyan gradient reveal) followed by a **compact status line** instead of dumping every agent, tool, and server:
-
-```
-Agents   6/6 loaded       /agents to view
-Tools    16/16 ready      /tools to view
-MCP      2/2 connected    /mcps to view
-```
-
-Expand any of them on demand with `/agents`, `/tools`, or `/mcps`. The banner art is generated in pure Python (`anet/cli/banner.py`) and can also be exported to high-res PNG/JPEG for docs via `save_image()`.
-
----
-
-## Agents
+## 🤖 Agents
 
 | Agent | What it does | Key tools |
 |---|---|---|
-| **research_agent** | Web research, fact-finding, news, image downloads | web_search, download_file |
-| **code_agent** | Write, edit, refactor, test, and debug code | edit_tool, shell_tool, grep_tool, lsp_tool, conflict_tool, diagnose_tool + codegraph MCP |
-| **file_agent** | File system operations — copy, move, zip, conflict resolution | file_tool, conflict_tool, memory_tool |
-| **computer_agent** | Windows desktop automation — launch apps, click, type, screenshot | open_app |
-| **checker_agent** | Validates results from other agents | checker |
-| **tele_agent** *(external)* | Send messages, files, photos to Telegram | tele_tool |
+| **research_agent** | Web research, fact-finding, news, image downloads | `web_search`, `web_fetch`, `download_file` |
+| **code_agent** | Write, edit, refactor, test, debug code | `edit_tool`, `shell_tool`, `grep_tool`, `lsp_tool`, `diagnose_tool`, `conflict_tool` + codegraph MCP |
+| **file_agent** | File-system ops on non-code files — copy, move, zip, read | `file_tool`, `conflict_tool`, `memory_tool` |
+| **computer_agent** | Windows desktop automation — launch apps, click, type, screenshot | `open_app`, `compare_screenshot` |
+| **checker_agent** | Validates results from other agents | `checker` |
+| **tele_agent** *(example external)* | Send messages, files, photos to Telegram | `tele_tool` |
 
-All agents default to **Gemini 2.5 Flash** unless overridden in `anet.config.yaml`.
+Each agent defaults to **`gemini-2.5-flash` via OpenRouter** unless you override its model/provider in `anet.config.yaml`.
 
-**`spawn_tool`** lets an agent delegate a sub-task to another agent at runtime without returning to the manager. Built-in agents that need it (e.g. `code_agent`, `file_agent`) declare it in their tool list; add `spawn_tool` to any external agent's `tools:` to enable the same. (`ask_user` is the one tool auto-injected into every agent.)
+`ask_user` is auto-injected into every agent. Add **`spawn_tool`** to an agent's tool list to let it delegate a sub-task to another agent at runtime without returning to the manager (built-in `code_agent` and `file_agent` already have it).
 
-> **Platform note:** `computer_agent` (desktop automation) requires Windows. All other agents and tools are cross-platform.
-
----
-
-## Tools
-
-### Files & Code
-
-| Tool | What it does |
-|---|---|
-| **edit_tool** | Surgical file edits — old string to new string, with unified diff output |
-| **file_tool** | Read, write, copy, move, delete, zip, unzip, parse CSV/JSON |
-| **glob_tool** | Find files by glob pattern, sorted by modification time |
-| **grep_tool** | Regex content search across files (ripgrep with Python fallback) |
-| **shell_tool** | Run shell commands — tests, linters, builds, anything |
-| **process_tool** | Start a command, stream output until a pattern matches or timeout fires |
-| **diagnose_tool** | Run ruff/pyright for Python, eslint/tsc for JS/TS, report problems |
-| **conflict_tool** | Resolve git merge conflicts — `@ours`, `@theirs`, `@base`, or custom text |
-| **lsp_tool** | Code intelligence via LSP — diagnostics, hover, go-to-definition, find references, rename, symbols |
-
-### Research & Web
-
-| Tool | What it does |
-|---|---|
-| **web_search** | Web search via DuckDuckGo — **no API key required** |
-| **download_file** | Download a file from a direct URL; reports image dimensions |
-
-### Desktop Automation (Windows only)
-
-| Tool | What it does |
-|---|---|
-| **open_app** | Launch apps, manage windows, type text, click elements, keyboard shortcuts, screenshots |
-
-### Coordination & Memory
-
-| Tool | What it does |
-|---|---|
-| **todo_tool** | Session-scoped task checklist shown live in the spinner |
-| **memory_tool** | Persistent cross-session memory — save, search, delete facts |
-| **checker** | Classify task outcomes as success / failure / partial |
-| **spawn_tool** | Delegate a sub-task to any other agent at runtime (depth-limited to 2) |
-
-### MCP Servers
-
-MCP servers extend the tool surface without touching the core. They appear in a separate panel at startup.
-
-| Server | Tools | What it does |
-|---|---|---|
-| **codegraph** | index, sync, query, context, files, affected, status | Production-grade code graph — symbol search, full-text search, file tree, dependency analysis |
-| **playwright** | navigate, click, fill, screenshot, snapshot, evaluate, … | Drive a real browser — Chromium, CDP-attached apps, form filling, JS evaluation |
+> **Platform note:** `computer_agent` (desktop automation) requires Windows. Everything else is cross-platform.
 
 ---
 
-## Intelligence & Memory
+## 🧰 Tools
 
-### Agent Persona — `SOUL.md`
+<table>
+<tr><th>Files &amp; Code</th><th>Research &amp; Web</th></tr>
+<tr><td valign="top">
 
-The manager's personality is defined in `SOUL.md` at the repo root. Injected into the planner and synthesizer prompts on every turn. Edit it to change Anet's name, tone, and behaviour rules. Sub-agents are unaffected — their specialized prompts stay clean.
+| Tool | Does |
+|---|---|
+| `edit_tool` | Surgical old→new edits, unified diff |
+| `file_tool` | Read/write/copy/move/zip, CSV/JSON |
+| `glob_tool` | Find files by glob, by mtime |
+| `grep_tool` | Regex search (ripgrep + fallback) |
+| `shell_tool` | Run any shell command |
+| `process_tool` | Stream output until a pattern hits |
+| `diagnose_tool` | ruff/pyright, eslint/tsc problems |
+| `conflict_tool` | Resolve git merge conflicts |
+| `lsp_tool` | LSP: defs, refs, rename, symbols |
+| `code_execution` | Run code snippets |
 
-```yaml
-# anet.config.yaml
-persona:
-  enabled: false   # disable if you want a neutral system prompt
+</td><td valign="top">
+
+| Tool | Does |
+|---|---|
+| `web_search` | DuckDuckGo — **no API key** |
+| `web_fetch` | URL → clean markdown |
+| `download_file` | Download a direct URL |
+
+**Desktop (Windows)**
+
+| Tool | Does |
+|---|---|
+| `open_app` | Launch/type/click/screenshot |
+| `compare_screenshot` | Diff two screenshots |
+
+</td></tr>
+</table>
+
+**Coordination & memory**
+
+| Tool | Does |
+|---|---|
+| `todo_tool` | Session task checklist shown live in the spinner |
+| `memory_tool` | Persistent cross-session memory — save, search, delete facts |
+| `checker` | Classify a task outcome as success / failure / partial |
+| `spawn_tool` | Delegate a sub-task to any other agent (depth-limited to 2) |
+| `ask_user` | Ask you a question mid-task (auto-injected) |
+
+### MCP servers
+
+MCP servers extend the tool surface without touching the core. They start once on boot and stay alive for the session; their tools are injected into every agent that declares them.
+
+| Server | What it does |
+|---|---|
+| **codegraph** | Production-grade code graph — symbol search, full-text search, file tree, dependency/impact analysis |
+| **playwright** | Drive a real browser — Chromium / CDP, navigate, click, fill, snapshot, evaluate JS |
+
+---
+
+## 🔧 Extending ANet
+
+The core `anet/` package is never edited. Everything you add lives in `ExTools/`, `ExAgents/`, `mcps/`, and the two config files — `exanet.config.yaml` (external tools + agents) and `anet.config.yaml` (per-agent overrides).
+
+### ✦ The Smiths — let an agent build the integration for you
+
+This is the part most frameworks don't have. Point a built-in **smith** at your code or an MCP server's docs and it scaffolds, **validates**, and hands you the exact config to paste.
+
+```mermaid
+flowchart LR
+    P["/newtool &lt;path&gt;"] --> E[Explore the source]
+    E --> Q[Confirm name + capability with you]
+    Q --> W["Write ExTools/&lt;name&gt;/__init__.py"]
+    W --> V{extool_validator}
+    V -->|fix &amp; retry| W
+    V -->|PASS| OUT[Print the registration stanza to paste]
 ```
 
-### User Profile — `memory/USER.md`
+| Command | What it does |
+|---|---|
+| `/newtool <path>` | **ToolSmith** — explores `<path>`, confirms the tool name + capability, writes `ExTools/<name>/__init__.py`, runs `python -m anet.core.extool_validator` until it prints **PASS**, then prints the `exanet.config.yaml` stanza. |
+| `/addmcp <path>` | **MCPSmith** — reads an MCP server's repo/docs, confirms name + launch command, writes `mcps/<name>/config.yaml`, verifies with `python -m anet.core.mcp_doctor <name>` until **PASS**, then prints the `anet.config.yaml` wiring. |
+| `/mcptest <name>` | Connect-test an already-configured MCP server and list the tools it exposes. |
 
-Anet builds a structured profile of you automatically across two mechanisms:
+> The smiths **do not edit your config files** — they generate and validate the code, then print the snippet for you to paste. You decide what gets wired in.
 
-**Background agent** — every 5 turns (configurable), a silent background task updates `memory/USER.md` with new facts (preferences, tech stack, projects, working style) and saves discrete facts to `memory_tool` with deduplication.
+### Add a tool by hand — ExTools
 
-**Session-end update** — on every clean exit, the full session history is reviewed and `USER.md` gets a final pass.
+1. Create `ExTools/<tool_name>/__init__.py` exporting:
+   - `SCHEMA` — an OpenAI function-calling schema `dict`
+   - `run(arguments: dict) -> dict` — sync **or** async
+2. Register it under the **`tools:`** key in `exanet.config.yaml`:
 
-On the next session start, the profile is injected into the planner so Anet already knows you. View it with `/profile`.
+```yaml
+tools:
+  - name: my_tool
+    path: ExTools/my_tool      # folder with __init__.py, relative to repo root
+```
 
-### 10-Turn Memory Nudge
+The running CLI re-reads `exanet.config.yaml` **between turns** and rebuilds its tools/agents whenever the file's timestamp changes — so a *registration* edit is picked up on your next turn without a full restart. (It watches the YAML only; if you change a tool's Python code without touching the YAML, re-save the YAML or restart.)
 
-Every 10 substantive messages, the active agent is prompted to push any genuinely new facts to `memory_tool` before proceeding — so nothing important slips through between background reviews.
+### Add an agent by hand — ExAgents
 
-### Context Compression
+External agents are declared **inline** under the **`agents:`** key in `exanet.config.yaml` (there is no `agent.py`). The prompt can be inline or in a file:
 
-When a session grows long (>40 messages), Anet prompts with two options:
+```yaml
+agents:
+  - name: my_agent
+    model: openai/gpt-oss-20b:free
+    provider: openrouter             # google | openrouter | openai | anthropic | vertex_*
+    enabled: true                    # false (or omit the block) = dormant
+    prompt_file: ExAgents/my_agent/prompt.md   # or: system_prompt: "..."
+    task_types:                      # planner routes here by matching these
+      - do the thing
+    tools: [my_tool]                 # built-in tools and/or registered ExTools
+    mcp: [my_server]                 # optional — servers from mcps/
+```
 
-- **[f] forget** — drop the oldest messages, keep the last 20
-- **[c] compress** — summarise old messages into a single block via the manager model
+Add `spawn_tool` to `tools:` to let the agent delegate to other agents.
 
-Also available as slash commands: `/forget`, `/compress`.
+### Add an MCP server by hand
 
-### Self-Improving Skills — `skills/`
+```yaml
+# mcps/<server_name>/config.yaml
+command: node
+args: [/path/to/server.js, serve, --mcp]
+```
 
-After any task where an agent made ≥6 tool calls **and** self-corrected at least once, Anet writes a reusable procedure file to `skills/` in the background.
-
-Before every agent task, the skills folder is keyword-searched against the task description. Up to 3 matching skills are injected into the agent's system prompt as "Relevant Skills from Past Experience". No match — nothing injected, no noise.
-
-**Curator** — at startup, if `skills/` has ≥5 files, a background Curator pass runs: merges duplicate skills and improves skills used ≥3 times. Originals are archived to `skills/archived/`.
-
-View all skills with `/skills`.
+Then add the server to an agent's `mcp:` list in `anet.config.yaml`. Or just run `/addmcp <path>` to generate and connect-test it for you.
 
 ---
 
-## Configuration
+## 💾 Memory & intelligence
+
+```mermaid
+flowchart TD
+    T[Conversation turns] -->|every 5 turns| BG[Background memory agent]
+    T -->|every 10 turns| NUDGE[Memory nudge to active agent]
+    EXIT([Clean exit]) --> FINAL[Final USER.md pass]
+    BG --> U[(memory/USER.md)]
+    NUDGE --> M[(memory_tool facts)]
+    FINAL --> U
+    U -->|injected next session| PLAN[Planner already knows you]
+```
+
+| Feature | How it works |
+|---|---|
+| **Persona — `SOUL.md`** | The manager's name, tone, and rules. Injected into planner + synthesizer prompts only (sub-agent prompts stay clean). Disable with `persona.enabled: false`. |
+| **User profile — `USER.md`** | A background agent updates it every 5 turns; a final pass runs on clean exit. Injected into the planner next session so ANet already knows you. View with `/profile`. |
+| **Memory nudge** | Every 10 substantive turns the active agent is prompted to save genuinely new facts to `memory_tool`. |
+| **Context compression** | Past ~40 messages, ANet offers **[f] forget** (keep last 20) or **[c] compress** (summarise). Also `/forget`, `/compress`. |
+| **Self-improving skills** | After a task with ≥6 tool calls **and** a self-correction, ANet writes a reusable procedure to `skills/`. Relevant skills (≤3) are injected into future tasks. A startup **Curator** merges duplicates and improves frequently-used skills. View with `/skills`. |
+
+---
+
+## ⚙️ Configuration
 
 ### `anet.config.yaml`
 
 ```yaml
-# Persona
+# Persona (manager only)
 persona:
   soul_file: SOUL.md
   enabled: true
@@ -259,23 +366,21 @@ persona:
 # Memory + skills
 memory:
   user_profile_enabled: true
-  incremental_interval: 5   # background memory review every N turns (0 to disable)
+  incremental_interval: 5    # background memory review every N turns (0 = off)
   nudge_enabled: true
   nudge_interval: 10
-  # model: gemini-2.5-flash  # cheaper model for background memory tasks
-
 skills:
   enabled: true
-  creation_threshold: 6
+  creation_threshold: 6      # min tool calls before a skill is written
   curator_min_skills: 5
   max_injected: 3
 
-# Manager model
+# Manager — plans + coordinates everything
 manager:
-  model: google/gemini-2.5-flash
-  provider: vertex_google
+  model: anthropic/claude-sonnet-4.6
+  provider: openrouter
 
-# Per-agent overrides
+# Per-agent overrides — model, provider, max_steps, extra_tools, mcp
 agents:
   code_agent:
     model: claude-opus-4-7
@@ -288,240 +393,114 @@ agents:
     max_steps: 10
 ```
 
-### Supported providers
+### Providers
 
-| Key | API key env var | Notes |
+| Provider key | API key / auth | Notes |
 |---|---|---|
-| `google` | `GOOGLE_API_KEY` | Gemini models direct |
+| `google` | `GOOGLE_API_KEY` | Gemini, direct |
 | `openrouter` | `OPENROUTER_API_KEY` | 300+ models via one key, free tier available |
 | `openai` | `OPENAI_API_KEY` | GPT models |
-| `anthropic` | `ANTHROPIC_API_KEY` | Claude models (legacy alias: `claude`) |
-| `vertex_google` | `VERTEX_PROJECT_ID` + ADC | Gemini on Vertex AI (GCP credits) |
-| `vertex_anthropic` | `VERTEX_PROJECT_ID` + ADC | Claude on Vertex AI (legacy alias: `vertex_claude`) |
+| `anthropic` | `ANTHROPIC_API_KEY` | Claude models *(legacy alias: `claude`)* |
+| `vertex_google` | `VERTEX_PROJECT_ID` + ADC | Gemini on Vertex AI |
+| `vertex_anthropic` | `VERTEX_PROJECT_ID` + ADC | Claude on Vertex AI *(legacy alias: `vertex_claude`)* |
 
 For Vertex AI: run `gcloud auth application-default login` once, then set `VERTEX_PROJECT_ID` in `.env`.
 
----
-
-## Environment variables
-
-### Minimum to start
+### Environment variables
 
 ```env
+# Minimum to start
 OPENROUTER_API_KEY=your_key_here
-```
 
-Free models available. Web search is DuckDuckGo — no extra key needed.
-
-### Adding other providers
-
-```env
-GOOGLE_API_KEY=...          # provider: google
-OPENAI_API_KEY=...          # provider: openai
-ANTHROPIC_API_KEY=...       # provider: anthropic
+# Optional extra providers
+GOOGLE_API_KEY=...
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
 
 # Vertex AI — also run: gcloud auth application-default login
 VERTEX_PROJECT_ID=your-gcp-project-id
 VERTEX_LOCATION=us-central1
 ```
 
-### External agent credentials
-
-Each external agent keeps its own `.env` in its folder — not in the root `.env`. Example for `tele_agent`:
-
-```
-ExAgents/tele_agent/.env
-─────────────────────────
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-```
-
-ANet loads these automatically at startup.
+> **External agent credentials** live in the agent's own folder, e.g. `ExAgents/tele_agent/.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) — loaded automatically at startup, not in the root `.env`.
 
 ---
 
-## Slash commands
+## ⌨️ Command reference
 
 | Command | What it does |
 |---|---|
-| `/agents` | Show loaded agents, models, and tool lists |
-| `/tools` | Show loaded tools and their status |
-| `/mcps` | Show connected MCP servers and their tools |
-| `/skills` | List all saved skills with description and usage count |
-| `/profile` | Show the current user profile (`memory/USER.md`) |
-| `/sessions` | List all saved sessions |
-| `/session <name>` | Switch to a named session (creates it if new) |
-| `/new` | Start a fresh session |
-| `/forget` | Drop oldest messages, keep last 20 |
-| `/compress` | Summarise old messages into one block |
-| `/newtool <path>` | **ToolSmith** — scaffold + validate an ExTool from existing code |
-| `/addmcp <path>` | **MCPSmith** — draft + connect-test an MCP server config |
-| `/mcptest <name>` | Connect-test an MCP server and list its tools |
+| `/agents` · `/tools` · `/mcps` | Show loaded agents / tools / MCP servers |
+| `/skills` | List saved skills with usage counts |
+| `/profile` | Show the user profile (`USER.md`) |
+| `/sessions` · `/session <name>` · `/new` | List / switch / start sessions |
+| `/forget` · `/compress` | Trim or summarise old context |
+| `/newtool <path>` | **ToolSmith** — scaffold + validate an ExTool |
+| `/addmcp <path>` | **MCPSmith** — draft + connect-test an MCP server |
+| `/mcptest <name>` | Connect-test an MCP server |
 | `/clear` | Clear the screen and redraw the startup view |
-| `/help` | Show this list |
-| `exit` or `quit` | End the session (triggers USER.md update) |
+| `/help` | Show the command list |
+| `ESC` | Stop the running task, return to the prompt |
+| `exit` / `quit` | End the session (triggers a `USER.md` update) |
+
+---
+
+## 🖥️ Web dashboard
+
+A FastAPI dashboard runs alongside the CLI:
 
 ```bash
-python main.py --resume                  # pick up your last session
-python main.py --session my-project      # open a named session
-python main.py --list-sessions           # see all sessions
+python server.py   # http://localhost:8000
 ```
 
 ---
 
-## Web Dashboard
+## 📁 Project structure
 
-A FastAPI-based dashboard runs alongside the CLI:
-
-```bash
-python server.py   # opens at http://localhost:8000
-```
-
----
-
-## Extending ANet
-
-The core `anet/` package is never edited. Everything you add lives in `ExTools/`,
-`ExAgents/`, `mcps/`, and the two config files — `exanet.config.yaml` (external
-tools + agents) and `anet.config.yaml` (per-agent model/tool/MCP overrides).
-
-### ✦ The smiths — let an agent build the integration for you
-
-This is the part most frameworks don't have. Instead of hand-writing boilerplate,
-point a built-in **smith** agent at your code or an MCP server's docs and it
-scaffolds, **validates**, and hands you the exact config to paste:
-
-| Command | What it does |
-|---|---|
-| `/newtool <path>` | **ToolSmith** — explores the source at `<path>`, confirms the tool name + capability with you, writes `ExTools/<name>/__init__.py`, runs `python -m anet.core.extool_validator` and fixes it until it prints **PASS**, then prints the `exanet.config.yaml` stanza to register it. |
-| `/addmcp <path>` | **MCPSmith** — reads an MCP server's repo/docs, confirms the name + launch command, writes `mcps/<name>/config.yaml`, verifies it with `python -m anet.core.mcp_doctor <name>` until **PASS**, then prints the `anet.config.yaml` wiring. |
-| `/mcptest <name>` | Connect-test an already-configured MCP server and list the tools it exposes. |
-
-> The smiths **do not edit your config files** — they generate and validate the
-> code, then print the registration snippet for you to paste. You stay in control
-> of what actually gets wired in.
-
-### Add a tool by hand — ExTools
-
-1. Create `ExTools/<tool_name>/__init__.py` exporting:
-   - `SCHEMA` — an OpenAI function-calling schema `dict`
-   - `run(arguments: dict) -> dict` — sync **or** async
-2. Register it under the **`tools:`** key in `exanet.config.yaml`:
-
-```yaml
-tools:
-  - name: my_tool
-    path: ExTools/my_tool      # folder containing __init__.py, relative to repo root
-```
-
-The running CLI re-reads `exanet.config.yaml` between turns and rebuilds its
-tools/agents whenever the file's timestamp changes — so a **registration** edit is
-picked up on your next turn without restarting. Note: this watches the YAML only.
-If you change a tool's Python code (not the YAML), re-save the YAML to trigger the
-reload, or restart.
-
-### Add an agent by hand — ExAgents
-
-External agents are declared **inline** under the **`agents:`** key in
-`exanet.config.yaml` (no `agent.py` file). The prompt can be inline or in a file:
-
-```yaml
-agents:
-  - name: my_agent
-    model: openai/gpt-oss-20b:free
-    provider: openrouter             # google | openrouter | openai | anthropic | vertex_*
-    enabled: true                    # false (or omit the block) = dormant
-    prompt_file: ExAgents/my_agent/prompt.md   # or use: system_prompt: "..."
-    task_types:                      # planner routes to the agent by matching these
-      - do the thing
-      - handle the other thing
-    tools: [my_tool]                 # built-in tools and/or registered ExTools
-    mcp: [my_server]                 # optional — MCP servers from mcps/
-```
-
-`ask_user` is added to every agent automatically. To let an agent delegate to
-other agents, add `spawn_tool` to its `tools:` list explicitly.
-
-### Add an MCP server
-
-1. Create `mcps/<server_name>/config.yaml`:
-
-```yaml
-command: node
-args:
-  - /path/to/server.js
-  - serve
-  - --mcp
-```
-
-2. Add the server name to an agent's `mcp:` list in `anet.config.yaml`:
-
-```yaml
-agents:
-  code_agent:
-    mcp:
-      - my_server
-```
-
-The server starts once on boot, stays alive for the session, and its tools are injected into every agent that declares it. Use `/addmcp` to generate step 1 for you, and `/mcptest <name>` to confirm it connects.
-
----
-
-## Project structure
-
-```
+```text
 Anet/
 ├── main.py                  # CLI entry point
-├── server.py                # Web dashboard entry point
-├── anet.config.yaml         # Model/provider/persona/memory/skills config
-├── exanet.config.yaml       # External agents and tools
-├── SOUL.md                  # Agent persona — edit to change Anet's personality
-├── requirements.txt
-├── .env                     # API credentials (not committed)
+├── server.py                # Web dashboard
+├── anet.config.yaml         # Models, persona, memory, skills, per-agent overrides
+├── exanet.config.yaml       # External tools + agents
+├── SOUL.md                  # Manager persona
 │
 ├── anet/
 │   ├── AnetAgents/          # Built-in agent definitions
 │   ├── AnetTools/           # Built-in tool implementations
-│   │   └── spawn_tool/      # Runtime subagent delegation
-│   ├── cli/
-│   │   └── banner.py        # Animated ANET startup banner + README image export
+│   ├── cli/banner.py        # Animated startup banner + README image export
 │   └── core/
-│       ├── engine.py        # Pure-Python planner→executor→checker→synthesizer
-│       ├── store.py         # aiosqlite conversation store — one shared db keyed by thread
-│       ├── memory_agent.py  # Background memory — updates USER.md + memory_tool
+│       ├── engine.py        # Planner → executor → checker → synthesizer
 │       ├── orchestrator.py  # Agentic loop, cycle detection, skill tracking
 │       ├── agent_runner.py  # Model calls, provider dispatch
+│       ├── store.py         # One shared conversation DB, keyed by thread
+│       ├── memory_agent.py  # Background memory → USER.md + memory_tool
 │       ├── skill_manager.py # Self-improving skills — search, create, curate
-│       ├── mcp_loader.py    # MCP server lifecycle management
-│       ├── tool_loader.py   # Built-in tool loader
-│       ├── ex_loader.py     # External agent/tool loader
-│       └── config_loader.py # Config + soul/profile loaders
+│       ├── mcp_loader.py    # MCP server lifecycle
+│       └── ex_loader.py     # External agent/tool loader
 │
-├── mcps/
-│   ├── codegraph/           # Code graph MCP
-│   └── playwright/          # Browser automation MCP
-│
-├── skills/                  # Auto-written skill procedures (grows over time)
-├── ExAgents/                # Your custom agents
-├── ExTools/                 # Your custom tools
+├── mcps/                    # MCP servers (codegraph, playwright)
+├── skills/                  # Auto-written procedures (grows over time)
+├── ExAgents/  ExTools/      # Your custom agents and tools
 └── memory/                  # (under your Anet home, e.g. ~/.anet)
     ├── USER.md              # Auto-built user profile
     └── sessions/
-        ├── conversations.db    # One shared SQLite store for ALL sessions, keyed by thread
-        └── <session_id>/       # Per-session folder — metadata only (title.txt)
+        ├── conversations.db # One shared store for ALL sessions, keyed by thread
+        └── <session_id>/    # Per-session folder — metadata only (title.txt)
 ```
 
-> **Sessions** all share a single `conversations.db` keyed by `thread`, so
-> switching with `/session <name>` is instant and never loses context. Each
-> session keeps a small folder for its title and metadata. (Legacy per-session
-> `checkpoint.db` files are folded into the shared store automatically on first run.)
+> **Sessions** share a single `conversations.db` keyed by `thread`, so `/session <name>` switches instantly and never loses context. Legacy per-session `checkpoint.db` files are folded into the shared store automatically on first run.
 
 ---
 
-## Requirements
+## ✅ Requirements
 
-- Python 3.11+
-- Node.js (for MCP servers — codegraph, playwright)
+- **Python 3.11+**
+- **Node.js** — only for MCP servers (codegraph, playwright)
 - `pip install -r requirements.txt`
-- Windows only for `computer_agent`: `pip install pyautogui pywinauto Pillow`
-- Vertex AI providers: `pip install google-auth` + `gcloud auth application-default login`
+- **Windows only** for `computer_agent`: `pip install pyautogui pywinauto Pillow`
+- **Vertex AI** providers: `pip install google-auth` + `gcloud auth application-default login`
+
+---
+
+<p align="center"><sub>MIT licensed · built with a pure-Python engine, no LangChain, no framework lock-in.</sub></p>
