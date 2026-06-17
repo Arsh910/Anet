@@ -1,5 +1,5 @@
 <div align="center">
-<img src="ReadmeImages/anet-clean.png" width="430" alt="ANET — gradient, clean">
+<img src="ReadmeImages/anet-clean.png" width="100%" alt="ANET — gradient, clean">
 </div>
 
 <p align="center">
