@@ -11,8 +11,6 @@
 </table>
 </div>
 
-<h1 align="center">ANet</h1>
-
 <p align="center">
   <strong>Run Claude for code. Gemini for research. GPT-4o for planning.<br>
   All from a single YAML file. No framework lock-in.</strong>
