@@ -27,10 +27,16 @@ self-corrects it** until it passes:
 python -m anet.core.extool_validator ExTools/myzip/__init__.py
 ```
 
-It finishes by printing the exact `exanet.config.yaml` stanza to paste (it never
-edits your config). You can also run that validator yourself on any hand-written
-tool. The rest of this doc explains the contract `/newtool` generates against —
-worth reading so you can review or tweak what it produces.
+Then it **finishes the integration for you**: it registers the tool in
+`exanet.config.yaml`, shows you the available agents (built-in **and** your own),
+and attaches the tool to the one(s) you pick — you can select several. It does
+all of this through a safe `registrar` tool that edits **`exanet.config.yaml`
+only**; it never touches `anet.config.yaml` or the core `anet/` package. The tool
+is live on your next message (`exanet.config.yaml` hot-reloads between turns).
+
+You can still run the validator yourself on any hand-written tool. The rest of
+this doc explains the contract `/newtool` generates against — worth reading so you
+can review or tweak what it produces.
 
 ---
 
@@ -83,9 +89,11 @@ Restart ANet. The tool is now loadable.
 
 ## Make an agent actually use it
 
-A registered tool does nothing until an agent has it. Two ways:
+A registered tool does nothing until an agent has it. `/newtool` does this step
+for you (it asks which agents to attach to). To wire it by hand, there are three
+ways:
 
-**A — bolt it onto a built-in agent** (in `anet.config.yaml`):
+**A — bolt it onto a built-in agent** (your own edit, in `anet.config.yaml`):
 ```yaml
 agents:
   code_agent:
@@ -98,6 +106,17 @@ agents:
   - name: my_agent
     tools: [my_tool]
 ```
+
+**C — attach it to a built-in agent from `exanet.config.yaml`** (the path the smiths
+use — no `anet.config.yaml` edit needed):
+```yaml
+attach:
+  code_agent:
+    tools: [my_tool]
+```
+
+> Only the ToolSmith/MCPSmith may attach to **built-in** agents automatically; by
+> hand you can use any of the above.
 
 ## Credentials
 

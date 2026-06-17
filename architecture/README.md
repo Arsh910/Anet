@@ -135,8 +135,8 @@ metadata (e.g. `title.txt`).
 
 ## The Smiths — assisted integration
 
-ANet ships two standalone agents that scaffold and **validate** integrations for
-you, then print the config to paste (they never edit your config files).
+ANet ships three standalone agents (never seen by the planner) that scaffold,
+**validate**, and **wire up** integrations for you.
 
 ```mermaid
 flowchart LR
@@ -145,13 +145,38 @@ flowchart LR
     Q --> W["Write ExTools/&lt;name&gt;/__init__.py"]
     W --> V{"extool_validator"}
     V -->|"fix &amp; retry"| W
-    V -->|"PASS"| OUT["Print the registration stanza to paste"]
+    V -->|"PASS"| REG["registrar: register + attach to chosen agents"]
+    REG --> CFG[("exanet.config.yaml")]
 ```
 
-- **ToolSmith** (`/newtool <path>`) → validates with `python -m anet.core.extool_validator`.
-- **MCPSmith** (`/addmcp <path>`) → verifies with `python -m anet.core.mcp_doctor <name>`.
+| Smith | Command | Validates with | Then |
+|---|---|---|---|
+| **ToolSmith** | `/newtool <path>` | `extool_validator` | registers the ExTool, attaches it to agents you pick |
+| **MCPSmith** | `/addmcp <path>` | `mcp_doctor` | attaches the server to agents you pick |
+| **AgentSmith** | `/newagent <desc>` | — | writes the prompt + registers the agent with your chosen tools/MCP |
 
-Details: [ExTools](../ExTools/README.md) and [mcps](../mcps/README.md).
+### The `registrar` tool — the safety boundary
+
+All smith config changes go through one built-in tool, `registrar`
+(`anet/AnetTools/registrar/`). It **only ever writes `exanet.config.yaml`** — it
+is structurally incapable of touching `anet.config.yaml` or the core `anet/`
+package. Attaching a tool/MCP to a **built-in** agent is recorded in an `attach:`
+section of `exanet.config.yaml`, which the loader merges at startup — so built-in
+agents gain capabilities without any edit to `anet.config.yaml`.
+
+| `registrar` action | Effect |
+|---|---|
+| `list_agents` / `list_tools` / `list_mcps` | Discovery — what's available to attach (drives the multi-select) |
+| `register_tool` | Add a `tools:` entry to `exanet.config.yaml` |
+| `register_agent` | Add an `agents:` entry to `exanet.config.yaml` |
+| `attach` | Add (never remove) tools/MCP to chosen agents (external → their block; built-in → `attach:`) |
+
+**Who can attach to built-in agents:** extending a core (built-in) agent is limited
+to the **ToolSmith and MCPSmith** — the registrar checks the calling agent's name
+(injected as `_agent_name`) and refuses a built-in attach from anyone else
+(e.g. the AgentSmith). External ExAgents have no such limit.
+
+Details: [ExTools](../ExTools/README.md) · [ExAgents](../ExAgents/README.md) · [mcps](../mcps/README.md).
 
 ---
 

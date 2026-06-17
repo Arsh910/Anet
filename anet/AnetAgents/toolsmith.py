@@ -80,19 +80,25 @@ TOOLSMITH_SYSTEM_PROMPT = (
     "6. FIX: if it prints any FAIL line, read it, edit the file (edit_tool), and re-run\n"
     "   step 5. Repeat until it prints PASS. Do not give up before PASS (max ~5 tries);\n"
     "   if a dependency is missing, note it for the user rather than faking the import.\n"
-    "7. FINISH: stop calling tools and write a final plain-text message containing:\n"
+    "7. REGISTER the tool via the registrar tool (it edits ONLY exanet.config.yaml):\n"
+    "     registrar action='register_tool' name=<tool_name> path='ExTools/<tool_name>'\n"
+    "8. ATTACH it to agents: call registrar action='list_agents' to get the built-in and\n"
+    "   external agents. Present them to the user via ask_user as a NUMBERED list and ask\n"
+    "   which agent(s) should get this tool — the user may pick SEVERAL (e.g. '1,3') or none.\n"
+    "   For their choices call: registrar action='attach' targets=[<names>] tools=[<tool_name>].\n"
+    "   (Attaching to a built-in agent is recorded safely in exanet.config.yaml — never in\n"
+    "   anet.config.yaml.)\n"
+    "9. FINISH: stop calling tools and write a final plain-text message containing:\n"
     "     - one line: what the tool does.\n"
-    "     - any pip dependencies the user must install, and any env vars/secrets to set\n"
-    "       (in a .env — read them with os.getenv, NEVER hardcode them).\n"
-    "     - the EXACT registration stanza to paste, in a yaml code block:\n"
-    "         tools:\n"
-    "           - name: <tool_name>\n"
-    "             path: ExTools/<tool_name>\n"
-    "     - a reminder that to let an agent use it, add it to that agent's `extra_tools:`\n"
-    "       in anet.config.yaml (or an ExAgent's `tools:`).\n\n"
+    "     - any pip dependencies to install and env vars/secrets to set (in a .env, read via\n"
+    "       os.getenv — NEVER hardcode them).\n"
+    "     - which agent(s) it was attached to, and that it is active on the user's NEXT\n"
+    "       message (exanet.config.yaml hot-reloads between turns). Confirm with /agents.\n\n"
 
     "HARD RULES:\n"
-    "- NEVER edit anet.config.yaml or exanet.config.yaml yourself — only PRINT the stanza.\n"
+    "- Change config ONLY through the registrar tool (it writes exanet.config.yaml only).\n"
+    "  NEVER write under anet/ and NEVER edit anet.config.yaml — directly or otherwise.\n"
+    "- Every agent name you attach to MUST come from registrar action='list_agents'.\n"
     "- NEVER call run() during validation; the validator only does structural + import checks.\n"
     "- SCHEMA.function.name MUST equal the folder name.\n"
     "- Secrets come from os.getenv, never literals.\n"
@@ -106,7 +112,7 @@ TOOLSMITH_AGENT: dict = {
     # model / provider are injected at call time (main.py) — manager model by default.
     "model": None,
     "provider": None,
-    "tools": ["glob_tool", "grep_tool", "file_tool", "edit_tool", "shell_tool"],
+    "tools": ["glob_tool", "grep_tool", "file_tool", "edit_tool", "shell_tool", "registrar"],
     "task_types": [],          # never routed to by the planner
     "max_steps": 40,
     "enabled": True,

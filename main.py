@@ -51,7 +51,7 @@ from anet.core.engine import Engine, _manager_client as _engine_manager_client
 from anet.core.store import ConversationStore
 from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var, on_ask as _ask_var, on_cancel as _cancel_var
 from anet.core.config_loader import agent_overrides as _agent_overrides, manager_config as _manager_config
-from anet.core.ex_loader import load_ex_tools, load_ex_agents, get_extra_for_builtins
+from anet.core.ex_loader import load_ex_tools, load_ex_agents, get_extra_for_builtins, get_builtin_attachments
 from anet.core.mcp_loader import load_mcp_tools_for_agents
 
 _EX_CONFIG = Path(__file__).parent / "exanet.config.yaml"
@@ -561,8 +561,9 @@ _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/profile",  "Show the user profile (USER.md)"),
     ("/forget",   "Drop oldest messages, keep last 20"),
     ("/compress", "Summarise old messages into one block"),
-    ("/newtool",  "Generate an ExTool from existing code <path>"),
-    ("/addmcp",   "Draft + verify an MCP server config <path>"),
+    ("/newtool",  "ToolSmith — scaffold + register an ExTool from code <path>"),
+    ("/newagent", "AgentSmith — design + register a new agent <description>"),
+    ("/addmcp",   "MCPSmith — draft + register an MCP server <path>"),
     ("/mcptest",  "Connect-test an MCP server <name>"),
     ("/clear",    "Clear screen and redraw the startup view"),
     ("/help",     "Show the slash command list"),
@@ -922,8 +923,9 @@ _HELP_TEXT = """
   [bold cyan]/compress[/bold cyan]             Summarise old messages into one block
   [bold cyan]/profile[/bold cyan]              Show the current user profile (USER.md)
   [bold cyan]/skills[/bold cyan]               List all saved skills
-  [bold cyan]/newtool[/bold cyan] [dim]<path>[/dim]       Generate an ExTool __init__.py from existing code
-  [bold cyan]/addmcp[/bold cyan] [dim]<path>[/dim]        Draft + verify an MCP server config from its docs
+  [bold cyan]/newtool[/bold cyan] [dim]<path>[/dim]       ToolSmith: scaffold + register an ExTool from code
+  [bold cyan]/newagent[/bold cyan] [dim]<desc>[/dim]      AgentSmith: design + register a new agent
+  [bold cyan]/addmcp[/bold cyan] [dim]<path>[/dim]        MCPSmith: draft + register an MCP server from its docs
   [bold cyan]/mcptest[/bold cyan] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
   [bold cyan]/clear[/bold cyan]                Clear the screen
   [bold cyan]/help[/bold cyan]                 Show this message
@@ -1180,12 +1182,22 @@ async def _handle_slash(
         else:
             await _run_toolsmith(arg, tool_map)
 
+    elif command == "/newagent":
+        if not arg:
+            console.print(
+                "\n  [yellow]Usage:[/yellow] /newagent <describe the agent you want>\n"
+                "  [dim]Designs an ExAgent: writes its prompt, lets you pick tools/MCP, and[/dim]\n"
+                "  [dim]registers it. Example: /newagent an agent that summarises PDFs and emails them[/dim]\n"
+            )
+        else:
+            await _run_agentsmith(arg, tool_map)
+
     elif command == "/addmcp":
         if not arg:
             console.print(
                 "\n  [yellow]Usage:[/yellow] /addmcp <path-to-mcp-repo-or-readme>\n"
                 "  [dim]Drafts mcps/<name>/config.yaml from the server's docs, verifies it[/dim]\n"
-                "  [dim]connects, and prints the wiring. Example: /addmcp ../some-mcp-server[/dim]\n"
+                "  [dim]connects, attaches it to agents you pick, and confirms. Example: /addmcp ../some-mcp-server[/dim]\n"
             )
         else:
             await _run_mcpsmith(arg, tool_map)
@@ -1308,9 +1320,10 @@ async def _run_toolsmith(repo_path: str, tool_map: dict) -> None:
         f"{repo_path}\n\n"
         "Follow your workflow exactly: explore the source, confirm the tool name and "
         "capability with the user via ask_user, write ExTools/<tool_name>/__init__.py, "
-        "validate it with `python -m anet.core.extool_validator`, fix until it prints "
-        "PASS, then print the exanet.config.yaml registration stanza. "
-        "Do NOT edit any config files."
+        "validate it with `python -m anet.core.extool_validator` until PASS, then REGISTER "
+        "and ATTACH it using the registrar tool (which edits exanet.config.yaml only — never "
+        "anet.config.yaml or the anet/ package): ask the user which agents should get the "
+        "tool and attach to their choices."
     )
     await _run_standalone_agent(
         TOOLSMITH_AGENT, user_message, tool_map,
@@ -1326,12 +1339,31 @@ async def _run_mcpsmith(source: str, tool_map: dict) -> None:
         f"{source}\n\n"
         "Follow your workflow: read the docs/repo, confirm the server name and launch "
         "command with the user via ask_user, write mcps/<name>/config.yaml, verify it "
-        "with `python -m anet.core.mcp_doctor <name>`, fix until it prints PASS, then "
-        "print the anet.config.yaml mcp: wiring. Do NOT edit any config files."
+        "with `python -m anet.core.mcp_doctor <name>` until PASS, then ATTACH it using the "
+        "registrar tool (which edits exanet.config.yaml only — never anet.config.yaml or the "
+        "anet/ package): ask the user which agents should get the server and attach to them."
     )
     await _run_standalone_agent(
         MCPSMITH_AGENT, user_message, tool_map,
         banner=f"integrating an MCP server from {source}",
+    )
+
+
+async def _run_agentsmith(description: str, tool_map: dict) -> None:
+    """Design + register a new ExAgent from a description (the /newagent command)."""
+    from anet.AnetAgents.agentsmith import AGENTSMITH_AGENT
+    user_message = (
+        "Design and register a new ANet ExAgent from this description:\n"
+        f"{description}\n\n"
+        "Follow your workflow: decide the agent name and task_types; use the registrar tool "
+        "(list_tools / list_mcps) to show the user the available tools and MCP servers and let "
+        "them pick which to add; confirm; write ExAgents/<name>/prompt.md; then register it with "
+        "registrar action='register_agent'. The registrar edits exanet.config.yaml only — never "
+        "anet.config.yaml or the anet/ package."
+    )
+    await _run_standalone_agent(
+        AGENTSMITH_AGENT, user_message, tool_map,
+        banner="designing a new ExAgent",
     )
 
 
@@ -1787,8 +1819,14 @@ async def main() -> None:
             # ── 4. Merge all tools ────────────────────────────────────────────
             combined_tools = {**tool_map, **ex_tools}
 
-            # ── 5. Apply extra_tools/mcp/task_types from anet.config.yaml to built-ins ──
-            extra_map       = get_extra_for_builtins()
+            # ── 5. Apply extra_tools/mcp/task_types to built-ins ──────────────
+            # Sources: anet.config.yaml (user-managed) + exanet.config.yaml
+            # `attach:` (written by the smiths, which never touch anet.config.yaml).
+            extra_map = get_extra_for_builtins()
+            for _name, _att in get_builtin_attachments().items():
+                _e = extra_map.setdefault(_name, {"tools": [], "mcp": [], "task_types": []})
+                _e["tools"] = list(_e.get("tools") or []) + _att.get("tools", [])
+                _e["mcp"]   = list(_e.get("mcp") or []) + _att.get("mcp", [])
             merged_builtins = [dict(a) for a in enabled_agents]
             for agent in merged_builtins:
                 extra = extra_map.get(agent["name"], {})

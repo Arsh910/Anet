@@ -18,7 +18,7 @@ Use any model, per agent. Claude for code, Gemini for research, GPT for planning
 
 <table>
 <tr><td><b>Multi-agent, multi-model</b></td><td>Five built-in agents (research, code, file, computer, checker) plus your own. Each picks its own model + provider in <code>anet.config.yaml</code>. The manager plans a DAG and runs independent steps in parallel.</td></tr>
-<tr><td><b>Builds its own integrations</b></td><td>The <b>ToolSmith</b> (<code>/newtool</code>) and <b>MCPSmith</b> (<code>/addmcp</code>) scaffold a new tool or MCP server from your code/docs, validate it until it passes, and hand you the exact config to paste.</td></tr>
+<tr><td><b>Builds its own integrations</b></td><td>The <b>ToolSmith</b> (<code>/newtool</code>), <b>MCPSmith</b> (<code>/addmcp</code>), and <b>AgentSmith</b> (<code>/newagent</code>) scaffold a new tool, MCP server, or agent from your code/description, validate it, then wire it into the agents you pick — editing only <code>exanet.config.yaml</code>, never the core.</td></tr>
 <tr><td><b>Safe by default</b></td><td>Every shell command, file edit, and destructive file op pauses for explicit <code>y/n/a</code> approval. Per-agent step caps and cycle detection stop runaways.</td></tr>
 <tr><td><b>Remembers you</b></td><td>Auto-built user profile (<code>USER.md</code>), cross-session memory, and a 10-turn memory nudge — so it knows your stack and preferences next time.</td></tr>
 <tr><td><b>Learns from experience</b></td><td>After a complex, self-corrected task it writes a reusable <b>skill</b>; relevant skills are injected into future tasks, and a Curator improves them over time.</td></tr>
@@ -95,8 +95,9 @@ You: open notepad and type today's AI headlines
 | `/profile` | Show the user profile (`USER.md`) |
 | `/sessions` · `/session <name>` · `/new` | List / switch / start sessions |
 | `/forget` · `/compress` | Trim or summarise old context |
-| `/newtool <path>` | **ToolSmith** — scaffold + validate a new ExTool |
-| `/addmcp <path>` | **MCPSmith** — draft + connect-test an MCP server |
+| `/newtool <path>` | **ToolSmith** — scaffold, validate + register a new ExTool |
+| `/newagent <description>` | **AgentSmith** — design + register a new agent |
+| `/addmcp <path>` | **MCPSmith** — draft, connect-test + register an MCP server |
 | `/mcptest <name>` | Connect-test an MCP server |
 | `/clear` | Clear the screen and redraw the startup view |
 | `/help` | Show the command list |
@@ -160,9 +161,11 @@ Add your own tools, agents, MCP servers, and skills **without touching the core 
 | Guide | Add via smith | Add manually |
 |---|---|---|
 | 🔧 **[ExTools](ExTools/README.md)** — custom tools | `/newtool <path>` | `ExTools/<name>/__init__.py` + register in `exanet.config.yaml` |
-| 🤖 **[ExAgents](ExAgents/README.md)** — custom agents | — | inline block under `agents:` in `exanet.config.yaml` |
+| 🤖 **[ExAgents](ExAgents/README.md)** — custom agents | `/newagent <description>` | inline block under `agents:` in `exanet.config.yaml` |
 | 🔌 **[mcps](mcps/README.md)** — MCP servers | `/addmcp <path>` | `mcps/<name>/config.yaml` + wire to an agent |
 | 🧠 **[skills](skills/README.md)** — learned procedures | written automatically | drop a `skills/<name>.md` file |
+
+> The smiths now **finish the integration for you**: after creating and validating, they show you the available agents (built-in + your own) and attach the new tool/MCP to the ones you pick (multi-select). They only ever write `exanet.config.yaml` — never `anet.config.yaml` or the core `anet/` package.
 
 ---
 

@@ -63,3 +63,15 @@ agents:
       - send document via telegram
     tools:
       - tele_tool
+
+
+# ── Attach to built-in agents ────────────────────────────────────────────────
+# Give a BUILT-IN agent (code_agent, research_agent, file_agent, computer_agent)
+# extra tools or MCP servers — WITHOUT editing anet.config.yaml or the anet/ core.
+# The smiths (/newtool, /addmcp) write here automatically when you pick a built-in
+# agent to attach to; you can also edit it by hand. Merged in at startup.
+#
+# attach:
+#   code_agent:
+#     tools: [my_tool]       # ExTools registered above, or built-in tool names
+#     mcp:   [my_server]     # MCP servers from mcps/<name>/

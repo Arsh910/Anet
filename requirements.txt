@@ -19,6 +19,11 @@ ddgs                  # web_search (DuckDuckGo, no API key)
 # ── Conversation persistence (replaces LangGraph AsyncSqliteSaver) ──────────────
 aiosqlite
 
+# ── Smith config editing (registrar tool) — preserves comments in exanet.config.yaml ──
+# Optional but recommended: without it the registrar falls back to PyYAML, which
+# drops comments when it rewrites exanet.config.yaml.
+ruamel.yaml
+
 # ── Optional: semantic memory retrieval (memory_tool) ───────────────────────────
 # Without this, memory search is keyword-only (the default). Install to also match
 # paraphrases via local embeddings (ONNX, no torch, no API key, no network at query
@@ -32,14 +37,14 @@ lxml                  # preferred parser; falls back to stdlib html.parser if ab
 # ── file_tool ───────────────────────────────────────────────────────────────────
 send2trash            # safe delete (recycle bin) instead of permanent removal
 
-# ── Vertex AI (optional — only for provider='vertex_google' or 'vertex_claude') ─
+# ── Vertex AI (optional — only for provider='vertex_google' or 'vertex_anthropic') ─
 google-auth
 google-auth-httplib2
 
 # ── Desktop automation (open_app tool) — Windows only ──────────────────────────
 pywinauto
 pyautogui
-Pillow
+Pillow                 # also used by the README banner image export (anet/cli/banner.py)
 
 # ── Dev / tests (optional) ──────────────────────────────────────────────────────
 # The tool unit tests under tests/AnetToolTests run on the stdlib alone:

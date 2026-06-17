@@ -52,17 +52,22 @@ MCPSMITH_SYSTEM_PROMPT = (
     "   wrong args) and edit the config (edit_tool), then re-run step 5. Repeat until PASS\n"
     "   (max ~5 tries). If a binary isn't installed (node/uvx/the package), note the install\n"
     "   step for the user rather than faking success.\n"
-    "7. FINISH with a final plain-text message containing:\n"
+    "7. ATTACH it to agents: call registrar action='list_agents' to get the built-in and\n"
+    "   external agents. Present them to the user via ask_user as a NUMBERED list and ask\n"
+    "   which agent(s) should get this MCP server - the user may pick SEVERAL (e.g. '1,3')\n"
+    "   or none. For their choices call: registrar action='attach' targets=[<names>] mcp=[<name>].\n"
+    "   (Attaching to a built-in agent is recorded safely in exanet.config.yaml - never in\n"
+    "   anet.config.yaml. MCP servers need no `tools:` entry - they are referenced by name.)\n"
+    "8. FINISH with a final plain-text message containing:\n"
     "     - one line: what the server provides + the tool names the doctor discovered.\n"
     "     - any prerequisites to install (e.g. Node.js, `pip install mcp`) and env vars to set.\n"
-    "     - the EXACT wiring to add, in a yaml code block, plus 'then RESTART ANet'\n"
-    "       (anet.config.yaml is not hot-reloaded):\n"
-    "         agents:\n"
-    "           code_agent:\n"
-    "             mcp: [<name>]\n\n"
+    "     - which agent(s) it was attached to, and that it is active on the user's NEXT\n"
+    "       message (exanet.config.yaml hot-reloads between turns). Confirm with /agents.\n\n"
 
     "HARD RULES:\n"
-    "- NEVER edit anet.config.yaml yourself - only PRINT the mcp: wiring.\n"
+    "- Change config ONLY through the registrar tool (it writes exanet.config.yaml only).\n"
+    "  NEVER write under anet/ and NEVER edit anet.config.yaml - directly or otherwise.\n"
+    "- Every agent name you attach to MUST come from registrar action='list_agents'.\n"
     "- NEVER invent a command - base it on the server's actual docs; if unknown, ask the user.\n"
     "- Real API keys are never written into config.yaml; reference an env var and tell the user.\n"
     "- Act through tools; don't narrate every step. Deliver the final message only when PASS."
@@ -73,7 +78,7 @@ MCPSMITH_AGENT: dict = {
     "system_prompt": MCPSMITH_SYSTEM_PROMPT,
     "model": None,          # injected at call time (manager model by default)
     "provider": None,
-    "tools": ["glob_tool", "grep_tool", "file_tool", "edit_tool", "shell_tool"],
+    "tools": ["glob_tool", "grep_tool", "file_tool", "edit_tool", "shell_tool", "registrar"],
     "task_types": [],       # never routed to by the planner
     "max_steps": 40,
     "enabled": True,

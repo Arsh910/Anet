@@ -167,3 +167,28 @@ def get_extra_for_builtins() -> dict[str, dict]:
                 "task_types": task_types,
             }
     return result
+
+
+def get_builtin_attachments() -> dict[str, dict]:
+    """
+    Read the `attach:` section of exanet.config.yaml — tools/MCP servers the smiths
+    have attached to BUILT-IN agents. This lets the smiths extend built-in agents
+    (which live in the core anet/ package) WITHOUT editing anet.config.yaml.
+
+    Shape in exanet.config.yaml:
+      attach:
+        code_agent:
+          tools: [my_tool]
+          mcp:   [my_server]
+
+    Returns: { agent_name: { "tools": [...], "mcp": [...] } }
+    """
+    cfg = _load_ex_config()
+    result: dict[str, dict] = {}
+    for agent_name, node in (cfg.get("attach") or {}).items():
+        node  = node or {}
+        tools = list(node.get("tools") or [])
+        mcp   = list(node.get("mcp") or [])
+        if tools or mcp:
+            result[agent_name] = {"tools": tools, "mcp": mcp}
+    return result

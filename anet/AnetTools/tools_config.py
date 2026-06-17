@@ -119,4 +119,10 @@ TOOLS = [
         "description": "Run a Python snippet and return its output (stdout + auto-printed trailing expression). Use for computation, data transforms, parsing, and verification.",
         "enabled": True,
     },
+    {
+        "name": "registrar",
+        "path": "anet.AnetTools.registrar",
+        "description": "Smith-only: register ExTools/ExAgents and attach tools/MCP servers to agents by safely editing exanet.config.yaml. Never touches the core anet/ package or anet.config.yaml.",
+        "enabled": True,
+    },
 ]

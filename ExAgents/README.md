@@ -12,6 +12,27 @@ prompt file beside it. No Python required unless the agent needs a custom tool
 
 ---
 
+## Don't want to write the YAML by hand? Use `/newagent`
+
+ANet ships an **agent designer**. Describe the agent you want, in the CLI:
+
+```
+/newagent an agent that summarises PDFs and emails me the result
+```
+
+A standalone `agentsmith` agent decides the name and `task_types`, then shows you
+the **available tools and MCP servers** and asks which to give the agent (pick as
+many as you like). It writes the prompt to `ExAgents/<name>/prompt.md` and
+registers the agent — all through a safe `registrar` tool that edits
+**`exanet.config.yaml` only** (never `anet.config.yaml` or the core `anet/`
+package). The agent is live on your next message (`exanet.config.yaml` hot-reloads
+between turns); confirm with `/agents`.
+
+The rest of this doc explains the schema `/newagent` generates — useful for
+reviewing or tweaking what it produces, or building one entirely by hand.
+
+---
+
 ## How an agent gets used
 
 ANet's **planner** routes each user request to an agent by matching the request

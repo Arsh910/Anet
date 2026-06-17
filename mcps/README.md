@@ -67,7 +67,11 @@ Point it at a local MCP repo or README:
 
 A standalone `mcpsmith` agent reads the docs, confirms the server name + launch
 command with you, writes `mcps/<name>/config.yaml`, then runs the doctor until it
-connects — and prints the `anet.config.yaml` wiring (it never edits your config).
+connects. It then **attaches the server for you**: it shows the available agents
+(built-in **and** your own) and wires the server into the one(s) you pick (you can
+select several) via a safe `registrar` tool that edits **`exanet.config.yaml`
+only** — never `anet.config.yaml` or the core `anet/` package. Active on your next
+message (`exanet.config.yaml` hot-reloads between turns).
 
 ## `/mcptest <name>` — connect-test an existing config
 
