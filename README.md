@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="ReadmeImages/anet.jpg" alt="ANet" width="900">
+  <img src="ReadmeImages/anet.png" alt="ANet" width="900">
 </p>
 
 <h1 align="center">ANet</h1>
