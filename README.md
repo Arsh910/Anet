@@ -40,7 +40,8 @@ Most agent frameworks lock you into one model, one provider, and one way of work
 |---|---|---|
 | Per-agent model selection | ✅ YAML config, swap anytime | ❌ hardcoded or global |
 | Web search without API keys | ✅ DuckDuckGo built-in | ❌ paid API required |
-| Bring your own tools | ✅ ExTools hot-reload, no restart | ⚠️ framework-specific |
+| Bring your own tools | ✅ ExTools — or let the AI **ToolSmith** scaffold + validate one | ⚠️ framework-specific, hand-written |
+| Add an MCP server | ✅ **MCPSmith** drafts + connect-tests the config | ⚠️ manual wiring |
 | Confirmation before shell/file ops | ✅ always, `y/n/a` prompt | ❌ runs blind |
 | Real LSP code intelligence | ✅ go-to-def, rename, references | ❌ grep-based |
 | Session resume | ✅ `--resume` flag | ❌ starts fresh every time |
@@ -143,7 +144,7 @@ Expand any of them on demand with `/agents`, `/tools`, or `/mcps`. The banner ar
 
 All agents default to **Gemini 2.5 Flash** unless overridden in `anet.config.yaml`.
 
-**`spawn_tool`** is auto-injected into every agent — any agent can delegate a sub-task to another agent at runtime without returning to the manager.
+**`spawn_tool`** lets an agent delegate a sub-task to another agent at runtime without returning to the manager. Built-in agents that need it (e.g. `code_agent`, `file_agent`) declare it in their tool list; add `spawn_tool` to any external agent's `tools:` to enable the same. (`ask_user` is the one tool auto-injected into every agent.)
 
 > **Platform note:** `computer_agent` (desktop automation) requires Windows. All other agents and tools are cross-platform.
 
@@ -278,7 +279,7 @@ manager:
 agents:
   code_agent:
     model: claude-opus-4-7
-    provider: claude
+    provider: anthropic
     max_steps: 80
     mcp: [codegraph]
   research_agent:
@@ -294,9 +295,9 @@ agents:
 | `google` | `GOOGLE_API_KEY` | Gemini models direct |
 | `openrouter` | `OPENROUTER_API_KEY` | 300+ models via one key, free tier available |
 | `openai` | `OPENAI_API_KEY` | GPT models |
-| `claude` | `ANTHROPIC_API_KEY` | Claude models |
+| `anthropic` | `ANTHROPIC_API_KEY` | Claude models (legacy alias: `claude`) |
 | `vertex_google` | `VERTEX_PROJECT_ID` + ADC | Gemini on Vertex AI (GCP credits) |
-| `vertex_claude` | `VERTEX_PROJECT_ID` + ADC | Claude on Vertex AI |
+| `vertex_anthropic` | `VERTEX_PROJECT_ID` + ADC | Claude on Vertex AI (legacy alias: `vertex_claude`) |
 
 For Vertex AI: run `gcloud auth application-default login` once, then set `VERTEX_PROJECT_ID` in `.env`.
 
@@ -317,7 +318,7 @@ Free models available. Web search is DuckDuckGo — no extra key needed.
 ```env
 GOOGLE_API_KEY=...          # provider: google
 OPENAI_API_KEY=...          # provider: openai
-ANTHROPIC_API_KEY=...       # provider: claude
+ANTHROPIC_API_KEY=...       # provider: anthropic
 
 # Vertex AI — also run: gcloud auth application-default login
 VERTEX_PROJECT_ID=your-gcp-project-id
@@ -353,7 +354,10 @@ ANet loads these automatically at startup.
 | `/new` | Start a fresh session |
 | `/forget` | Drop oldest messages, keep last 20 |
 | `/compress` | Summarise old messages into one block |
-| `/clear` | Clear the screen |
+| `/newtool <path>` | **ToolSmith** — scaffold + validate an ExTool from existing code |
+| `/addmcp <path>` | **MCPSmith** — draft + connect-test an MCP server config |
+| `/mcptest <name>` | Connect-test an MCP server and list its tools |
+| `/clear` | Clear the screen and redraw the startup view |
 | `/help` | Show this list |
 | `exit` or `quit` | End the session (triggers USER.md update) |
 
@@ -377,29 +381,66 @@ python server.py   # opens at http://localhost:8000
 
 ## Extending ANet
 
-### Add a tool — ExTools
+The core `anet/` package is never edited. Everything you add lives in `ExTools/`,
+`ExAgents/`, `mcps/`, and the two config files — `exanet.config.yaml` (external
+tools + agents) and `anet.config.yaml` (per-agent model/tool/MCP overrides).
 
-Create `ExTools/<tool_name>/__init__.py` with a `SCHEMA` dict and an async `run(params)` function. Register in `exanet.config.yaml`:
+### ✦ The smiths — let an agent build the integration for you
+
+This is the part most frameworks don't have. Instead of hand-writing boilerplate,
+point a built-in **smith** agent at your code or an MCP server's docs and it
+scaffolds, **validates**, and hands you the exact config to paste:
+
+| Command | What it does |
+|---|---|
+| `/newtool <path>` | **ToolSmith** — explores the source at `<path>`, confirms the tool name + capability with you, writes `ExTools/<name>/__init__.py`, runs `python -m anet.core.extool_validator` and fixes it until it prints **PASS**, then prints the `exanet.config.yaml` stanza to register it. |
+| `/addmcp <path>` | **MCPSmith** — reads an MCP server's repo/docs, confirms the name + launch command, writes `mcps/<name>/config.yaml`, verifies it with `python -m anet.core.mcp_doctor <name>` until **PASS**, then prints the `anet.config.yaml` wiring. |
+| `/mcptest <name>` | Connect-test an already-configured MCP server and list the tools it exposes. |
+
+> The smiths **do not edit your config files** — they generate and validate the
+> code, then print the registration snippet for you to paste. You stay in control
+> of what actually gets wired in.
+
+### Add a tool by hand — ExTools
+
+1. Create `ExTools/<tool_name>/__init__.py` exporting:
+   - `SCHEMA` — an OpenAI function-calling schema `dict`
+   - `run(arguments: dict) -> dict` — sync **or** async
+2. Register it under the **`tools:`** key in `exanet.config.yaml`:
 
 ```yaml
-ex_tools:
+tools:
   - name: my_tool
-    path: ExTools/my_tool
+    path: ExTools/my_tool      # folder containing __init__.py, relative to repo root
 ```
 
-No restart needed — hot-reload picks it up when `exanet.config.yaml` changes.
+The running CLI re-reads `exanet.config.yaml` between turns and rebuilds its
+tools/agents whenever the file's timestamp changes — so a **registration** edit is
+picked up on your next turn without restarting. Note: this watches the YAML only.
+If you change a tool's Python code (not the YAML), re-save the YAML to trigger the
+reload, or restart.
 
-### Add an agent — ExAgents
+### Add an agent by hand — ExAgents
 
-Create `ExAgents/<agent_name>/` with `agent.py` (config dict) and optionally `prompt.md` and `.env`. Register in `exanet.config.yaml`:
+External agents are declared **inline** under the **`agents:`** key in
+`exanet.config.yaml` (no `agent.py` file). The prompt can be inline or in a file:
 
 ```yaml
-ex_agents:
+agents:
   - name: my_agent
-    path: ExAgents/my_agent
+    model: openai/gpt-oss-20b:free
+    provider: openrouter             # google | openrouter | openai | anthropic | vertex_*
+    enabled: true                    # false (or omit the block) = dormant
+    prompt_file: ExAgents/my_agent/prompt.md   # or use: system_prompt: "..."
+    task_types:                      # planner routes to the agent by matching these
+      - do the thing
+      - handle the other thing
+    tools: [my_tool]                 # built-in tools and/or registered ExTools
+    mcp: [my_server]                 # optional — MCP servers from mcps/
 ```
 
-External agents automatically get `spawn_tool` injected — they can delegate to other agents without extra config.
+`ask_user` is added to every agent automatically. To let an agent delegate to
+other agents, add `spawn_tool` to its `tools:` list explicitly.
 
 ### Add an MCP server
 
@@ -422,7 +463,7 @@ agents:
       - my_server
 ```
 
-The server starts once on boot, stays alive for the session, and its tools are injected into every agent that declares it.
+The server starts once on boot, stays alive for the session, and its tools are injected into every agent that declares it. Use `/addmcp` to generate step 1 for you, and `/mcptest <name>` to confirm it connects.
 
 ---
 

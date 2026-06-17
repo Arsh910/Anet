@@ -7,7 +7,7 @@
 #   google      → Google AI / Gemini    requires: GOOGLE_API_KEY
 #   openrouter  → OpenRouter            requires: OPENROUTER_API_KEY
 #   openai      → OpenAI                requires: OPENAI_API_KEY
-#   claude      → Anthropic             requires: ANTHROPIC_API_KEY
+#   anthropic   → Anthropic             requires: ANTHROPIC_API_KEY  (legacy alias: claude)
 #
 # Add keys to your .env file as needed.
 # ─────────────────────────────────────────────────────────────────────────────

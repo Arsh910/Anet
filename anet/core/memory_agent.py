@@ -48,7 +48,7 @@ def _client() -> tuple[AsyncOpenAI, str]:
     except Exception:
         model, provider = "gemini-2.5-flash", "google"
 
-    if provider in ("vertex_google", "vertex_claude"):
+    if provider in ("vertex_google", "vertex_anthropic", "vertex_claude"):
         from anet.core.agent_runner import build_vertex_client
         return build_vertex_client(), model
 

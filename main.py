@@ -36,6 +36,7 @@ from rich.text import Text
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.completion import Completer, Completion
     _HAS_PT = True
 except ImportError:
     _HAS_PT = False
@@ -96,12 +97,15 @@ _NUDGE_TEXT = (
 # Only warn for providers actually referenced by the current config.
 
 _PROVIDER_KEYS = {
-    "google":        ("GOOGLE_API_KEY",      "Google AI / Gemini"),
-    "openrouter":    ("OPENROUTER_API_KEY",  "OpenRouter"),
-    "openai":        ("OPENAI_API_KEY",      "OpenAI"),
-    "claude":        ("ANTHROPIC_API_KEY",   "Anthropic / Claude"),
-    "vertex_google": ("VERTEX_PROJECT_ID",   "Google Vertex AI / Gemini"),
-    "vertex_claude": ("VERTEX_PROJECT_ID",   "Google Vertex AI / Claude"),
+    "google":           ("GOOGLE_API_KEY",      "Google AI / Gemini"),
+    "openrouter":       ("OPENROUTER_API_KEY",  "OpenRouter"),
+    "openai":           ("OPENAI_API_KEY",      "OpenAI"),
+    "anthropic":        ("ANTHROPIC_API_KEY",   "Anthropic"),
+    "vertex_google":    ("VERTEX_PROJECT_ID",   "Google Vertex AI / Gemini"),
+    "vertex_anthropic": ("VERTEX_PROJECT_ID",   "Anthropic on Vertex AI"),
+    # Legacy aliases — kept so older configs keep working.
+    "claude":           ("ANTHROPIC_API_KEY",   "Anthropic"),
+    "vertex_claude":    ("VERTEX_PROJECT_ID",   "Anthropic on Vertex AI"),
 }
 
 def _check_api_keys() -> None:
@@ -432,7 +436,7 @@ def _split_tools(tool_map: dict) -> tuple[dict, set[str]]:
     return regular_tools, mcp_tool_names
 
 
-def _print_startup_summary(enabled_agents: list[dict], tool_map: dict, n_external: int = 0) -> None:
+def _print_startup_summary(enabled_agents: list[dict], tool_map: dict) -> None:
     from anet.core.mcp_loader import _connections as _mcp_connections
 
     regular_tools, _ = _split_tools(tool_map)
@@ -453,6 +457,9 @@ def _print_startup_summary(enabled_agents: list[dict], tool_map: dict, n_externa
     console.print()
 
     # Compact counts — full menus available via /agents, /tools, /mcps.
+    # Total = built-in agents (enabled+disabled) + any external agents loaded.
+    _builtin_names = {a["name"] for a in AGENTS}
+    n_external = sum(1 for a in enabled_agents if a["name"] not in _builtin_names)
     agents_loaded = len(enabled_agents)
     agents_total  = len(AGENTS) + n_external
     tools_loaded  = len(regular_tools)
@@ -542,8 +549,46 @@ async def _async_notifier(
 
 # ── Input helper ──────────────────────────────────────────────────────────────
 
+# Slash commands offered as autocomplete suggestions (command, description).
+_SLASH_COMMANDS: list[tuple[str, str]] = [
+    ("/new",      "Start a fresh session"),
+    ("/session",  "Switch to a named session <name>"),
+    ("/sessions", "List all saved sessions"),
+    ("/agents",   "Show loaded agents and their tools"),
+    ("/tools",    "Show loaded tools"),
+    ("/mcps",     "Show connected MCP servers"),
+    ("/skills",   "List saved skills"),
+    ("/profile",  "Show the user profile (USER.md)"),
+    ("/forget",   "Drop oldest messages, keep last 20"),
+    ("/compress", "Summarise old messages into one block"),
+    ("/newtool",  "Generate an ExTool from existing code <path>"),
+    ("/addmcp",   "Draft + verify an MCP server config <path>"),
+    ("/mcptest",  "Connect-test an MCP server <name>"),
+    ("/clear",    "Clear screen and redraw the startup view"),
+    ("/help",     "Show the slash command list"),
+]
+
+
+if _HAS_PT:
+    class _SlashCompleter(Completer):
+        """Suggest slash commands as soon as the line starts with '/'."""
+        def get_completions(self, document, complete_event):
+            text = document.text_before_cursor
+            # Only complete the command token itself: starts with '/', no space yet.
+            if not text.startswith("/") or " " in text:
+                return
+            for cmd, desc in _SLASH_COMMANDS:
+                if cmd.startswith(text):
+                    yield Completion(
+                        cmd,
+                        start_position=-len(text),
+                        display=cmd,
+                        display_meta=desc,
+                    )
+
+
 def _make_prompt_session():
-    """Build a prompt_toolkit session with ESC-to-clear binding."""
+    """Build a prompt_toolkit session with ESC-to-clear and slash-command autocomplete."""
     kb = KeyBindings()
 
     @kb.add("escape", eager=True)
@@ -551,7 +596,12 @@ def _make_prompt_session():
         # Clear the buffer; prompt_toolkit will redraw the empty prompt automatically.
         event.current_buffer.reset()
 
-    return PromptSession(key_bindings=kb, enable_open_in_editor=False)
+    return PromptSession(
+        key_bindings=kb,
+        completer=_SlashCompleter(),
+        complete_while_typing=True,
+        enable_open_in_editor=False,
+    )
 
 
 _pt_session: "PromptSession | None" = None
@@ -1011,6 +1061,7 @@ async def _handle_slash(
 
     elif command == "/clear":
         console.clear()
+        _print_startup_summary(enabled_agents, tool_map)
 
     elif command == "/new":
         global _session_turn_count, _last_context_prompt_n
@@ -1785,7 +1836,7 @@ async def main() -> None:
         all_agents, all_tools, manager_tools, n_external = await _merge_all()
         engine = Engine(all_agents, all_tools, manager_tools=manager_tools)
         # Reprint summary now that MCP tools have been injected into agent tool lists
-        _print_startup_summary(all_agents, all_tools, n_external)
+        _print_startup_summary(all_agents, all_tools)
         if n_external:
             console.print(f"[dim]  + {n_external} external agent(s) loaded[/dim]\n")
 

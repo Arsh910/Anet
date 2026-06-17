@@ -27,7 +27,7 @@ In `exanet.config.yaml`, under `agents:`:
 agents:
   - name: my_agent
     model: openai/gpt-oss-20b:free      # any model your provider supports
-    provider: openrouter                # google | openrouter | openai | claude | vertex_*
+    provider: openrouter                # google | openrouter | openai | anthropic | vertex_*
     enabled: true                       # false (or omit block) = dormant
     prompt_file: ExAgents/my_agent/prompt.md   # or use system_prompt: "..."
     task_types:                         # phrases the planner matches against

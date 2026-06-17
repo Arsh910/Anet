@@ -73,7 +73,7 @@ def _manager_cfg() -> tuple[str, str]:
 
 def _manager_client() -> tuple[AsyncOpenAI, str]:
     model, provider = _manager_cfg()
-    if provider in ("vertex_google", "vertex_claude"):
+    if provider in ("vertex_google", "vertex_anthropic", "vertex_claude"):
         from anet.core.agent_runner import build_vertex_client
         return build_vertex_client(), model
     base_url, env_key = _MANAGER_PROVIDERS.get(provider, _MANAGER_PROVIDERS["google"])

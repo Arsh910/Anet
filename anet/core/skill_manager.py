@@ -288,7 +288,7 @@ async def _model_call(messages: list[dict], max_tokens: int = 800) -> str:
         from anet.core.agent_runner import (
             build_vertex_client, _build_openai_client, _PROVIDERS, _DEFAULT_PROVIDER,
         )
-        if provider in ("vertex_google", "vertex_claude"):
+        if provider in ("vertex_google", "vertex_anthropic", "vertex_claude"):
             client = build_vertex_client()
         elif provider in _PROVIDERS:
             client = _build_openai_client(provider)

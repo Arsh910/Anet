@@ -5,9 +5,9 @@ Supported providers (set via agent config or anet.config.yaml):
   openrouter     → OpenRouter               (OPENROUTER_API_KEY)
   google         → Google AI / Gemini       (GOOGLE_API_KEY)
   openai         → OpenAI                   (OPENAI_API_KEY)
-  claude         → Anthropic direct         (ANTHROPIC_API_KEY)
+  anthropic      → Anthropic direct         (ANTHROPIC_API_KEY)   [alias: claude]
   vertex_google  → Gemini on Vertex AI      (VERTEX_PROJECT_ID + ADC)
-  vertex_claude  → Claude on Vertex AI      (VERTEX_PROJECT_ID + ADC)
+  vertex_anthropic → Anthropic on Vertex AI (VERTEX_PROJECT_ID + ADC)  [alias: vertex_claude]
 
 Vertex AI notes:
   - Authenticate once with: gcloud auth application-default login
@@ -218,7 +218,7 @@ async def _run_anthropic(
         from anthropic import AsyncAnthropic, RateLimitError as AnthropicRateLimitError
     except ImportError:
         raise RuntimeError(
-            "The 'anthropic' package is required for provider='claude'. "
+            "The 'anthropic' package is required for provider='anthropic'. "
             "Run: pip install anthropic"
         )
 
@@ -283,12 +283,13 @@ async def run(
                 file=sys.stderr,
             )
 
-    # Anthropic direct API (non-OpenAI-compatible)
-    if provider == "claude":
+    # Anthropic direct API (non-OpenAI-compatible). "claude" kept as a legacy alias.
+    if provider in ("anthropic", "claude"):
         return await _run_anthropic(agent, tool_schemas, messages)
 
-    # Vertex AI (Gemini or Claude via Vertex's unified OpenAI-compat endpoint)
-    if provider in ("vertex_google", "vertex_claude"):
+    # Vertex AI (Gemini or Anthropic via Vertex's unified OpenAI-compat endpoint).
+    # "vertex_claude" kept as a legacy alias for "vertex_anthropic".
+    if provider in ("vertex_google", "vertex_anthropic", "vertex_claude"):
         client = build_vertex_client()
         call_kwargs: dict = {"model": agent.get("model") or _DEFAULT_MODEL, "messages": messages}
         if tool_schemas:
