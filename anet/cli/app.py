@@ -86,6 +86,22 @@ _USER_PROFILE_TEMPLATE = (
     "### Project Context\n"
 )
 
+# Seeded into <home>/.env on first run; the user fills in only the key(s) they need.
+_ENV_TEMPLATE = (
+    "# ANet API keys & settings. Fill in only what you use, then restart (or just\n"
+    "# re-open with /keys). Edit any time:  /keys\n\n"
+    "# ── Model providers — set at least ONE ──────────────────────────────────────\n"
+    "OPENROUTER_API_KEY=\n"
+    "GOOGLE_API_KEY=\n"
+    "OPENAI_API_KEY=\n"
+    "ANTHROPIC_API_KEY=\n\n"
+    "# ── Vertex AI (optional) — also run: gcloud auth application-default login ───\n"
+    "VERTEX_PROJECT_ID=\n"
+    "VERTEX_LOCATION=\n\n"
+    "# ── Optional ─────────────────────────────────────────────────────────────────\n"
+    "# ASSISTANT_NAME=Anet\n"
+)
+
 # ── Memory nudge ──────────────────────────────────────────────────────────────
 _session_turn_count: int = 0   # increments on every real user message; reset on /new
 
@@ -128,14 +144,17 @@ def _check_api_keys() -> None:
         provider = ov.get("provider") or agent.get("provider") or "openrouter"
         providers_in_use.add(provider)
     # Warn for missing keys
+    missing = []
     for provider in providers_in_use:
         if provider not in _PROVIDER_KEYS:
             continue
         env_key, label = _PROVIDER_KEYS[provider]
         if not os.getenv(env_key):
-            print(f"WARNING: {env_key} is not set — needed for {label}.")
-
-_check_api_keys()
+            missing.append((env_key, label))
+    for env_key, label in missing:
+        console.print(f"  [yellow]WARNING:[/yellow] {env_key} is not set — needed for {label}.")
+    if missing:
+        console.print("  [dim]→ run [cyan]/keys[/cyan] to set your API keys.[/dim]")
 
 console = Console()
 
@@ -573,6 +592,10 @@ _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/addmcp",   "MCPSmith — draft + register an MCP server <path>"),
     ("/mcptest",  "Connect-test an MCP server <name>"),
     ("/changepack", "Switch the active pack (workspace) <name?>"),
+    ("/keys",     "Set your API keys (opens ~/.anet/.env in an editor)"),
+    ("/settings", "Edit models/providers (opens anet.config.yaml)"),
+    ("/editpack", "Edit the pack's tools/agents (opens exanet.config.yaml)"),
+    ("/editagent", "Edit an agent's prompt <name>"),
     ("/packsmith", "Packs: new <name> | share <path?> | add <zip>"),
     ("/clear",    "Clear screen and redraw the startup view"),
     ("/help",     "Show the slash command list"),
@@ -937,6 +960,10 @@ _HELP_TEXT = """
   [bold cyan]/addmcp[/bold cyan] [dim]<path>[/dim]        MCPSmith: draft + register an MCP server from its docs
   [bold cyan]/mcptest[/bold cyan] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
   [bold cyan]/changepack[/bold cyan] [dim]<name>[/dim]    Switch the active pack (workspace) — lists packs if no name
+  [bold cyan]/keys[/bold cyan]                 Set your API keys (opens ~/.anet/.env in an editor)
+  [bold cyan]/settings[/bold cyan]             Edit models/providers (opens anet.config.yaml)
+  [bold cyan]/editpack[/bold cyan]             Edit the pack's tools/agents (opens exanet.config.yaml)
+  [bold cyan]/editagent[/bold cyan] [dim]<name>[/dim]   Edit one of your agents' prompt
   [bold cyan]/packsmith new[/bold cyan] [dim]<name>[/dim]     Create a blank pack in yourpacks/ and switch to it
   [bold cyan]/packsmith share[/bold cyan] [dim]<path?>[/dim]  Bundle a pack into a shareable zip (secrets stripped)
   [bold cyan]/packsmith add[/bold cyan] [dim]<zip>[/dim]      Install a received pack into shared_packs/
@@ -1045,6 +1072,27 @@ def _switch_pack(name: str) -> None:
     _force_reload = True
 
 
+def _cmd_editagent(arg: str) -> None:
+    """Open an ExAgent's prompt.md in the editor (the /editagent command)."""
+    name = arg.split()[0] if arg.strip() else ""
+    if not name:
+        console.print("\n  [yellow]Usage:[/yellow] /editagent <agent-name>  [dim](one of your pack's agents)[/dim]\n")
+        return
+    prompt_file = _anet_paths.exagents_dir() / name / "prompt.md"
+    if prompt_file.exists():
+        if _open_in_editor(prompt_file):
+            _apply_config_change()
+            console.print(f"  [green]{name} prompt updated[/green] — applied on your next message.\n")
+        return
+    # Helpful diagnosis if not found.
+    if any(a.get("name") == name for a in AGENTS):
+        console.print(f"\n  [yellow]'{name}' is a built-in agent[/yellow] — its prompt lives in the read-only core, "
+                      f"so it isn't editable here. Create your own with [cyan]/newagent[/cyan].\n")
+    else:
+        console.print(f"\n  [yellow]No editable prompt found for '{name}'[/yellow] at {prompt_file}.\n"
+                      f"  [dim]It must be a pack ExAgent with a prompt_file. See /agents.[/dim]\n")
+
+
 async def _cmd_packsmith_new(name: str) -> None:
     """Create a blank pack in yourpacks/<name> and switch to it (the /packsmith new
     command). Build it up afterward with /newtool, /newagent, /addmcp."""
@@ -1149,6 +1197,25 @@ async def _handle_slash(
 
     elif command == "/changepack":
         await _cmd_changepack(arg)
+
+    elif command == "/keys":
+        env_file = _ensure_home_env()
+        if _open_in_editor(env_file):
+            try:
+                from dotenv import load_dotenv as _ldenv
+                _ldenv(env_file, override=True)   # picked up on the next model call
+                console.print("  [green]keys reloaded[/green] — take effect on your next message.\n")
+            except Exception:
+                console.print("  [dim]saved — restart to apply.[/dim]\n")
+
+    elif command == "/settings":
+        _edit_yaml(_anet_paths.config_path(), "anet.config.yaml (models/providers)")
+
+    elif command == "/editpack":
+        _edit_yaml(_anet_paths.exanet_path(), "exanet.config.yaml (tools/agents)")
+
+    elif command == "/editagent":
+        _cmd_editagent(arg)
 
     elif command == "/new":
         global _session_turn_count, _last_context_prompt_n
@@ -1857,6 +1924,80 @@ def _seed_and_migrate(home: Path, repo: Path | None = None) -> None:
             pass
 
 
+# ── Editor-based config editing (/keys, /settings, /editpack, /editagent) ─────
+
+def _resolve_editor() -> list[str]:
+    """Pick an editor: $VISUAL/$EDITOR, else notepad on Windows, else nano/vi."""
+    import shutil
+    for var in ("VISUAL", "EDITOR"):
+        val = os.environ.get(var)
+        if val:
+            return val.split()
+    if sys.platform == "win32":
+        return ["notepad"]
+    for cand in ("nano", "vim", "vi"):
+        if shutil.which(cand):
+            return [cand]
+    return ["vi"]
+
+
+def _open_in_editor(path: Path) -> bool:
+    """Open a file in the user's editor (blocking). Returns True if it launched."""
+    import subprocess
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text("", encoding="utf-8")
+    editor = _resolve_editor()
+    console.print(f"  [dim]opening[/dim] [cyan]{path}[/cyan] [dim]in {editor[0]} — save & close to continue…[/dim]")
+    try:
+        subprocess.run([*editor, str(path)])
+        return True
+    except Exception as exc:
+        console.print(f"  [red]couldn't launch an editor ({exc}). Edit this file by hand:[/red] {path}")
+        return False
+
+
+def _ensure_home_env() -> Path:
+    """Create <home>/.env from the template if missing; return its path."""
+    env_file = _anet_paths.env_path()
+    if not env_file.exists():
+        try:
+            env_file.parent.mkdir(parents=True, exist_ok=True)
+            env_file.write_text(_ENV_TEMPLATE, encoding="utf-8")
+        except OSError:
+            pass
+    return env_file
+
+
+def _apply_config_change() -> None:
+    """Drop cached config and flag an engine rebuild so edits take effect next turn."""
+    global _force_reload
+    try:
+        from anet.core.config_loader import reset_cache
+        reset_cache()
+    except Exception:
+        pass
+    _force_reload = True
+
+
+def _edit_yaml(path: Path, label: str) -> None:
+    """Open a YAML file in the editor, then validate it and trigger a reload."""
+    if not path.exists():
+        console.print(f"  [yellow]{label} not found:[/yellow] {path}\n")
+        return
+    if not _open_in_editor(path):
+        return
+    try:
+        import yaml
+        yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        console.print(f"  [red]⚠ {path.name} has a YAML error — changes saved but may not load:[/red]\n    {exc}")
+        console.print(f"  [dim]re-open to fix it.[/dim]\n")
+        return
+    _apply_config_change()
+    console.print(f"  [green]{label} updated[/green] — applied on your next message.\n")
+
+
 def _setup_anet_home(interactive: bool = True) -> None:
     """Resolve the home dir (prompting once on first run) and point the session
     and profile globals at it."""
@@ -1877,6 +2018,14 @@ def _setup_anet_home(interactive: bool = True) -> None:
     _SHARED_DB_PATH    = sessions / "conversations.db"
     _USER_PROFILE_PATH = home / "USER.md"
     _LAST_SESSION_FILE = sessions / "last_session.txt"
+
+    # Create <home>/.env (if missing) and load it, so API keys live in one stable
+    # place regardless of where `anet` is launched. Shell env still wins (override=False).
+    try:
+        from dotenv import load_dotenv as _ldenv
+        _ldenv(_ensure_home_env(), override=False)
+    except Exception:
+        pass
 
     if first_run and interactive:
         _seed_and_migrate(home)
@@ -1928,6 +2077,9 @@ async def main() -> None:
     if not enabled_agents:
         console.print("[red]No enabled agents found in agents_config.py. Exiting.[/red]")
         sys.exit(1)
+
+    # Warn about missing provider keys now that the home .env is loaded.
+    _check_api_keys()
 
     tool_map = load_tools()
     _check_optional_deps()

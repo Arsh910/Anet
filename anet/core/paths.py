@@ -217,6 +217,11 @@ def anet_files_dir() -> Path:
     return home() / "anet_files"
 
 
+def env_path() -> Path:
+    # The user's API keys / env vars, at the home root (shared across all packs).
+    return home() / ".env"
+
+
 def user_profile_path() -> Path:
     return home() / "USER.md"
 

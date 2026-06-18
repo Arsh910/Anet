@@ -1,111 +1,66 @@
-# anet.config.yaml — optional model overrides for ANet
-#
-# Copy this file to anet.config.yaml and edit as needed.
-# Only specify what you want to change — everything else uses the built-in defaults.
-#
-# Supported providers:
-#   google      → Google AI / Gemini    requires: GOOGLE_API_KEY
-#   openrouter  → OpenRouter            requires: OPENROUTER_API_KEY
-#   openai      → OpenAI                requires: OPENAI_API_KEY
-#   anthropic   → Anthropic             requires: ANTHROPIC_API_KEY  (legacy alias: claude)
-#
-# Add keys to your .env file as needed.
-# ─────────────────────────────────────────────────────────────────────────────
+# anet.config.yaml — models, memory, and per-agent settings for this pack.
+# Edit with /settings. Only the keys you set here override the built-in defaults.
+# API keys live in ~/.anet/.env (set them with /keys).
+# Providers: openrouter · google · openai · anthropic · vertex_google · vertex_anthropic
 
-# Self-improving skills — written after complex tasks, injected before relevant ones
-skills:
-  enabled: true
-  skills_dir: skills/
-  creation_threshold: 6    # min tool calls before skill creation is considered
-  curator_min_skills: 5    # min skill files before Curator runs at startup
-  max_injected: 3          # max skills injected per agent task
-  stale_after_days: 30     # Curator archives agent-created skills unused this long
-  curator_interval_hours: 12  # Curator won't re-run more often than this
-
-# Context management — when the conversation grows long, prompt the user to
-# compress (summarise old messages into one block) or forget (drop the oldest).
-context:
-  enabled: true     # set false to never prompt
-  threshold: 40     # message count that triggers the prompt
-  keep: 20          # most-recent messages retained after compress/forget
-
-# User profile — built automatically at session end and injected into planner
-# Memory nudge — every N turns the agent is prompted to save important context
-memory:
-  user_profile_enabled: true
-  user_profile_path: memory/USER.md    # informational — path is fixed
-  nudge_enabled: true
-  nudge_interval: 10                   # turns between nudges, 0 to disable
-  incremental_interval: 5             # turns between background memory reviews (0 to disable)
-  # model: gemini-2.5-flash           # optional cheaper model for memory (defaults to manager model)
-  # provider: google
-
-# Agent persona — loaded from SOUL.md and injected into manager prompts only
-persona:
-  soul_file: SOUL.md    # path relative to repo root
-  enabled: true         # set false to disable persona injection
-
-# Manager (plans and coordinates all requests)
-# Default: gemini-2.5-pro via google
+# Manager — plans and coordinates every request.
+# Default is a free OpenRouter model so a single free key works out of the box.
+# Swap for a stronger model (e.g. anthropic/claude-sonnet-4.6) once you've added a key.
 manager:
-    model: anthropic/claude-sonnet-4.6
-    provider: openrouter
+  model: nex-agi/nex-n2-pro:free
+  provider: openrouter
 
-# Per-agent overrides — model, provider, max_steps, extra_tools, and mcp can be set here.
+# Per-agent overrides. Each agent uses the free default below; give any agent a
+# stronger model/provider as you like. Omit an agent entirely to use the manager's.
+#   max_steps        — tool-call cap (defaults: research 10, file 25, computer 20, checker 8, code 60)
+#   mcp: [name]      — attach MCP servers from this pack's mcps/ (add one with /addmcp)
+#   task_types: [..] — extra phrases the planner routes to this agent on
 #
-# max_steps:   max tool-call iterations before the safety cap fires
-#              defaults — research_agent:10  computer_agent:20  checker_agent:8
-#                         file_agent:25  code_agent:60
-# extra_tools: bolt ExTools (defined in exanet.config.yaml) onto a built-in agent
-# mcp:         connect MCP servers (defined in mcps/) to a built-in agent
-#
-# Vertex AI model IDs (provider: google):
-#   gemini-2.5-pro           ← latest stable Flash (recommended)
-#   gemini-2.5-pro -001      ← pinned stable version
-#   google/gemini-2.5-pro            ← latest stable Pro
-#   google/gemini-2.5-pro-001        ← pinned stable Pro
-#   google/gemini-2.0-flash-001      ← older stable (always available)
-#
-# Example:
+# Example — give code_agent a stronger model and a code-graph MCP:
 #   code_agent:
-#     model: gemini-2.5-pro 
-#     provider: google
-#     max_steps: 80
-#     extra_tools: [my_tool]      # ExTool from exanet.config.yaml
-#     mcp: [filesystem, github]   # MCP servers from mcps/
+#     model: anthropic/claude-sonnet-4.6
+#     provider: anthropic
+#     mcp: [codegraph]
 agents:
-
   research_agent:
-    model: openai/gpt-5.4-mini
+    model: nex-agi/nex-n2-pro:free
     provider: openrouter
-
+  code_agent:
+    model: nex-agi/nex-n2-pro:free
+    provider: openrouter
+  file_agent:
+    model: nex-agi/nex-n2-pro:free
+    provider: openrouter
   computer_agent:
     model: nex-agi/nex-n2-pro:free
     provider: openrouter
-
   checker_agent:
     model: nex-agi/nex-n2-pro:free
     provider: openrouter
 
-  file_agent:
-    model: nex-agi/nex-n2-pro:free
-    provider: openrouter
-    mcp: [playwright]
-    task_types:
-      - "playwrite mcp"
+# Self-improving skills — written after complex tasks, injected into relevant ones.
+skills:
+  enabled: true
+  creation_threshold: 6        # min tool calls before a skill is considered
+  curator_min_skills: 5        # min skills before the startup Curator runs
+  max_injected: 3              # max skills injected per task
+  stale_after_days: 30         # Curator archives agent-made skills unused this long
+  curator_interval_hours: 12   # Curator won't re-run more often than this
 
-  code_agent:
-    model: anthropic/claude-haiku-4.5
-    provider: openrouter
-    mcp: [codegraph]
-    task_types:
-      - "codegraph mcp"
-    
+# Memory — auto-built user profile + periodic nudges to save useful facts.
+memory:
+  user_profile_enabled: true
+  nudge_enabled: true
+  nudge_interval: 10           # turns between nudges (0 = off)
+  incremental_interval: 5      # turns between background profile updates (0 = off)
 
-# ── Provider / model reference ────────────────────────────────────────────────
-#
-# Google models:     gemini-2.5-pro  gemini-2.5-flash  gemini-2.0-flash
-# OpenAI models:     gpt-4o  gpt-4o-mini  o3-mini
-# Anthropic models:  claude-opus-4-7  claude-sonnet-4-6  claude-haiku-4-5-20251001
-# OpenRouter:        use full model ID e.g. anthropic/claude-sonnet-4-6
-#                    see https://openrouter.ai/models for full list
+# Context — when a conversation grows long, offer to compress/forget old messages.
+context:
+  enabled: true
+  threshold: 40                # message count that triggers the prompt
+  keep: 20                     # recent messages kept afterward
+
+# Persona — injected into the manager's prompts only.
+persona:
+  soul_file: SOUL.md
+  enabled: true

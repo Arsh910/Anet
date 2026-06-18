@@ -41,14 +41,13 @@ pipx install https://github.com/Arsh910/Anet/releases/latest/download/anet-0.0.1
 
 <sub>(or install straight from a tag without a release upload: `pipx install git+https://github.com/Arsh910/Anet.git@v0.0.1` — `pip install …` works too if you prefer.)</sub>
 
-Then set one API key (ANet reads your shell env / a `.env` in the working directory):
-
 ```bash
-export OPENROUTER_API_KEY=your_key_here     # Windows: setx OPENROUTER_API_KEY your_key_here
 anet
 ```
 
-On first run ANet creates your workspace at `~/.anet/` (config + a starter pack) and starts chatting. **Node.js** is optional — only needed if you add MCP servers later. Telegram, Vertex AI, and extra providers are all opt-in.
+On first run ANet creates your workspace at `~/.anet/` (config + a starter pack + a `.env`) and starts chatting. To add your API key, just run **`/keys`** in the prompt — it opens `~/.anet/.env` in your editor; fill in the provider you use (e.g. `OPENROUTER_API_KEY`) and save. (You can also set the keys as normal environment variables.)
+
+**Node.js** is optional — only needed if you add MCP servers later. Telegram, Vertex AI, and extra providers are all opt-in.
 
 ---
 
@@ -81,7 +80,7 @@ python main.py            # same CLI; uses the repo's anet_pack/ as the live wor
 A banner and a **compact status line** — not a wall of text:
 
 ```text
-Manager: anthropic/claude-sonnet-4.6 — plans and coordinates all requests
+Manager: nex-agi/nex-n2-pro:free — plans and coordinates all requests
 
   Agents   6/6 loaded       /agents to view
   Tools    20/20 ready      /tools to view
@@ -103,6 +102,10 @@ You: open notepad and type today's AI headlines
 | Command | What it does |
 |---|---|
 | `/agents` · `/tools` · `/mcps` | Show loaded agents / tools / MCP servers |
+| `/keys` | Set your API keys (opens `~/.anet/.env` in your editor) |
+| `/settings` | Edit models/providers (opens `anet.config.yaml`) |
+| `/editpack` | Edit the pack's tools/agents (opens `exanet.config.yaml`) |
+| `/editagent <name>` | Edit one of your agents' prompt |
 | `/skills` | List saved skills with usage counts |
 | `/profile` | Show the user profile (`USER.md`) |
 | `/sessions` · `/session <name>` · `/new` | List / switch / start sessions |

@@ -1,77 +1,37 @@
-# exanet.config.yaml — external agents and tools for ANet
-#
-# This file is where YOU plug in your own stuff. The core anet/ package is never
-# modified — every extension lives here and in the ExTools/ and ExAgents/ folders.
-#
-#   • ExTools  — custom Python tools   (in ExTools/<name>/__init__.py)
-#   • ExAgents — custom agents         (declared here, prompt in ExAgents/<name>/)
-#
-# Nothing is registered by default, so a fresh clone starts clean — no missing
-# API keys, no broken first run. ANet ships ONE worked example (a Telegram agent +
-# its tool) already written in ExTools/tele_tool and ExAgents/tele_agent. To learn
-# the integration flow, just uncomment the blocks below and follow the per-folder
-# READMEs:
-#       ExTools/README.md     — how to add your own tool
-#       ExAgents/README.md    — how to add your own agent
-# ─────────────────────────────────────────────────────────────────────────────
+# exanet.config.yaml — this pack's external tools and agents.
+# Edit with /editpack, or let the smiths write it: /newtool, /newagent, /addmcp.
+# Guides: ExTools/README.md · ExAgents/README.md · mcps/README.md
 
-
-# ── External Tools ───────────────────────────────────────────────────────────
-# Each tool is a folder with an __init__.py that exports:
-#   run(arguments: dict) -> dict    (sync or async)
-#   SCHEMA: dict                    (OpenAI function-calling schema)
-#
-# To register a tool: add an entry under `tools:` (remove the leading `#` from the
-# example below and edit it). A registered tool can be bolted onto a built-in agent
-# via `extra_tools:` in anet.config.yaml, or attached to an ExAgent below.
-# Leave `tools:` empty (as it is now) and nothing external loads.
-
+# ── Tools ──────────────────────────────────────────────────────────────────────
+# Each is a folder under ExTools/ with an __init__.py exporting SCHEMA + run().
 tools:
-  # ─ Example (Telegram sender) — needs creds in ExAgents/tele_agent/.env ─
   - name: tele_tool
-    path: ExTools/tele_tool
+    path: ExTools/tele_tool      # example: sends messages/files to Telegram
 
-
-# ── External Agents ──────────────────────────────────────────────────────────
-# tools: built-in ANet tools OR ExTools registered above
-# mcp:   MCP servers defined in mcps/<name>/config.yaml
-# prompt_file: path relative to repo root (or use system_prompt for inline)
-# enabled: set false (or omit the whole block) to keep an agent dormant
-#
-# The planner auto-routes to an agent by matching the user request against its
-# task_types, and spawn_tool is injected automatically — no extra wiring needed.
-# Leave `agents:` empty (as it is now) and no external agents load.
-
+# ── Agents ─────────────────────────────────────────────────────────────────────
+# The planner routes to an agent by matching the request against its task_types.
+#   prompt_file — prompt path within this pack (or use system_prompt: "...")
+#   tools       — built-in tool names and/or ExTools registered above
+#   mcp         — MCP servers from mcps/<name>/
+#   enabled     — set false (or omit the block) to keep an agent dormant
+#   to let an agent delegate to other agents, add `spawn_tool` to its tools
 agents:
-  # ─ Example (Telegram notifier) — remove the leading `#` to enable ─────────
-  # Prereq: create ExAgents/tele_agent/.env with:
-  #     TELEGRAM_BOT_TOKEN=...
-  #     TELEGRAM_CHAT_ID=...
-  # Then uncomment BOTH this block and the tele_tool entry above, and restart.
-  #
-  - name: tele_agent
+  - name: tele_agent             # example: Telegram notifier
     model: openai/gpt-oss-20b:free
     provider: openrouter
-    enabled: true
+    enabled: true                # needs creds in ExAgents/tele_agent/.env
     prompt_file: ExAgents/tele_agent/prompt.md
+    tools: [tele_tool]
     task_types:
-      - send telegram message
-      - notify via telegram
-      - telegram notification
-      - send file via telegram
-      - send photo via telegram
-      - send document via telegram
-    tools:
-      - tele_tool
+      - send a telegram message
+      - notify me on telegram
 
-
-# ── Attach to built-in agents ────────────────────────────────────────────────
-# Give a BUILT-IN agent (code_agent, research_agent, file_agent, computer_agent)
-# extra tools or MCP servers — WITHOUT editing anet.config.yaml or the anet/ core.
-# The smiths (/newtool, /addmcp) write here automatically when you pick a built-in
-# agent to attach to; you can also edit it by hand. Merged in at startup.
+# ── Attach to built-in agents ───────────────────────────────────────────────────
+# Give a built-in agent (code_agent, research_agent, file_agent, computer_agent)
+# extra tools/MCP without editing anet.config.yaml. The smiths write here; merged
+# in at startup. Example:
 #
 # attach:
 #   code_agent:
-#     tools: [my_tool]       # ExTools registered above, or built-in tool names
-#     mcp:   [my_server]     # MCP servers from mcps/<name>/
+#     tools: [my_tool]
+#     mcp:   [my_server]
