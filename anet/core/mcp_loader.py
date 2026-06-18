@@ -142,6 +142,15 @@ class _MCPConnection:
         await self._queue.put((tool_name, arguments, fut))
         return await fut
 
+    async def close(self) -> None:
+        """Shut down the server subprocess by cancelling its background task."""
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except BaseException:
+                pass
+
 
 # ── Config reader ─────────────────────────────────────────────────────────────
 
@@ -235,6 +244,17 @@ async def load_mcp_tools_for_agents(agents: list[dict]) -> dict[str, dict]:
     for agent in agents:
         for srv in agent.get("mcp") or []:
             needed.add(srv)
+
+    # Disconnect servers the (now-active) pack no longer declares, so a pack
+    # switch doesn't leave stale MCP connections alive in the global registry.
+    for name in list(_connections):
+        if name not in needed:
+            try:
+                await _connections[name].close()
+            except Exception:
+                pass
+            del _connections[name]
+
     if not needed:
         return {}
 
