@@ -24,11 +24,21 @@ aiosqlite
 # drops comments when it rewrites exanet.config.yaml.
 ruamel.yaml
 
-# ── Optional: semantic memory retrieval (memory_tool) ───────────────────────────
-# Without this, memory search is keyword-only (the default). Install to also match
-# paraphrases via local embeddings (ONNX, no torch, no API key, no network at query
-# time after the one-time model download):
-# fastembed
+# ── Long-term memory (memory_tool / memory_store) ───────────────────────────────
+# mem0 is the memory backend: a local Chroma vector store + on-device fastembed
+# embeddings (ONNX, no torch, no API key — one-time ~130 MB model download on first
+# use) + the user's configured LLM for fact extraction/de-duplication. No server and
+# no hosted service; embeddings are computed locally and the vector DB is a folder
+# under ~/.anet/memory/. If mem0 can't be imported, long-term memory simply disables
+# itself and the rest of ANet keeps working.
+mem0ai
+chromadb
+fastembed
+
+# ── Short-term memory token budgeting (optional) ────────────────────────────────
+# The rolling context window budgets by tokens. Without tiktoken it uses a chars/4
+# heuristic (fine in practice); install it for exact counts.
+# tiktoken
 
 # ── web_fetch (fetch a URL → clean markdown) ────────────────────────────────────
 beautifulsoup4        # HTML parsing
@@ -47,8 +57,10 @@ pyautogui
 Pillow                 # also used by the README banner image export (anet/cli/banner.py)
 
 # ── Dev / tests (optional) ──────────────────────────────────────────────────────
-# The tool unit tests under tests/AnetToolTests run on the stdlib alone:
+# Most tool unit tests under tests/AnetToolTests run on the stdlib alone:
 #   python tests/AnetToolTests/run_all.py
+# (the memory_tool test additionally needs mem0 — a core dep above — and skips if
+# it can't initialise.)
 # Install these only if you want pytest + mocked-HTTP (layer-3) tests later:
 # pytest
 # respx

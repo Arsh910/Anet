@@ -169,15 +169,10 @@ def _memory_block(agent: dict, task: str) -> str:
 
     agent_name = (agent.get("name") or "").lower()
 
-    # Standing preferences: a 'preference'-tagged memory applies if it is global
-    # (no *_agent scope tag) or explicitly scoped to this agent.
-    prefs: list[dict] = []
+    # Standing memories (always_inject categories like preferences/identity), already
+    # scoped to this agent by the LLM-assigned `applies_to` — no tag parsing here.
     try:
-        for m in preference_memories():
-            tags        = {t.lower() for t in m.get("tags", [])}
-            agent_scope = {t for t in tags if t.endswith("_agent")}
-            if not agent_scope or agent_name in agent_scope:
-                prefs.append(m)
+        prefs = preference_memories(agent_name)
     except Exception:
         prefs = []
 
@@ -206,7 +201,7 @@ def _memory_block(agent: dict, task: str) -> str:
 
     lines = []
     for m in picked:
-        tag  = " (preference)" if "preference" in [t.lower() for t in m.get("tags", [])] else ""
+        tag  = f" ({m['category']})" if m.get("always_inject") and m.get("category") else ""
         proj = f"  [project: {m['project_path']}]" if m.get("project_path") else ""
         lines.append(f"  • {_snip(m['content'])}{tag}{proj}")
     return (

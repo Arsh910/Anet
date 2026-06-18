@@ -47,18 +47,45 @@ skills:
   stale_after_days: 30         # Curator archives agent-made skills unused this long
   curator_interval_hours: 12   # Curator won't re-run more often than this
 
-# Memory — auto-built user profile + periodic nudges to save useful facts.
+# Memory — long-term memory via mem0 (local Chroma vector store + on-device
+# fastembed embeddings + your LLM for fact extraction). Stored under ~/.anet/memory/.
+# By default the extraction LLM is the manager's model; override it here if you want
+# a cheaper/stronger model just for memory:
+#   model: nex-agi/nex-n2-pro:free
+#   provider: openrouter
 memory:
-  user_profile_enabled: true
+  user_profile_enabled: true   # run a memory-extraction pass on session exit
   nudge_enabled: true
-  nudge_interval: 10           # turns between nudges (0 = off)
-  incremental_interval: 5      # turns between background profile updates (0 = off)
+  nudge_interval: 10           # turns between nudges to save useful facts (0 = off)
+  incremental_interval: 5      # turns between background memory extractions (0 = off)
 
-# Context — when a conversation grows long, offer to compress/forget old messages.
+  # What mem0 should extract from conversation (steers its extraction prompt).
+  instructions: >
+    Capture durable facts that help future sessions: the user's identity and standing
+    preferences, project locations and tech stacks, important decisions, environment
+    and setup details, and explicit instructions. Ignore small talk and transient chatter.
+
+  # Categories an explicit save is classified into BY THE LLM (no hardcoded tags).
+  # always_inject: true  → reaches its applies_to agents every task, even when it
+  #                        shares no keywords (how standing preferences get applied).
+  # always_inject: false → retrieved only when relevant to the task.
+  # Edit freely: add your own (e.g. a 'security_rule' that always reaches code_agent).
+  categories:
+    - {name: preference,  always_inject: true,  description: "A standing instruction or style to apply automatically — naming conventions, tone, output format, coding style, do/don't rules."}
+    - {name: identity,    always_inject: true,  description: "Who the user is: name, role, background, languages, interests, team."}
+    - {name: project,     always_inject: false, description: "Facts about a specific project: its path, stack, structure, key decisions."}
+    - {name: environment, always_inject: false, description: "Setup/tooling/config: OS, installed tools, where credentials live, important paths."}
+    - {name: fact,        always_inject: false, description: "Any other useful fact worth recalling that doesn't fit the above."}
+
+# Context (short-term memory) — every turn the model sees a rolling summary of
+# older turns plus as many recent turns as fit a token budget. The summary updates
+# automatically when turns overflow the budget (one extra LLM call, only then).
 context:
   enabled: true
-  threshold: 40                # message count that triggers the prompt
-  keep: 20                     # recent messages kept afterward
+  recent_tokens: 3000          # tokens of recent turns kept verbatim before summarising
+  min_recent: 4                # always keep at least this many recent messages verbatim
+  threshold: 40                # message count that triggers the manual compress/forget prompt
+  keep: 20                     # recent messages kept by /forget and /compress
 
 # Persona — injected into the manager's prompts only.
 persona:

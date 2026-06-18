@@ -71,20 +71,10 @@ from anet.core import paths as _anet_paths
 # startup (after the prompt) and read by the session/profile helpers below.
 _MEMORY_DIR        = _anet_paths.sessions_dir()        # <home>/sessions/
 _SHARED_DB_PATH    = _MEMORY_DIR / "conversations.db"  # one db for all sessions, keyed by thread
-_USER_PROFILE_PATH = _anet_paths.user_profile_path()   # <home>/USER.md
 
 # Set by /changepack to force the hot-reload loop to rebuild the engine against
 # the newly-selected active pack on its next iteration.
 _force_reload: bool = False
-
-_USER_PROFILE_TEMPLATE = (
-    "## User Profile\n"
-    "<!-- Anet builds this automatically. Do not edit manually. -->\n\n"
-    "### Preferences\n\n"
-    "### Tech Stack\n\n"
-    "### Working Style\n\n"
-    "### Project Context\n"
-)
 
 # Seeded into <home>/.env on first run; the user fills in only the key(s) they need.
 _ENV_TEMPLATE = (
@@ -380,7 +370,10 @@ async def _context_check(store: ConversationStore, thread_id: str) -> None:
 # ── User profile update (called on any exit — clean, Ctrl+C, or interrupt) ────
 
 async def _update_user_profile(store: ConversationStore, thread_id: str) -> None:
-    """Send this session's history to the manager model and update memory/USER.md."""
+    """On exit, hand this session's history to mem0, which extracts the salient
+    facts and folds them into long-term memory (de-duplicating against what it
+    already knows). This is the session-end pass that complements the periodic
+    in-session extraction; both go through the same mem0 store."""
     from anet.core.config_loader import load as _load_cfg
     if not _load_cfg().get("memory", {}).get("user_profile_enabled", True):
         return
@@ -389,46 +382,20 @@ async def _update_user_profile(store: ConversationStore, thread_id: str) -> None
         messages = await store.load(thread_id)
     except Exception:
         return
-
     if not messages:
         return
 
-    history_text = "\n".join(
-        f"{m['role'].upper()}: {(m.get('content') or '').strip()}"
-        for m in messages[-40:]
-        if (m.get("content") or "").strip()
-    )
-    if not history_text.strip():
-        return
-
-    current = _USER_PROFILE_PATH.read_text(encoding="utf-8").strip() if _USER_PROFILE_PATH.exists() else ""
-
     try:
-        client, model = _engine_manager_client()
-        resp = await client.chat.completions.create(
-            model=model,
-            max_tokens=1000,
-            messages=[
-                {"role": "system", "content": "You update a user profile file for an AI assistant."},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Current USER.md:\n{current}\n\n"
-                        f"Session conversation (last 40 messages):\n{history_text}\n\n"
-                        "Update USER.md with any new facts learned about the user — preferences, "
-                        "tech stack, working style, project context. Only add genuinely new information "
-                        "not already present. Never remove existing entries. Keep entries concise "
-                        "(one line each). Return the complete updated USER.md content, nothing else."
-                    ),
-                },
-            ],
+        from anet.core import memory_store
+        if not memory_store.is_available():
+            return
+        res = await asyncio.to_thread(
+            memory_store.add_conversation, messages[-40:], run_id=thread_id
         )
-        updated = (resp.choices[0].message.content or "").strip()
-        if updated:
-            _USER_PROFILE_PATH.write_text(updated, encoding="utf-8")
-            console.print("[dim]  ✓ User profile updated.[/dim]")
+        if res.get("results"):
+            console.print(f"[dim]  ✓ Memory updated ({len(res['results'])} change(s)).[/dim]")
     except Exception as exc:
-        console.print(f"[dim]  Profile update skipped: {exc}[/dim]")
+        console.print(f"[dim]  Memory update skipped: {exc}[/dim]")
 
 
 # ── Startup helpers ───────────────────────────────────────────────────────────
@@ -584,7 +551,7 @@ _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/tools",    "Show loaded tools"),
     ("/mcps",     "Show connected MCP servers"),
     ("/skills",   "List saved skills"),
-    ("/profile",  "Show the user profile (USER.md)"),
+    ("/profile",  "Show what Anet remembers about you"),
     ("/forget",   "Drop oldest messages, keep last 20"),
     ("/compress", "Summarise old messages into one block"),
     ("/newtool",  "ToolSmith — scaffold + register an ExTool from code <path>"),
@@ -953,7 +920,7 @@ _HELP_TEXT = """
   [bold cyan]/mcps[/bold cyan]                 Show connected MCP servers and their tools
   [bold cyan]/forget[/bold cyan]               Drop oldest messages, keep last 20
   [bold cyan]/compress[/bold cyan]             Summarise old messages into one block
-  [bold cyan]/profile[/bold cyan]              Show the current user profile (USER.md)
+  [bold cyan]/profile[/bold cyan]              Show what Anet remembers about you
   [bold cyan]/skills[/bold cyan]               List all saved skills
   [bold cyan]/newtool[/bold cyan] [dim]<path>[/dim]       ToolSmith: scaffold + register an ExTool from code
   [bold cyan]/newagent[/bold cyan] [dim]<desc>[/dim]      AgentSmith: design + register a new agent
@@ -1309,20 +1276,30 @@ async def _handle_slash(
             console.print(f"\n  [red]Error: {exc}[/red]\n")
 
     elif command == "/profile":
-        if _USER_PROFILE_PATH.exists():
-            content = _USER_PROFILE_PATH.read_text(encoding="utf-8").strip()
-            substantive = [
-                ln for ln in content.splitlines()
-                if ln.strip() and not ln.startswith("#") and not ln.startswith("<!--")
-            ]
-            if substantive:
-                console.print()
-                console.print(Markdown(content))
-                console.print()
+        try:
+            from anet.core import memory_store
+            if not memory_store.is_available():
+                console.print("\n  [dim]Long-term memory is unavailable (mem0 not initialised).[/dim]\n")
             else:
-                console.print("\n  [dim]User profile is empty — Anet will build it after this session.[/dim]\n")
-        else:
-            console.print("\n  [dim]No user profile yet.[/dim]\n")
+                mems = await asyncio.to_thread(memory_store.get_all, None, 200)
+                if not mems:
+                    console.print("\n  [dim]Nothing remembered yet — Anet builds this as you work.[/dim]\n")
+                else:
+                    prefs = [m for m in mems if m.get("always_inject")]
+                    facts = [m for m in mems if m not in prefs]
+                    facts.sort(key=lambda m: m.get("created_at", ""), reverse=True)
+                    t = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False)
+                    t.add_column("What Anet remembers")
+                    t.add_column("", style="dim")
+                    for m in prefs:
+                        t.add_row(m.get("content", ""), m.get("category") or "standing")
+                    for m in facts:
+                        t.add_row(m.get("content", ""), m.get("category") or m.get("project_path") or "")
+                    console.print()
+                    console.print(Panel(t, title=f"[bold]Memory[/bold] ({len(mems)})", border_style="cyan"))
+                    console.print("  [dim]/forget <id> via the assistant, or ask it to update what it knows[/dim]\n")
+        except Exception as exc:
+            console.print(f"\n  [red]Error: {exc}[/red]\n")
 
     elif command == "/newtool":
         if not arg:
@@ -1874,9 +1851,9 @@ def _prompt_for_home() -> Path:
 
 
 def _seed_and_migrate(home: Path, repo: Path | None = None) -> None:
-    """On first run: seed USER.md into the home dir and remove the old in-repo
-    sessions (the user opted to drop them). SOUL.md is part of the pack and is
-    handled by workspace.ensure_workspace()."""
+    """On first run: remove the old in-repo sessions (the user opted to drop them).
+    SOUL.md is part of the pack and is handled by workspace.ensure_workspace();
+    long-term memory now lives in mem0 (no USER.md file to seed)."""
     import shutil
     # Legacy in-repo migration only applies to a source checkout; resolve the repo
     # root via the dev marker (None when pip-installed, where there's nothing to migrate).
@@ -1884,18 +1861,6 @@ def _seed_and_migrate(home: Path, repo: Path | None = None) -> None:
     if repo is None:
         return
     old_mem = repo / "memory"
-
-    # Migrate the USER.md profile from the old in-repo location (preserve it),
-    # else create a fresh template.
-    home_user, old_user = home / "USER.md", old_mem / "USER.md"
-    if not home_user.exists():
-        try:
-            if old_user.exists():
-                shutil.copy2(old_user, home_user)
-            else:
-                home_user.write_text(_USER_PROFILE_TEMPLATE, encoding="utf-8")
-        except OSError:
-            pass
 
     # Remove old in-repo sessions — the user asked to drop them, not migrate.
     if old_mem.exists():
@@ -2001,7 +1966,7 @@ def _edit_yaml(path: Path, label: str) -> None:
 def _setup_anet_home(interactive: bool = True) -> None:
     """Resolve the home dir (prompting once on first run) and point the session
     and profile globals at it."""
-    global _MEMORY_DIR, _SHARED_DB_PATH, _USER_PROFILE_PATH, _LAST_SESSION_FILE
+    global _MEMORY_DIR, _SHARED_DB_PATH, _LAST_SESSION_FILE
 
     home = _anet_paths.configured_home()
     first_run = home is None
@@ -2016,7 +1981,6 @@ def _setup_anet_home(interactive: bool = True) -> None:
 
     _MEMORY_DIR        = sessions
     _SHARED_DB_PATH    = sessions / "conversations.db"
-    _USER_PROFILE_PATH = home / "USER.md"
     _LAST_SESSION_FILE = sessions / "last_session.txt"
 
     # Create <home>/.env (if missing) and load it, so API keys live in one stable
@@ -2067,11 +2031,6 @@ async def main() -> None:
         _list_sessions_cmd()
         return
 
-    # Ensure USER.md exists (first-run seeding handles the normal case; this
-    # also covers a user who deleted it).
-    if not _USER_PROFILE_PATH.exists():
-        _USER_PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _USER_PROFILE_PATH.write_text(_USER_PROFILE_TEMPLATE, encoding="utf-8")
 
     enabled_agents = [a for a in AGENTS if a.get("enabled", False)]
     if not enabled_agents:
@@ -2083,6 +2042,18 @@ async def main() -> None:
 
     tool_map = load_tools()
     _check_optional_deps()
+
+    # Warm up long-term memory in the background: the first mem0 call builds the
+    # Chroma store and downloads the fastembed model (~130 MB, one time). Doing it
+    # off the critical path here means it's ready before the first recall instead
+    # of freezing mid-conversation. Fire-and-forget; failures disable memory quietly.
+    async def _prewarm_memory() -> None:
+        try:
+            from anet.core import memory_store
+            await asyncio.to_thread(memory_store.get_memory)
+        except Exception:
+            pass
+    asyncio.create_task(_prewarm_memory())
 
     # ── Resolve session ───────────────────────────────────────────────────────
     thread_id, session_label = _resolve_session(args)

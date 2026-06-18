@@ -60,7 +60,7 @@ flowchart LR
     LOOP --> TOOLS[("Built-in tools<br/>+ ExTools")]
     LOOP --> MCP[("MCP servers<br/>(from the active pack)")]
     ENG --> STORE[("conversations.db<br/>shared, keyed by thread")]
-    RUN --> MEM[("USER.md<br/>+ memory_tool")]
+    RUN --> MEM[("mem0<br/>(Chroma + fastembed)")]
     RUN --> SK[("skills/<br/>learned procedures")]
 ```
 
@@ -70,7 +70,7 @@ flowchart LR
 | `anet/core/orchestrator.py` | The agentic loop for one agent: model ↔ tool-call iterations, cycle detection, confirmation gate, skill tracking |
 | `anet/core/agent_runner.py` | One model call; provider dispatch (OpenAI-compatible, Anthropic, Vertex) |
 | `anet/core/store.py` | `aiosqlite` conversation store — one shared DB keyed by `thread` |
-| `anet/core/memory_agent.py` | Background memory — updates `USER.md` and `memory_tool` |
+| `anet/core/memory_store.py` | Long-term memory backend — wraps mem0 (local Chroma + fastembed + your LLM) |
 | `anet/core/skill_manager.py` | Self-improving skills — search, create, curate |
 | `anet/core/mcp_loader.py` | MCP server lifecycle (launch, list tools, keep alive) |
 | `anet/core/ex_loader.py` | Load ExTools/ExAgents from `exanet.config.yaml` |
@@ -93,20 +93,44 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    T["Conversation turns"] -->|"every 5 turns"| BG["Background memory agent"]
+    T["Conversation turns"] -->|"every 5 turns"| BG["mem0 fact extraction"]
     T -->|"every 10 turns"| NUDGE["Memory nudge to active agent"]
-    EXIT(["Clean exit"]) --> FINAL["Final USER.md pass"]
-    BG --> U[("memory/USER.md")]
-    NUDGE --> M[("memory_tool facts")]
-    FINAL --> U
-    U -->|"injected next session"| PLAN["Planner already knows you"]
+    EXIT(["Clean exit"]) --> FINAL["Final mem0 extraction pass"]
+    BG --> M[("mem0 store<br/>Chroma + fastembed")]
+    NUDGE --> M
+    FINAL --> M
+    M -->|"recalled next session"| PLAN["Planner already knows you"]
 ```
 
-- **User profile (`USER.md`)** — a background agent updates it every
-  `incremental_interval` turns (default 5); a final pass runs on clean exit. It's
-  injected into the planner next session.
+- **Short-term memory (rolling window)** — each turn the model is given a
+  **token-budgeted** view of the conversation (`context_window.py`): a **rolling
+  summary** of older turns plus as many recent turns as fit `context.recent_tokens`
+  (default 3000), with the last `min_recent` always kept verbatim. When turns
+  overflow the budget the summary is updated automatically (one LLM call, only
+  then) and persisted per-thread in the store, so it survives `/session` switches
+  and `--resume`. This replaced the old fixed "last-8-messages" slice, so the
+  planner now retains the whole session, not just the tail. `/forget` and
+  `/compress` remain as manual overrides.
+- **Long-term memory (mem0)** — every `incremental_interval` turns (default 5),
+  and once more on clean exit, the recent conversation is handed to **mem0**, which
+  uses your configured LLM to extract the salient facts and de-duplicate them
+  against what it already knows (steered by `memory.instructions` in the pack
+  config). Storage is fully local: a **Chroma** vector DB under `~/.anet/memory/`
+  with **fastembed** (on-device) embeddings — no server, no hosted service. The
+  manager recalls relevant memories on the next session, and `/profile` shows
+  everything stored.
+- **Memory classification (no hardcoded tags)** — when a memory is saved explicitly,
+  the LLM classifies it into a **category defined in `memory.categories`** (config,
+  not code) and decides which agents it `applies_to`. Categories marked
+  `always_inject: true` (e.g. `preference`, `identity`) reach their agents on every
+  task — even when they share no keywords with the request — which is how a standing
+  style rule like "prefix functions `anet_`" actually gets applied. Everything else
+  is retrieved by relevance. No magic `preference`/`code_agent` tags for the model to
+  remember; the classification and scoping are decided by the model, against
+  editable config.
 - **Memory nudge** — every `nudge_interval` turns (default 10), the active agent
-  is prompted to persist genuinely new facts to `memory_tool`.
+  is prompted to persist genuinely new facts via `memory_tool` (which writes to the
+  same mem0 store).
 - **Context compression** — past ~40 messages, ANet offers **[f] forget**
   (keep last 20) or **[c] compress** (summarise). Also `/forget`, `/compress`.
 - **Self-improving skills** — see [skills/README.md](../anet_pack/skills/README.md).
@@ -122,7 +146,7 @@ metadata (e.g. `title.txt`).
 
 ```text
 <anet-home>/                 # e.g. ~/.anet  (or ANET_HOME)
-├── USER.md                  # auto-built user profile
+├── memory/                  # long-term memory (mem0): Chroma DB + history.db
 └── sessions/
     ├── conversations.db     # one shared store for ALL sessions, keyed by thread
     └── <session_id>/        # per-session folder — metadata only (title.txt)
@@ -238,7 +262,7 @@ Anet/
 ├── architecture/            # ← you are here
 └── <anet-home>/             # the user's data, e.g. ~/.anet  (NOT in the repo)
     ├── anet_pack/           # the user's editable pack (seeded from the bundled one)
-    ├── USER.md              # auto-built user profile
+    ├── memory/              # long-term memory (mem0): Chroma DB + history.db
     ├── anet_files/          # downloads + agent output
     └── sessions/            # conversations.db + per-session metadata
 ```

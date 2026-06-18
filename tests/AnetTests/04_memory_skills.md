@@ -20,7 +20,7 @@ preference like "use 4-space indents" is the model's default and proves nothing.
 
 ### M2 — Recall it
 **Prompt:** `what coding preferences have you saved about me?`
-**Exercises:** `memory_tool` search (keyword) + planner memory-context injection
+**Exercises:** `memory_tool` search (mem0 semantic) + planner memory-context injection
 **Pass if:** the indent/type-hint preference is recalled.
 
 ### M3 — Memory influences behavior
@@ -39,19 +39,20 @@ block injected — only relevant facts + applicable preferences. Tip: requires a
 **Prompt:** `list everything you remember about me, then delete the indentation preference`
 **Pass if:** list shown, target memory deleted, confirmed.
 
-## User profile (USER.md)
+## Long-term memory profile (mem0)
 
-### M5 — Trigger the background profile builder
-Run ~5+ substantive turns (M1–M4 plus any 1–2 more) in one session. The
-incremental memory agent fires every `incremental_interval` (default 5) turns.
+### M5 — Trigger background fact extraction
+Run ~5+ substantive turns (M1–M4 plus any 1–2 more) in one session. The background
+mem0 extraction fires every `incremental_interval` (default 5) turns, reading the
+recent conversation and folding the salient facts into long-term memory.
 **Then:** `/profile`
-**Exercises:** background `memory_agent`, `memory/USER.md`
-**Pass if:** `USER.md` now contains structured facts about you (prefs/stack/style).
+**Exercises:** background mem0 extraction (`memory_store.add_conversation`), stored in `~/.anet/memory/`
+**Pass if:** `/profile` lists structured facts about you (prefs/stack/project context).
 
-### M6 — Profile persists across sessions
-Exit cleanly (`exit`) — triggers the session-end USER.md pass. Restart:
+### M6 — Memory persists across sessions
+Exit cleanly (`exit`) — triggers the session-end mem0 extraction pass. Restart:
 `python main.py --resume` then ask: `what do you already know about me?`
-**Pass if:** the assistant recalls profile facts from the prior session.
+**Pass if:** the assistant recalls facts from the prior session.
 
 ## Skills
 

@@ -21,6 +21,16 @@ class ConversationStore:
                 content TEXT    NOT NULL
             )
         """)
+        # Rolling short-term summary per thread: `summary` folds in the oldest
+        # `summarized_count` messages (a stable prefix count — the messages table is
+        # append-only, so this index stays valid across turns and resumes).
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS summaries (
+                thread            TEXT PRIMARY KEY,
+                summary           TEXT    NOT NULL DEFAULT '',
+                summarized_count  INTEGER NOT NULL DEFAULT 0
+            )
+        """)
         await self._db.commit()
         return self
 
@@ -47,6 +57,15 @@ class ConversationStore:
             row = await cur.fetchone()
         return row[0] if row else 0
 
+    async def get_summary(self, thread_id: str) -> tuple[str, int]:
+        """Return (rolling_summary, summarized_count) for a thread, or ('', 0)."""
+        async with self._db.execute(
+            "SELECT summary, summarized_count FROM summaries WHERE thread = ?",
+            (thread_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        return (row[0], row[1]) if row else ("", 0)
+
     # ── Write ─────────────────────────────────────────────────────────────────
 
     async def append(self, thread_id: str, role: str, content: str) -> None:
@@ -56,12 +75,26 @@ class ConversationStore:
         )
         await self._db.commit()
 
+    async def set_summary(self, thread_id: str, summary: str, summarized_count: int) -> None:
+        await self._db.execute(
+            """INSERT INTO summaries (thread, summary, summarized_count)
+               VALUES (?, ?, ?)
+               ON CONFLICT(thread) DO UPDATE SET
+                   summary = excluded.summary,
+                   summarized_count = excluded.summarized_count""",
+            (thread_id, summary, summarized_count),
+        )
+        await self._db.commit()
+
     async def replace_all(self, thread_id: str, messages: list[dict]) -> None:
-        """Replace entire thread history — used by /forget and /compress."""
+        """Replace entire thread history — used by /forget and /compress.
+        Resets the rolling summary too: deleting messages shifts the prefix, so a
+        stored `summarized_count` would no longer line up."""
         await self._db.execute("DELETE FROM messages WHERE thread = ?", (thread_id,))
         for m in messages:
             await self._db.execute(
                 "INSERT INTO messages (thread, role, content) VALUES (?, ?, ?)",
                 (thread_id, m["role"], m["content"]),
             )
+        await self._db.execute("DELETE FROM summaries WHERE thread = ?", (thread_id,))
         await self._db.commit()

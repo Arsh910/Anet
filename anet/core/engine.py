@@ -35,24 +35,36 @@ def _load_soul_once() -> str:
 
 _SOUL = _load_soul_once()
 
-# ── User profile (loaded once at import, re-read before incremental saves) ────
+# ── User profile (derived live from long-term memory) ─────────────────────────
+# The profile is no longer a hand-maintained file: it's a compact view over the
+# salient facts mem0 has stored about the user. Cheap (a local DB read) and always
+# current, so the manager stays aware of who it's working with.
 
-def _load_user_profile() -> str:
+def _profile_context(limit: int = 12) -> str:
     try:
-        from anet.core.paths import user_profile_path
-        _USER_PROFILE_PATH = user_profile_path()
-        if not _USER_PROFILE_PATH.exists():
+        from anet.core import memory_store
+        if not memory_store.is_available():
             return ""
-        content = _USER_PROFILE_PATH.read_text(encoding="utf-8").strip()
-        substantive = [
-            ln for ln in content.splitlines()
-            if ln.strip() and not ln.startswith("#") and not ln.startswith("<!--")
-        ]
-        return content if substantive else ""
+        mems = memory_store.get_all(limit=200)
+        if not mems:
+            return ""
+        # Standing memories first (identity/preferences), then recent facts.
+        prefs = [m for m in mems if m.get("always_inject")]
+        facts = [m for m in mems if m not in prefs]
+        facts.sort(key=lambda m: m.get("created_at", ""), reverse=True)
+        picked, seen = [], set()
+        for m in prefs + facts:
+            c = (m.get("content") or "").strip()
+            if c and c not in seen:
+                seen.add(c)
+                picked.append(c)
+            if len(picked) >= limit:
+                break
+        if not picked:
+            return ""
+        return "\n".join(f"- {c}" for c in picked)
     except Exception:
         return ""
-
-_USER_PROFILE = _load_user_profile()
 
 # ── Manager model config ──────────────────────────────────────────────────────
 
@@ -69,6 +81,17 @@ def _manager_cfg() -> tuple[str, str]:
         return (cfg.get("model") or "gemini-2.5-pro"), (cfg.get("provider") or "google")
     except Exception:
         return "gemini-2.5-pro", "google"
+
+
+def _context_settings() -> tuple[int, int]:
+    """(recent_tokens, min_recent) for the short-term window — how many tokens of
+    recent turns to keep verbatim, and the floor of recent messages always kept."""
+    try:
+        from anet.core.config_loader import load
+        cfg = load().get("context", {}) or {}
+        return int(cfg.get("recent_tokens", 3000)), int(cfg.get("min_recent", 4))
+    except Exception:
+        return 3000, 4
 
 
 def _manager_client() -> tuple[AsyncOpenAI, str]:
@@ -226,7 +249,8 @@ def _plan_system_prompt(agents: list[dict], has_direct_tools: bool = False, memo
     now = datetime.now().strftime("%A, %B %d, %Y  %H:%M")
     memory_section  = f"\n\n{memory_ctx}" if memory_ctx else ""
     soul_section    = f"\n\n{_SOUL}" if _SOUL else ""
-    profile_section = f"\n\n## What I know about you\n{_USER_PROFILE}" if _USER_PROFILE else ""
+    _profile        = _profile_context()
+    profile_section = f"\n\n## What I know about you\n{_profile}" if _profile else ""
     return f"""You are {_ASSISTANT_NAME}, an AI assistant. Analyse the user request and decide how to fulfil it.
 Current date and time: {now} (local).
 If asked about your identity, name, or who you are, answer as {_ASSISTANT_NAME} — never mention the underlying model or "Google".{soul_section}{profile_section}{memory_section}
@@ -452,6 +476,8 @@ class Engine:
         self._async_state: dict[str, dict] = {}
         # Incremental memory: turn counters per thread
         self._turn_counts: dict[str, int] = {}
+        # Short-term memory: latest rolling summary per thread (for the agent path)
+        self._summaries: dict[str, str] = {}
 
     # ── Async state accessors (used by _async_notifier in main.py) ────────────
 
@@ -490,6 +516,12 @@ class Engine:
             messages + [{"role": "user", "content": user_input}]
         )
 
+        # Short-term memory: refresh the rolling summary and decide the verbatim
+        # window. Used by both the planner and the agent context below.
+        summary, keep_from = await self._maintain_summary(
+            store, thread_id, messages_for_planner
+        )
+
         # Get (or init) per-thread async state
         async_state = self._async_state.setdefault(thread_id, {
             "offloaded_tasks": {}, "async_results": {}, "pending_steps": [],
@@ -508,7 +540,7 @@ class Engine:
             step_statuses = {str(s.get("id", s.get("agent", ""))): "pending" for s in plan}
             async_state["pending_steps"] = []
         else:
-            plan_result = await self._plan(messages_for_planner)
+            plan_result = await self._plan(messages_for_planner, summary, keep_from)
             ptype = plan_result.get("type")
 
             if ptype in ("simple", "tool_call"):
@@ -537,7 +569,7 @@ class Engine:
             exec_r = await self._execute(
                 plan, step_statuses, step_results,
                 offloaded_tasks, async_results,
-                attempts, last_check, messages_for_planner,
+                attempts, last_check, messages_for_planner, summary,
             )
 
             step_statuses   = exec_r["step_statuses"]
@@ -595,22 +627,86 @@ class Engine:
             except Exception:
                 interval = 5
             if interval > 0 and n % interval == 0:
-                from anet.core.memory_agent import run_memory_review
+                # mem0 reads the recent conversation, extracts the salient facts,
+                # and de-duplicates them against the store — in one call. This
+                # replaces the old standalone memory_agent. Run in a thread (mem0
+                # is sync) so the turn returns immediately.
+                from anet.core import memory_store
                 messages_snap = await store.load(thread_id)
-                asyncio.create_task(run_memory_review(messages_snap, thread_id))
+
+                async def _extract(snap=messages_snap, tid=thread_id):
+                    try:
+                        await asyncio.to_thread(
+                            memory_store.add_conversation, snap[-30:], run_id=tid
+                        )
+                    except Exception as exc:
+                        print(f"[engine] memory extraction error: {exc}", file=sys.stderr)
+
+                asyncio.create_task(_extract())
 
         return EngineResult(reply=reply, step_results=step_results)
 
+    # ── Short-term memory (rolling summary + token-budgeted window) ─────────────
+
+    async def _maintain_summary(self, store, thread_id: str,
+                                messages: list[dict]) -> tuple[str, int]:
+        """Keep the rolling summary current and return (summary, keep_from).
+
+        `messages[keep_from:]` are sent verbatim; everything before is covered by
+        `summary`. Summarisation fires only when turns overflow the recent-token
+        budget — typically once every several turns, not every turn.
+        """
+        from anet.core import context_window as cw
+
+        recent_tokens, min_recent = _context_settings()
+        try:
+            summary, count = await store.get_summary(thread_id)
+        except Exception:
+            summary, count = "", 0
+        count = max(0, min(count, len(messages)))
+
+        keep_from, overflow = cw.plan_window(messages, recent_tokens, min_recent, count)
+
+        if overflow:
+            try:
+                client, model = _manager_client()
+                resp = await client.chat.completions.create(
+                    model=model, temperature=0, max_tokens=700,
+                    messages=cw.build_summary_messages(summary, overflow),
+                )
+                new_summary = (resp.choices[0].message.content or "").strip()
+                if new_summary:
+                    summary = new_summary
+                    await store.set_summary(thread_id, summary, keep_from)
+                else:
+                    keep_from = count  # empty summary → keep overflow verbatim
+            except Exception as exc:
+                # Summariser unavailable → don't advance past what's summarised, so
+                # no turn is dropped from view without coverage (may exceed budget).
+                print(f"[engine] summary update skipped: {exc}", file=sys.stderr)
+                keep_from = count
+
+        self._summaries[thread_id] = summary
+        return summary, keep_from
+
     # ── Planner ───────────────────────────────────────────────────────────────
 
-    async def _plan(self, messages: list[dict]) -> dict:
+    async def _plan(self, messages: list[dict], summary: str = "",
+                    keep_from: int | None = None) -> dict:
         self._notify("manager: planning...")
         client, manager_model = _manager_client()
 
         user_msg = _last_user_msg(messages)
         mem_ctx  = await asyncio.to_thread(_memory_context, user_msg)
 
-        api_msgs = messages[-8:]
+        # Short-term window: rolling summary + recent verbatim turns (token-budgeted),
+        # instead of a fixed last-N slice. Falls back to last-8 if not provided.
+        if keep_from is None:
+            api_msgs = messages[-8:]
+        else:
+            from anet.core import context_window as cw
+            api_msgs = cw.assemble(messages, summary, keep_from)
+
         msgs = [
             {"role": "system", "content": _plan_system_prompt(
                 self._agents, bool(self._manager_tools), memory_ctx=mem_ctx
@@ -716,6 +812,7 @@ class Engine:
         attempts:        int,
         last_check:      dict,
         messages:        list[dict],
+        summary:         str = "",
     ) -> dict:
         if not plan:
             return {
@@ -799,8 +896,15 @@ class Engine:
         label  = f"{len(ready)} steps [parallel]" if len(ready) > 1 else "step"
         self._notify(f"manager: {label} → {names}{suffix}")
 
-        # Recent conv history for agents (for context without full task re-description)
+        # Recent conv history for agents (for context without full task re-description).
+        # Lead with the rolling summary so agents see older context too, not just the
+        # last few raw turns.
         conv_history: list[dict] = []
+        if summary:
+            conv_history.append({
+                "role": "system",
+                "content": "Earlier conversation (summary):\n" + summary[:1500],
+            })
         for m in messages[-6:]:
             role    = m.get("role", "")
             content = (m.get("content") or "")[:600]
