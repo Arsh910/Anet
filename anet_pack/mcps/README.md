@@ -114,6 +114,51 @@ Example output:
   PASS
 ```
 
+---
+
+## Making an MCP shareable (authoring rules)
+
+When you `/packsmith share` a pack, PackSmith writes a recipient README and produces
+a sanitized zip. For that to work for **your** MCP, follow two rules:
+
+**1. Prefer a package-based launch.** If the server is published (npm/PyPI), launch
+it with `npx`/`uvx` so it auto-fetches on the recipient's machine — nothing to ship:
+
+```yaml
+command: npx
+args: [-y, codegraph, serve, --mcp]
+```
+
+PackSmith sees this is `package_based` and the recipient just needs the runtime
+(Node/Python). This is the smoothest path — use it whenever the server is published.
+
+**2. If the server runs from a cloned repo, add `mcps/<name>/README.md`.** A server
+launched from local code (an absolute path to `dist/bin/server.js`, a vendored clone,
+etc.) **cannot be shipped** — on export PackSmith **strips that code automatically**
+(it detects the project manifest like `package.json`/`pyproject.toml`) and ships only
+your `config.yaml` + this README. So the README must tell the recipient how to obtain
+and build it. Use these headings:
+
+```markdown
+# <name> MCP
+
+Source: repo                 (one of: package | repo | local)
+Repo: https://github.com/owner/<name>
+Install: npm install -g <name>      (or: git clone … && npm install && npm run build)
+Entry: <name>                       (what config.yaml's command/args should point at)
+Env: SOME_API_KEY                   (any keys it needs; omit if none)
+
+One short paragraph: what this server does.
+```
+
+PackSmith reads this to write accurate clone/build/point-the-config steps. Because
+it's prose, a rough README is still usable — the recipient's PackSmith (and their
+own judgment) can fill gaps. **Without it**, PackSmith can only guess from the config
+and will flag that the docs are missing.
+
+> `/addmcp` writes a starter `README.md` for you from the server's docs — review and
+> tighten the Source/Repo/Install/Entry lines before sharing.
+
 ## Checklist
 
 - [ ] `mcps/<name>/config.yaml` has a valid `command` (+ `args`, `env`)
@@ -121,3 +166,4 @@ Example output:
 - [ ] `/mcptest <name>` prints PASS and lists tools
 - [ ] `mcp: [<name>]` added to an agent in `anet.config.yaml`
 - [ ] ANet restarted so the agent picks up the server
+- [ ] **to share:** package-based launch, or a `README.md` with Source/Repo/Install/Entry

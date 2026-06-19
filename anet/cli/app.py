@@ -49,7 +49,7 @@ from anet.AnetAgents.agents_config import AGENTS
 from anet.core.tool_loader import load_tools
 from anet.core.engine import Engine, _manager_client as _engine_manager_client
 from anet.core.store import ConversationStore
-from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var, on_ask as _ask_var, on_cancel as _cancel_var
+from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var, on_ask as _ask_var, on_cancel as _cancel_var, on_notice as _notice_var
 from anet.core.config_loader import agent_overrides as _agent_overrides, manager_config as _manager_config
 from anet.core.ex_loader import load_ex_tools, load_ex_agents, get_extra_for_builtins, get_builtin_attachments
 from anet.core.mcp_loader import load_mcp_tools_for_agents
@@ -429,6 +429,29 @@ def _split_tools(tool_map: dict) -> tuple[dict, set[str]]:
     return regular_tools, mcp_tool_names
 
 
+async def _prepare_memory() -> None:
+    """Initialise long-term memory under a single clean status line. On first run
+    this downloads the local embedding model (~130 MB, one-time); afterwards it's a
+    fast cached load. All the underlying library download/warning noise is silenced
+    in memory_store, so the user sees only this."""
+    import time
+    try:
+        from anet.core import memory_store
+    except Exception:
+        return
+    t0 = time.time()
+    try:
+        with console.status("[dim]preparing long-term memory…[/dim]", spinner="dots"):
+            ready = await asyncio.to_thread(memory_store.get_memory)
+    except Exception:
+        return
+    # Only say anything if a real (slow) download happened — a cached load is silent.
+    if ready is not None and time.time() - t0 > 6:
+        tip = "" if os.getenv("HF_TOKEN") else \
+            "  [yellow]tip:[/yellow] [dim]set HF_TOKEN for faster model downloads[/dim]"
+        console.print(f"  [dim]✓ long-term memory ready[/dim]{tip}\n")
+
+
 def _print_startup_summary(enabled_agents: list[dict], tool_map: dict) -> None:
     from anet.core.mcp_loader import _connections as _mcp_connections
 
@@ -545,8 +568,7 @@ async def _async_notifier(
 # Slash commands offered as autocomplete suggestions (command, description).
 _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/new",      "Start a fresh session"),
-    ("/session",  "Switch to a named session <name>"),
-    ("/sessions", "List all saved sessions"),
+    ("/sessions", "List sessions; /sessions <number> to switch"),
     ("/agents",   "Show loaded agents and their tools"),
     ("/tools",    "Show loaded tools"),
     ("/mcps",     "Show connected MCP servers"),
@@ -745,6 +767,11 @@ def _make_confirm_fn(live: "Live") -> callable:
     return _confirm
 
 
+def _print_notice(text: str) -> None:
+    """Print a short, persistent note above the spinner (stays after it advances)."""
+    console.print(f"  [cyan]▶[/cyan] [dim]{text}[/dim]")
+
+
 def _make_ask_fn(live: "Live") -> callable:
     """Returns an ask-user callback that pauses the spinner, shows a clarifying
     question (with optional numbered choices), and returns the user's answer.
@@ -801,12 +828,14 @@ class _EscWatcher:
     confirm/ask prompt reads stdin — a tty allows only one reader at a time.
     """
 
-    def __init__(self, cancel_event: "asyncio.Event") -> None:
+    def __init__(self, cancel_event: "asyncio.Event",
+                 open_shell_event: "asyncio.Event | None" = None) -> None:
         from prompt_toolkit.input import create_input
         from prompt_toolkit.keys import Keys
-        self._Keys   = Keys
-        self._inp    = create_input()
-        self._cancel = cancel_event
+        self._Keys       = Keys
+        self._inp        = create_input()
+        self._cancel     = cancel_event
+        self._open_shell = open_shell_event
         self._raw    = None
         self._attach = None
 
@@ -818,6 +847,12 @@ class _EscWatcher:
         for kp in keys:
             if kp.key == self._Keys.Escape:
                 self._cancel.set()
+            elif kp.key == self._Keys.ControlO and self._open_shell is not None:
+                # Ctrl+O opens the live shell view — only meaningful while a shell
+                # command is actually running, else it's a harmless no-op.
+                from anet.core import shell_session
+                if shell_session.get_active() is not None:
+                    self._open_shell.set()
 
     def start(self) -> None:
         self._raw = self._inp.raw_mode(); self._raw.__enter__()
@@ -858,20 +893,92 @@ def _resume_esc_watcher() -> None:
             _active_esc_watcher.resume()
 
 
-async def _run_turn_with_esc(engine, thread_id, store, user_input, cancel_event):
+async def _show_shell_view(live: "Live", session) -> None:
+    """Pause the spinner and open a live view of the running shell command: stream
+    its output, and let the user type a line that is piped to the command's stdin
+    (so a prompt like Playwright's 'proceed?' can be answered). `:q` closes the view;
+    the command keeps running either way."""
+    live.stop()
+    session.viewing = True
+    console.print()
+    console.print(f"  [bold cyan]┌─ shell[/bold cyan]  [dim]{session.command}[/dim]")
+    console.print(
+        "  [cyan]│[/cyan]  [dim]live output below · type input + Enter to send to the "
+        "command · [bold]:q[/bold] to close (command keeps running)[/dim]"
+    )
+    console.print("  [cyan]└─[/cyan]")
+
+    shown = 0
+
+    async def _stream() -> None:
+        nonlocal shown
+        notified_done = False
+        while True:
+            buf = session.snapshot()
+            if len(buf) > shown:
+                sys.stdout.write(buf[shown:]); sys.stdout.flush()
+                shown = len(buf)
+            if session.done and not notified_done:
+                notified_done = True
+                sys.stdout.write(
+                    f"\n[command finished — exit {session.exit_code} · press :q or Enter to return]\n"
+                )
+                sys.stdout.flush()
+            await asyncio.sleep(0.12)
+
+    _pause_esc_watcher()
+    streamer = asyncio.create_task(_stream())
+    try:
+        from prompt_toolkit.patch_stdout import patch_stdout
+        with patch_stdout():
+            while True:
+                line = await _pt_session.prompt_async("  shell> ")
+                if line is None or session.done:
+                    break
+                if line.strip() in (":q", ":quit", ":close"):
+                    break
+                await session.write_input(line)
+    except Exception as exc:
+        console.print(f"  [red]shell view error: {exc}[/red]")
+    finally:
+        streamer.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await streamer
+        session.viewing = False
+        _resume_esc_watcher()
+        console.print()
+        live.start()
+
+
+async def _shell_view_loop(live: "Live", open_shell: "asyncio.Event") -> None:
+    """While a turn runs, open the shell view each time Ctrl+O is pressed."""
+    while True:
+        await open_shell.wait()
+        open_shell.clear()
+        from anet.core import shell_session
+        session = shell_session.get_active()
+        if session is not None:
+            with contextlib.suppress(Exception):
+                await _show_shell_view(live, session)
+
+
+async def _run_turn_with_esc(engine, thread_id, store, user_input, cancel_event, live=None):
     """Run one turn while watching for ESC. Returns (result, stopped: bool).
 
     Two-tier stop: ESC sets `cancel_event` (cooperative — the engine/orchestrator
     stop at their next safe checkpoint, so any in-flight tool finishes first); if the
     turn doesn't wind down within a short grace period, it is hard-cancelled.
+
+    While running, Ctrl+O opens a live view of the active shell command (if any).
     """
     global _active_esc_watcher
     run_task = asyncio.create_task(engine.run_turn(thread_id, store, user_input))
 
+    open_shell = asyncio.Event()
     watcher = None
     if _HAS_PT:
         try:
-            watcher = _EscWatcher(cancel_event)
+            watcher = _EscWatcher(cancel_event, open_shell)
             watcher.start()
             _active_esc_watcher = watcher
         except Exception:
@@ -882,12 +989,22 @@ async def _run_turn_with_esc(engine, thread_id, store, user_input, cancel_event)
         # No ESC support (prompt_toolkit unavailable) — Ctrl+C still interrupts.
         return (await run_task, False)
 
+    # Background task that opens the shell view on Ctrl+O; only active if we have a
+    # live spinner to hand the screen back and forth with.
+    shell_loop = (
+        asyncio.create_task(_shell_view_loop(live, open_shell)) if live is not None else None
+    )
+
     esc_wait = asyncio.create_task(cancel_event.wait())
     try:
         done, _ = await asyncio.wait({run_task, esc_wait}, return_when=asyncio.FIRST_COMPLETED)
     finally:
         _active_esc_watcher = None
         watcher.stop()
+        if shell_loop is not None:
+            shell_loop.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await shell_loop
 
     if run_task in done:
         esc_wait.cancel()
@@ -913,8 +1030,7 @@ _HELP_TEXT = """
 [bold]Slash commands[/bold]
 
   [bold cyan]/new[/bold cyan]                  Start a fresh session (clears history)
-  [bold cyan]/session[/bold cyan] [dim]<name>[/dim]        Switch to a named session (creates if new)
-  [bold cyan]/sessions[/bold cyan]             List all saved sessions
+  [bold cyan]/sessions[/bold cyan] [dim]<number?>[/dim]   List saved sessions; with a number, switch to it
   [bold cyan]/agents[/bold cyan]               Show loaded agents and their tools
   [bold cyan]/tools[/bold cyan]                Show loaded tools
   [bold cyan]/mcps[/bold cyan]                 Show connected MCP servers and their tools
@@ -937,6 +1053,7 @@ _HELP_TEXT = """
   [bold cyan]/clear[/bold cyan]                Clear the screen
   [bold cyan]/help[/bold cyan]                 Show this message
 
+  [bold cyan]Ctrl+O[/bold cyan]                View the running shell command live and answer any prompt
   [bold cyan]ESC[/bold cyan]                   Stop the running task and return to the prompt
   [bold cyan]exit[/bold cyan] [dim]or[/dim] [bold cyan]quit[/bold cyan]           End the session
 """
@@ -1108,28 +1225,46 @@ def _save_session_title(session_dir: Path, user_input: str) -> None:
     title_file.write_text(title, encoding="utf-8")
 
 
+def _ordered_session_ids() -> list[str]:
+    """Session ids newest-first — the same order `_print_sessions` numbers them in,
+    so `/sessions <number>` and the printed list always agree."""
+    return [d.name for d in _list_session_dirs()]
+
+
+def _resolve_session_arg(arg: str) -> str | None:
+    """Resolve a `/sessions <arg>` value (a list number, or an exact session id) to an
+    EXISTING session id. Returns None if it matches no saved session — callers must
+    NOT silently create one (that's what `/new` is for)."""
+    ids = _ordered_session_ids()
+    arg = (arg or "").strip()
+    if arg.isdigit():
+        i = int(arg) - 1
+        return ids[i] if 0 <= i < len(ids) else None
+    return arg if arg in ids else None
+
+
 def _print_sessions(current: str | None = None) -> None:
     dirs = _list_session_dirs()
     last = _load_last_session()
     console.print()
     if not dirs:
-        console.print("  [dim]No sessions saved yet.[/dim]\n")
+        console.print("  [dim]No sessions saved yet — just start typing to begin one.[/dim]\n")
         return
-    console.print("  [bold]Saved sessions[/bold]")
-    for d in dirs:
+    console.print("  [bold]Saved sessions[/bold]  [dim]— /sessions <number> to switch[/dim]")
+    for i, d in enumerate(dirs, 1):
         sid    = d.name
         count  = _session_msg_count(sid)
         size   = f"{count} msg" if count else "empty"
         title  = _session_title(d)
-        label  = f"[dim]{title}[/dim]" if title else ""
+        label  = title if title else "(no title yet)"
         marker = ""
         if current and sid == current:
             marker = "  [green]← active[/green]"
         elif sid == last and not current:
             marker = "  [green]← last[/green]"
-        console.print(f"  [dim]•[/dim] {sid}  [dim]({size})[/dim]  {label}{marker}")
+        console.print(f"  [cyan]{i:>2}[/cyan]  {label}  [dim]{sid} ({size})[/dim]{marker}")
     console.print()
-    console.print("  [dim]/session <name>  to switch · /new  for a fresh one[/dim]")
+    console.print("  [dim]/sessions <number>  switch · /new  fresh session[/dim]")
     console.print()
 
 
@@ -1137,10 +1272,6 @@ def _list_sessions_cmd() -> None:
     _print_sessions()
     console.print("[dim]Resume with:  python main.py --session <name>[/dim]")
     console.print("[dim]              python main.py --resume[/dim]\n")
-
-
-def _cmd_sessions(current_thread_id: str | None = None) -> None:
-    _print_sessions(current_thread_id)
 
 
 async def _handle_slash(
@@ -1194,26 +1325,31 @@ async def _handle_slash(
         config["configurable"]["thread_id"] = new_id
         console.print(f"\n  [dim]New session:[/dim] [bold]{new_id}[/bold]\n")
 
-    elif command == "/session":
-        if not arg:
-            current = config["configurable"]["thread_id"]
-            console.print(f"\n  [dim]Current session:[/dim] [bold]{current}[/bold]")
-            console.print("  [dim]Usage: /session <name>[/dim]\n")
-        else:
-            _save_last_session(arg)
-            (_MEMORY_DIR / arg).mkdir(parents=True, exist_ok=True)
-            config["configurable"]["thread_id"] = arg
-            console.print(f"\n  [dim]Switched to session:[/dim] [bold]{arg}[/bold]\n")
-
     elif command == "/sessions":
-        if arg:
-            # /sessions <name> is an alias for /session <name>
-            _save_last_session(arg)
-            (_MEMORY_DIR / arg).mkdir(parents=True, exist_ok=True)
-            config["configurable"]["thread_id"] = arg
-            console.print(f"\n  [dim]Switched to session:[/dim] [bold]{arg}[/bold]\n")
+        current = config["configurable"].get("thread_id")
+        if not arg:
+            # Just list — numbered, so the user can switch by number next.
+            _print_sessions(current)
         else:
-            _cmd_sessions(config["configurable"].get("thread_id"))
+            sid = _resolve_session_arg(arg)
+            if sid is None:
+                # Don't silently create an empty session — that was the old bug that
+                # looked like "switched but it forgot everything".
+                console.print(f"\n  [yellow]No saved session matching '{arg}'.[/yellow] "
+                              "Pick a number from the list below, or [bold]/new[/bold] "
+                              "for a fresh one.")
+                _print_sessions(current)
+            elif sid == current:
+                console.print(f"\n  [dim]Already in [bold]{sid}[/bold].[/dim]\n")
+            else:
+                # (these are declared global by the /new branch above)
+                _session_turn_count = 0
+                _last_context_prompt_n = 0
+                _save_last_session(sid)
+                config["configurable"]["thread_id"] = sid
+                n = _session_msg_count(sid)
+                console.print(f"\n  [green]Switched to[/green] [bold]{sid}[/bold] "
+                              f"[dim]({n} msg — history loaded)[/dim]\n")
 
     elif command == "/agents":
         _cmd_agents(enabled_agents, tool_map)
@@ -1439,6 +1575,9 @@ async def _run_standalone_agent(agent_def: dict, user_message: str, tool_map: di
     def on_status(msg: str) -> None:
         live_status.update(msg)
 
+    global _active_esc_watcher
+    cancel_event = asyncio.Event()
+    open_shell   = asyncio.Event()
     try:
         with Live(live_status, console=console, refresh_per_second=12, transient=True) as live:
             s_tk = _status_var.set(on_status)
@@ -1446,6 +1585,20 @@ async def _run_standalone_agent(agent_def: dict, user_message: str, tool_map: di
             c_tk = _confirm_var.set(_make_confirm_fn(live))
             o_tk = _output_var.set(_render_diff_panel)
             a_tk = _ask_var.set(_make_ask_fn(live))
+            cancel_tk = _cancel_var.set(cancel_event)
+            n_tk = _notice_var.set(_print_notice)
+
+            # Ctrl+O shell view (and ESC-to-stop) during a smith run too — this is
+            # exactly where a long install that prompts for input tends to happen.
+            watcher = shell_loop = None
+            if _HAS_PT:
+                try:
+                    watcher = _EscWatcher(cancel_event, open_shell)
+                    watcher.start()
+                    _active_esc_watcher = watcher
+                    shell_loop = asyncio.create_task(_shell_view_loop(live, open_shell))
+                except Exception:
+                    watcher = shell_loop = None
             try:
                 result = await orchestrator.run(
                     agent=agent, tool_map=tool_map,
@@ -1457,6 +1610,15 @@ async def _run_standalone_agent(agent_def: dict, user_message: str, tool_map: di
                 _confirm_var.reset(c_tk)
                 _output_var.reset(o_tk)
                 _ask_var.reset(a_tk)
+                _cancel_var.reset(cancel_tk)
+                _notice_var.reset(n_tk)
+                if watcher is not None:
+                    _active_esc_watcher = None
+                    watcher.stop()
+                if shell_loop is not None:
+                    shell_loop.cancel()
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        await shell_loop
     except Exception as exc:
         console.print(f"  [red]{name} error: {exc}[/red]\n")
         return
@@ -1677,9 +1839,10 @@ async def _chat_turn(
             output_tk  = _output_var.set(_render_diff)
             ask_tk     = _ask_var.set(_make_ask_fn(live))
             cancel_tk  = _cancel_var.set(cancel_event)
+            notice_tk  = _notice_var.set(_print_notice)
             try:
                 result, stopped = await _run_turn_with_esc(
-                    engine, thread_id, store, effective_input, cancel_event
+                    engine, thread_id, store, effective_input, cancel_event, live
                 )
             finally:
                 _status_var.reset(status_tk)
@@ -1688,6 +1851,7 @@ async def _chat_turn(
                 _output_var.reset(output_tk)
                 _ask_var.reset(ask_tk)
                 _cancel_var.reset(cancel_tk)
+                _notice_var.reset(notice_tk)
 
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted. Type 'exit' to quit.[/dim]")
@@ -2043,18 +2207,6 @@ async def main() -> None:
     tool_map = load_tools()
     _check_optional_deps()
 
-    # Warm up long-term memory in the background: the first mem0 call builds the
-    # Chroma store and downloads the fastembed model (~130 MB, one time). Doing it
-    # off the critical path here means it's ready before the first recall instead
-    # of freezing mid-conversation. Fire-and-forget; failures disable memory quietly.
-    async def _prewarm_memory() -> None:
-        try:
-            from anet.core import memory_store
-            await asyncio.to_thread(memory_store.get_memory)
-        except Exception:
-            pass
-    asyncio.create_task(_prewarm_memory())
-
     # ── Resolve session ───────────────────────────────────────────────────────
     thread_id, session_label = _resolve_session(args)
     _save_last_session(thread_id)
@@ -2139,7 +2291,12 @@ async def main() -> None:
             except Exception:
                 pass
 
+            # Give the manager memory_tool directly, so saving/recalling a fact the
+            # user mentions in conversation is a one-step manager action — never a
+            # slow detour through a worker agent.
             manager_tools: dict = {}
+            if "memory_tool" in combined_tools:
+                manager_tools["memory_tool"] = combined_tools["memory_tool"]
             return all_agents, combined_tools, manager_tools, len(ex_agents)
 
         # Initial build
@@ -2149,6 +2306,12 @@ async def main() -> None:
         _print_startup_summary(all_agents, all_tools)
         if n_external:
             console.print(f"[dim]  + {n_external} external agent(s) loaded[/dim]\n")
+
+        # Prepare long-term memory up front, under a clean spinner. The first run
+        # builds the Chroma store and downloads the fastembed embedding model
+        # (~130 MB) — doing it here keeps that one-time work (and its library noise,
+        # already silenced in memory_store) off the prompt. Cached after first run.
+        await _prepare_memory()
 
         # Run Curator in background if enough skills exist
         try:

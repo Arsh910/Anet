@@ -114,6 +114,18 @@ To try it live:
 
 Verify it loaded with `/agents`.
 
+## Making an agent shareable (authoring rules)
+
+An agent's `prompt.md` and `exanet.config.yaml` block travel in the zip. For a clean
+`/packsmith share`:
+- **Env:** keep `ExAgents/<agent>/.env.example` listing every key it needs (PackSmith
+  reads it to tell the recipient what to set; the real `.env` is stripped). This is
+  the main rule — it's already how `tele_agent` works.
+- **Deps:** if the agent relies on an ExTool/MCP that needs setup, that lives in the
+  tool's/MCP's own README (see `../ExTools/README.md`, `../mcps/README.md`).
+- **Optional:** a one-line summary at the top of `prompt.md` (or an
+  `ExAgents/<agent>/README.md`) helps PackSmith describe the agent accurately.
+
 ## Checklist
 
 - [ ] Block added under `agents:` in `exanet.config.yaml`
@@ -121,4 +133,5 @@ Verify it loaded with `/agents`.
 - [ ] `prompt_file` exists (or `system_prompt` is set)
 - [ ] Every name in `tools:` is a built-in tool or a registered ExTool
 - [ ] Secrets in `ExAgents/<agent>/.env`, not in the prompt or code
+- [ ] `.env.example` lists the keys (so a recipient knows what to set)
 - [ ] Shows up in `/agents` after restart

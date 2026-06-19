@@ -2,14 +2,24 @@
 shell_tool — runs shell commands for the code_agent.
 
 Used for: running tests, linters, formatters, build scripts.
-Safety:   30 second timeout by default. stdout + stderr both captured.
+Safety:   timeout (default 30s, max 600s). stdout + stderr captured (merged, in order).
+
+Output is streamed into a ShellSession while the command runs, so the user can press
+Ctrl+O to watch it live and answer any prompt the command raises (e.g. an installer
+asking to proceed) — the input is piped to the command's stdin. The timeout is
+ignored while the user is viewing, and extended whenever they send input, so an
+interactive command isn't killed mid-exchange.
 """
 from __future__ import annotations
 
 import asyncio
+import codecs
+import contextlib
 import shlex
 import sys
 from pathlib import Path
+
+from anet.core import shell_session as _ss
 
 
 SCHEMA = {
@@ -19,7 +29,10 @@ SCHEMA = {
         "description": (
             "Run a shell command and return its output. "
             "Use for: running tests (pytest, npm test), linters (ruff, eslint), "
-            "formatters (black, prettier), or build scripts. "
+            "formatters (black, prettier), build scripts, or package installs. "
+            "Prefer non-interactive flags (e.g. -y/--yes) when available. If a command "
+            "does pause for input, the user can answer it live (Ctrl+O), so it won't "
+            "necessarily hang — but set a generous `timeout` for installs (300+). "
             "Do NOT use for destructive operations (rm -rf, git reset --hard, etc.)."
         ),
         "parameters": {
@@ -117,12 +130,14 @@ async def run(params: dict) -> dict:
         work_dir = str(work_dir)
 
     try:
+        # stdin=PIPE so the user can answer a prompt via the Ctrl+O view; stderr
+        # merged into stdout so the live view shows output in true order.
         if sys.platform == "win32":
             proc = await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.DEVNULL,  # no stdin → interactive prompts fail fast
+                stderr=asyncio.subprocess.STDOUT,
+                stdin=asyncio.subprocess.PIPE,
                 cwd=work_dir,
             )
         else:
@@ -130,23 +145,83 @@ async def run(params: dict) -> dict:
             proc = await asyncio.create_subprocess_exec(
                 *args,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.STDOUT,
+                stdin=asyncio.subprocess.PIPE,
                 cwd=work_dir,
             )
 
+        loop = asyncio.get_event_loop()
+        session = _ss.ShellSession(command, timeout)
+        session.attach(proc)
+        session.deadline = loop.time() + timeout
+        _ss.set_active(session)
+        _hint(command)
+
+        timed_out = False
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+
+        async def _pump() -> None:
+            # One persistent reader. read() (not readline) returns on ANY available
+            # bytes — so a prompt with no trailing newline still shows — and returns
+            # b"" at EOF (including right after a kill). It is never cancelled mid-read,
+            # which avoids ProactorEventLoop's overlapped-read noise on Windows.
+            while True:
+                data = await proc.stdout.read(4096)
+                if not data:
+                    break
+                session.append(decoder.decode(data))
+            session.append(decoder.decode(b"", final=True))
+
+        pump = asyncio.create_task(_pump())
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except asyncio.TimeoutError:
-            proc.kill()
-            return {"error": f"Command timed out after {timeout}s: {command}"}
+            while not pump.done():
+                # Skip the deadline entirely while the user is watching/answering.
+                if not session.viewing and loop.time() > session.deadline:
+                    with contextlib.suppress(ProcessLookupError):
+                        proc.kill()        # closes the pipe → _pump sees EOF and ends
+                    timed_out = True
+                    break
+                await asyncio.sleep(0.1)
+            # On a normal exit the pump is already done (instant). On a kill, don't
+            # wait long for the pipe to EOF on Windows — we already have the buffer.
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(pump, timeout=0.5 if timed_out else 5)
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(proc.wait(), timeout=0.5 if timed_out else 5)
+        finally:
+            if not pump.done():
+                pump.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await pump
+            session.done = True
+            session.exit_code = proc.returncode
+            with contextlib.suppress(Exception):
+                if proc.stdin and not proc.stdin.is_closing():
+                    proc.stdin.close()
+            _ss.clear_active(session)
 
-        out = stdout.decode("utf-8", errors="replace")
-        err = stderr.decode("utf-8", errors="replace")
-        combined = (out + ("\n[stderr]\n" + err if err.strip() else "")).strip()
-
+        combined = session.snapshot().strip()
         if len(combined) > _MAX_OUTPUT:
-            combined = combined[:_MAX_OUTPUT] + f"\n… [output truncated at {_MAX_OUTPUT} chars]"
+            # Keep the head AND the tail: for installs/builds the command, and the
+            # result/errors, sit at opposite ends — truncating only the head would
+            # hide how it finished (and make the model re-run it).
+            head = _MAX_OUTPUT // 3
+            tail = _MAX_OUTPUT - head
+            cut  = len(combined) - _MAX_OUTPUT
+            combined = (combined[:head]
+                        + f"\n… [{cut} chars truncated] …\n"
+                        + combined[-tail:])
+
+        if timed_out:
+            msg = (
+                f"Command timed out after {timeout}s: {command}\n"
+                "It may have been waiting for input — the user can press Ctrl+O to "
+                "view and answer the command while it runs (or add a non-interactive "
+                "flag like -y)."
+            )
+            if combined:
+                msg += f"\nPartial output:\n{combined}"
+            return {"error": msg}
 
         return {
             "result":      combined or "(no output)",
@@ -159,3 +234,12 @@ async def run(params: dict) -> dict:
         return {"error": f"Command not found: '{cmd_name}'. Is it installed and on PATH?"}
     except Exception as exc:
         return {"error": str(exc)}
+
+
+def _hint(command: str) -> None:
+    """Print a persistent one-liner that the running command can be viewed/answered
+    (stays on screen, unlike the transient spinner)."""
+    with contextlib.suppress(Exception):
+        from anet.core.context import on_notice
+        short = command if len(command) <= 56 else command[:53] + "…"
+        on_notice.get()(f"shell: {short}  ·  Ctrl+O to view / answer prompts")

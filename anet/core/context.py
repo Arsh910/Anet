@@ -31,6 +31,13 @@ on_output: ContextVar[Callable[[str], None]] = ContextVar(
     "on_output", default=lambda _: None
 )
 
+# Notice callback — a short, persistent one-line note printed above the spinner and
+# left on screen (e.g. "shell running — Ctrl+O to view"). Distinct from on_output,
+# which is formatted as a diff panel. Default no-op; the CLI installs a printer.
+on_notice: ContextVar[Callable[[str], None]] = ContextVar(
+    "on_notice", default=lambda _: None
+)
+
 # Ask-user callback — lets a tool pause mid-task and ask the user a clarifying
 # question, returning their free-text answer.
 # Signature: async (question: str, options: list[str]) -> str

@@ -258,6 +258,36 @@ async def _run_anthropic(
                 raise
 
 
+# ── Response extraction ─────────────────────────────────────────────────────────
+
+def _message_from_response(response, model: str):
+    """Pull the assistant message out of an OpenAI-compatible response, turning the
+    'no choices' case into a clear error.
+
+    OpenRouter (and some proxies) return HTTP 200 with `choices = None` and an
+    `error` body when the upstream fails — most often the context got too large, or
+    a rate limit / provider error. Indexing `choices[0]` then raises the opaque
+    "'NoneType' object is not subscriptable"; surface the actual reason instead.
+    """
+    choices = getattr(response, "choices", None)
+    if choices:
+        return choices[0].message
+
+    err = None
+    try:
+        err = getattr(response, "error", None) or (getattr(response, "model_extra", None) or {}).get("error")
+    except Exception:
+        err = None
+    if err:
+        detail = err.get("message") if isinstance(err, dict) else str(err)
+        raise RuntimeError(f"model '{model}' returned an error: {detail}")
+    raise RuntimeError(
+        f"model '{model}' returned no choices — the request likely exceeded the "
+        f"model's context window (too much tool output) or was rejected by the "
+        f"provider. Try a model with a larger context, or /forget to trim history."
+    )
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 async def run(
@@ -298,7 +328,7 @@ async def run(
         for attempt in range(1, _RETRY_ATTEMPTS + 1):
             try:
                 response = await client.chat.completions.create(**call_kwargs)
-                return response.choices[0].message
+                return _message_from_response(response, call_kwargs["model"])
             except _RETRYABLE as exc:
                 if attempt < _RETRY_ATTEMPTS:
                     delay = _RETRY_DELAY * attempt
@@ -333,7 +363,7 @@ async def run(
     for attempt in range(1, _RETRY_ATTEMPTS + 1):
         try:
             response = await client.chat.completions.create(**call_kwargs)
-            return response.choices[0].message
+            return _message_from_response(response, call_kwargs["model"])
         except _RETRYABLE as exc:
             if attempt < _RETRY_ATTEMPTS:
                 delay = _RETRY_DELAY * attempt  # 5s, 10s, 15s

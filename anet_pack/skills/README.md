@@ -60,7 +60,7 @@ Create `skills/<name>.md` using the same format ANet generates:
 4. If the page is blank, check the browser console and fix import paths.
 **Notes:** Always use absolute paths in tasks. Never assume the port is free.
 **Created:** 2026-06-17
-**Used:** 1
+**Used:** 6
 **Last improved:** 2026-06-17
 ```
 

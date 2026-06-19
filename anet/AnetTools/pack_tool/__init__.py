@@ -85,6 +85,124 @@ def _env_keys(example: Path) -> list[str]:
     return keys
 
 
+_PACKAGE_LAUNCHERS = {"npx", "uvx", "uv", "pipx", "bunx", "pnpm", "yarn"}
+_CODE_EXTS = (".js", ".mjs", ".cjs", ".ts", ".py", ".rb", ".jar", ".sh")
+# A cloned/vendored project carries one of these manifests — the deterministic
+# signal that an MCP's code should be OBTAINED from source, not shipped in the zip.
+_PROJECT_MANIFESTS = {"package.json", "pyproject.toml", "setup.py", "cargo.toml",
+                      "go.mod", "requirements.txt", "pom.xml", "build.gradle"}
+_README_NAMES = {"readme.md", "readme", "readme.txt", "readme.rst"}
+
+
+def _find_readme(d: Path) -> Path | None:
+    if not d.exists():
+        return None
+    try:
+        for p in d.iterdir():
+            if p.is_file() and p.name.lower() in _README_NAMES:
+                return p
+    except OSError:
+        pass
+    return None
+
+
+def _read_text(p: Path | None, limit: int = 2000) -> str:
+    if p is None:
+        return ""
+    try:
+        t = p.read_text(encoding="utf-8", errors="replace").strip()
+        return t if len(t) <= limit else t[:limit] + "\n… [truncated]"
+    except Exception:
+        return ""
+
+
+def _has_project_manifest(d: Path) -> bool:
+    """True if a package manifest sits at/just under `d` — i.e. it's a vendored
+    repo/clone. Checked shallow (depth ≤ 2) so it stays fast on huge trees."""
+    if not d.exists():
+        return False
+    dirs = [d]
+    try:
+        dirs += [c for c in d.iterdir() if c.is_dir()]
+    except OSError:
+        pass
+    for base in dirs:
+        try:
+            for p in base.iterdir():
+                if p.is_file() and p.name.lower() in _PROJECT_MANIFESTS:
+                    return True
+        except OSError:
+            pass
+    return False
+
+
+def _looks_like_local_path(token: str) -> bool:
+    """True if a command/arg/cwd points at a local file or directory (repo code)
+    rather than a published package name."""
+    t = (token or "").strip()
+    if not t:
+        return False
+    if t in (".", ".."):
+        return True
+    if t.startswith(("/", "~", "./", "../", ".\\", "..\\")):
+        return True
+    if len(t) > 2 and t[1] == ":" and (t[2] in "/\\"):   # Windows drive path C:\...
+        return True
+    if t.lower().endswith(_CODE_EXTS):                    # an entry script
+        return True
+    # A path-ish token referencing a build/source dir (e.g. mcps/foo/dist/index.js).
+    if ("/" in t or "\\" in t) and any(
+        seg in t.lower() for seg in ("dist", "build", "src", "bin", "out", "target", "mcps")
+    ):
+        return True
+    return False
+
+
+def _mcp_details(pack: Path) -> list[dict]:
+    """Per-MCP launch info so PackSmith can tell a package-based server (npx/uvx)
+    from a REPO-BACKED one (runs from local code that won't exist on the recipient's
+    machine and must be cloned/built)."""
+    out: list[dict] = []
+    mdir = pack / "mcps"
+    if not mdir.exists():
+        return out
+    for d in sorted(mdir.iterdir()):
+        cfg_file = d / "config.yaml"
+        if not (d.is_dir() and cfg_file.exists()):
+            continue
+        cfg = _read_yaml(cfg_file)
+        command = str(cfg.get("command") or "")
+        args    = [str(a) for a in (cfg.get("args") or [])]
+        cwd     = cfg.get("cwd")
+        launcher = command.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower()
+        package_based = launcher in _PACKAGE_LAUNCHERS
+        path_refs = [t for t in ([command, *args] + ([str(cwd)] if cwd else []))
+                     if _looks_like_local_path(t)]
+        # Code bundled in this MCP's dir beyond its config + README (a vendored repo).
+        bundled_code = any(
+            p.name != "config.yaml" and p.name.lower() not in _README_NAMES
+            for p in d.iterdir()
+        )
+        vendored_project = _has_project_manifest(d)
+        out.append({
+            "name": d.name,
+            "command": command,
+            "args": args,
+            "cwd": cwd,
+            "package_based": package_based,
+            "local_path_refs": path_refs,
+            "bundled_code": bundled_code,
+            # A cloned project bundled in the pack — its code is STRIPPED on export
+            # (deterministic), so the README must say how to obtain it.
+            "vendored_project": vendored_project,
+            # Repo-backed = runs from local code, not a package launcher.
+            "repo_backed": (bool(path_refs) or bundled_code) and not package_based,
+            # The MCP's own README (source/install/entry notes), if the author wrote one.
+            "readme": _read_text(_find_readme(d)),
+        })
+    return out
+
+
 def _inspect(pack: Path) -> dict:
     exanet = _read_yaml(pack / "exanet.config.yaml")
     tools  = [t.get("name") for t in (exanet.get("tools") or []) if isinstance(t, dict) and t.get("name")]
@@ -94,6 +212,7 @@ def _inspect(pack: Path) -> dict:
                          if d.is_dir() and (d / "__init__.py").exists()) if (pack / "ExTools").exists() else []
     mcps = sorted(d.name for d in (pack / "mcps").iterdir()
                   if d.is_dir() and (d / "config.yaml").exists()) if (pack / "mcps").exists() else []
+    mcp_details = _mcp_details(pack)
     skills = sorted(f.stem for f in (pack / "skills").glob("*.md")
                     if f.stem.lower() != "readme") if (pack / "skills").exists() else []
 
@@ -102,12 +221,26 @@ def _inspect(pack: Path) -> dict:
         rel = ex.relative_to(pack).as_posix()
         env_vars[rel.replace(".example", "")] = _env_keys(ex)
 
+    # Per-component READMEs (the authoring-rule docs) PackSmith should read to write
+    # accurate setup steps. ExTools/ExAgents readmes are pointed to; MCP readmes are
+    # inlined in mcp_details above.
+    component_readmes: list[str] = []
+    for sub in ("ExTools", "ExAgents"):
+        base = pack / sub
+        if base.exists():
+            for comp in sorted(base.iterdir()):
+                rd = _find_readme(comp) if comp.is_dir() else None
+                if rd:
+                    component_readmes.append(rd.relative_to(pack).as_posix())
+
     return {
         "name": pack.name,
         "tools": tools,
         "extool_dirs": extool_dirs,
         "agents": agents,
         "mcps": mcps,
+        "mcp_details": mcp_details,            # per-MCP launch info + repo_backed + readme
+        "component_readmes": component_readmes,  # ExTools/ExAgents README paths to read
         "skills": skills,
         "env_files": env_vars,                 # {relative .env path: [KEY, ...]}
         "has_soul": (pack / "SOUL.md").exists(),
@@ -147,6 +280,28 @@ async def run(params: dict) -> dict:
         stage = stage_parent / name
         try:
             shutil.copytree(pack, stage, ignore=_ignore)
+
+            # Deterministic strip of VENDORED MCP repos: an MCP that bundles a cloned
+            # project (has a package manifest) ships only its config.yaml + README —
+            # the code itself is obtained from source by the recipient (per its README).
+            # This is filesystem logic, so a weak authoring model can't produce a
+            # broken/bloated zip.
+            stripped: list[str] = []
+            for m in manifest.get("mcp_details", []):
+                if not m.get("vendored_project"):
+                    continue
+                mdir = stage / "mcps" / m["name"]
+                if not mdir.exists():
+                    continue
+                for item in list(mdir.iterdir()):
+                    if item.name == "config.yaml" or item.name.lower() in _README_NAMES:
+                        continue
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        item.unlink(missing_ok=True)
+                stripped.append(m["name"])
+
             readme = params.get("readme")
             if readme:
                 (stage / "README.md").write_text(readme, encoding="utf-8")
@@ -160,8 +315,12 @@ async def run(params: dict) -> dict:
         finally:
             shutil.rmtree(stage_parent, ignore_errors=True)
 
+        note = "secrets (.env) and node_modules/.git/__pycache__ were stripped"
+        if stripped:
+            note += (f"; vendored MCP code stripped (obtain from source per README): "
+                     f"{', '.join(stripped)}")
         return {"result": {"zip": str(out_path), "manifest": manifest,
-                            "note": "secrets (.env) and node_modules/.git/__pycache__ were stripped"}}
+                            "stripped_mcp_code": stripped, "note": note}}
 
     if action == "import_pack":
         zip_path = Path((params.get("zip") or "").strip()).expanduser()

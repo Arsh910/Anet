@@ -303,6 +303,19 @@ RULES:
   greetings, factual questions, "explain it", "what does it say", "summarise what you found" —
   but ONLY when the answer already exists in conversation context and no agent work is required.
   NEVER use type:"simple" when the user wants you to DO or BUILD something.
+- MEMORY (do NOT delegate memory to a worker agent — it is YOUR job):
+  * When the user just SHARES a fact or preference about themselves in conversation
+    ("I like X", "my name is Y", "I work at Z", "I love the Beatles"), that is type:"simple".
+    Reply naturally and briefly. ANet already remembers such facts automatically in the
+    background — you do NOT need to call any tool or route to an agent for this.
+  * RECALL is ALREADY handled for you: the user profile and relevant memories are injected
+    into THIS prompt above (under "What I know about you" / "RELEVANT MEMORIES"). Any "tell me
+    about me", "what do you know about me", "what's my name" → type:"simple", answered straight
+    from that injected context. NEVER call memory_tool to search/list for these — just read
+    what's above and reply.
+  * ONLY call the memory_tool yourself (it is a direct tool you have) when the user EXPLICITLY
+    asks to SAVE/REMEMBER a specific thing, or to FORGET/DELETE/CLEAR memories. Never send a
+    memory task to file_agent or any other agent.
 - CORRECTION RULE (HIGHEST PRIORITY — overrides everything else): If the user indicates the
   previous result was wrong, incomplete, or not what they wanted — ANY phrasing like "you didn't
   do X", "you didn't make X", "that's not what I asked", "you only did Y not Z", "you missed X",
@@ -689,6 +702,31 @@ class Engine:
         self._summaries[thread_id] = summary
         return summary, keep_from
 
+    async def _finalize_tool_reply(self, client, model, user_msg: str,
+                                   tool_results: list[str]) -> str:
+        """After the manager runs a direct tool, get a short, natural reply. The planner
+        prompt is JSON-only, so we use a fresh minimal prompt here for plain prose."""
+        try:
+            resp = await client.chat.completions.create(
+                model=model, temperature=0, max_tokens=150,
+                messages=[
+                    {"role": "system", "content": (
+                        f"You are {_ASSISTANT_NAME}. You just ran a tool for the user. If its "
+                        "result contains information the user asked for, present that information "
+                        "clearly. Otherwise reply in ONE short, friendly sentence confirming the "
+                        "action (or briefly note the failure). Plain text only — never JSON.")},
+                    {"role": "user", "content": user_msg},
+                    {"role": "assistant", "content": "Action result: " + " | ".join(tool_results)},
+                ],
+            )
+            from anet.core.agent_runner import _message_from_response
+            m = _message_from_response(resp, model)
+            return (m.content or "Done.").strip()
+        except Exception:
+            ok = any('"saved": true' in r.lower() or '"deleted": true' in r.lower()
+                     for r in tool_results)
+            return "Got it — I'll remember that." if ok else "Done."
+
     # ── Planner ───────────────────────────────────────────────────────────────
 
     async def _plan(self, messages: list[dict], summary: str = "",
@@ -725,11 +763,13 @@ class Engine:
                 kwargs["tools"] = tools_param
 
             resp = await client.chat.completions.create(**kwargs)
-            msg  = resp.choices[0].message
+            from anet.core.agent_runner import _message_from_response
+            msg  = _message_from_response(resp, manager_model)
 
-            # Manager direct tool call
+            # Manager direct tool call (e.g. saving a memory the user mentioned). Run
+            # it, then produce a NATURAL one-line reply — never dump raw JSON.
             if getattr(msg, "tool_calls", None):
-                results = []
+                tool_results = []
                 for tc in msg.tool_calls:
                     tool_name = tc.function.name
                     try:
@@ -737,12 +777,13 @@ class Engine:
                     except json.JSONDecodeError:
                         arguments = {}
                     if tool_name in self._manager_tools:
-                        self._notify(f"manager: calling {tool_name}...")
+                        self._notify(f"manager: {tool_name}...")
                         r = await self._manager_tools[tool_name]["run"](arguments)
-                        results.append(f"[{tool_name}]: {json.dumps(r)}")
                     else:
-                        results.append(f"[{tool_name}]: tool not found")
-                return {"type": "tool_call", "reply": "\n".join(results)}
+                        r = {"error": f"tool '{tool_name}' not available to the manager"}
+                    tool_results.append(f"{tool_name} → {json.dumps(r)}")
+                reply = await self._finalize_tool_reply(client, manager_model, user_msg, tool_results)
+                return {"type": "tool_call", "reply": reply}
 
             raw = (msg.content or "").strip()
             try:

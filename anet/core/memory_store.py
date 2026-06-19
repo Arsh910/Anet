@@ -31,12 +31,28 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
-# mem0's deps are chatty (chroma hybrid-search notice, spaCy-not-installed, posthog).
-# Keep the CLI clean — these are all expected, non-fatal.
-for _noisy in ("mem0", "chromadb", "httpx", "posthog", "opentelemetry"):
+# ── Keep the first-run model download + library chatter OUT of the TUI ──────────
+# mem0 pulls in chromadb + huggingface_hub/fastembed. Left alone, the first run
+# sprays tqdm download bars, an "unauthenticated HF Hub" advisory, and chromadb
+# DeprecationWarnings straight to the terminal — right on top of the prompt. These
+# env vars / filters are set HERE, before those libs are imported in get_memory(),
+# so they take effect. We surface a single clean "preparing memory" status instead.
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+for _w in ("chromadb", "fastembed", "huggingface_hub", "onnxruntime", "posthog"):
+    for _cat in (DeprecationWarning, UserWarning, FutureWarning):
+        warnings.filterwarnings("ignore", category=_cat, module=rf"{_w}.*")
+# The "unauthenticated requests to the HF Hub / set a HF_TOKEN" advisory is a
+# UserWarning we replace with our own clean one-line tip at startup.
+warnings.filterwarnings("ignore", message=r".*unauthenticated requests.*")
+warnings.filterwarnings("ignore", message=r".*HF_TOKEN.*")
+for _noisy in ("mem0", "chromadb", "httpx", "httpcore", "posthog", "opentelemetry",
+               "huggingface_hub", "fastembed", "urllib3", "filelock"):
     logging.getLogger(_noisy).setLevel(logging.ERROR)
 
 _USER_ID = "anet"
@@ -65,9 +81,12 @@ _DEFAULT_CATEGORIES = [
 # Steers what mem0 extracts from conversation (injected into its extraction prompt).
 # Overridable via `memory.instructions` in the pack config.
 _DEFAULT_INSTRUCTIONS = (
-    "Capture durable facts that help future sessions: the user's identity and standing "
-    "preferences, project locations and tech stacks, important decisions, environment and "
-    "setup details, and explicit instructions. Ignore small talk and transient task chatter."
+    "Store ONLY durable facts about the USER that help future sessions: their identity "
+    "(name, role, background), standing preferences, the projects they own (paths, tech "
+    "stacks), important decisions, and environment/setup details. "
+    "Do NOT store one-off actions the assistant performed for them (e.g. 'opened a page', "
+    "'ran a command', 'created a file'), transient task state, or small talk — those are "
+    "not lasting facts about the user. When in doubt, leave it out."
 )
 
 # ANet provider name → how mem0 should reach it. OpenRouter is OpenAI-compatible,
@@ -229,8 +248,17 @@ def get_memory() -> Any:
         return None
     _init_tried = True
     try:
-        from mem0 import Memory
-        _memory = Memory.from_config(_build_config())
+        # Suppress EVERYTHING the heavy deps emit while importing and building/
+        # downloading the model (one-time): warnings via catch_warnings, and any
+        # direct-to-stderr advisories (e.g. HF's "unauthenticated requests" notice,
+        # which bypasses the warnings module) via a stderr redirect. The startup
+        # spinner writes to stdout, so it's unaffected. We surface a clean status +
+        # our own HF-token tip instead.
+        import contextlib, io
+        with warnings.catch_warnings(), contextlib.redirect_stderr(io.StringIO()):
+            warnings.simplefilter("ignore")
+            from mem0 import Memory
+            _memory = Memory.from_config(_build_config())
     except Exception as exc:
         _init_error = str(exc)
         print(f"[memory_store] mem0 unavailable ({exc}); long-term memory disabled.",

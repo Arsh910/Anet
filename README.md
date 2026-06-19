@@ -24,7 +24,7 @@ Use any model, per agent. Claude for code, Gemini for research, GPT for planning
 <tr><td><b>Remembers you</b></td><td>Long-term memory via <a href="https://github.com/mem0ai/mem0">mem0</a> — a local vector store (Chroma) with on-device embeddings (fastembed); your LLM extracts and de-duplicates the salient facts as you work, so it knows your stack and preferences next time. No server, no hosted service. See <code>/profile</code>.</td></tr>
 <tr><td><b>Learns from experience</b></td><td>After a complex, self-corrected task it writes a reusable <b>skill</b>; relevant skills are injected into future tasks, and a Curator improves them over time.</td></tr>
 <tr><td><b>Real developer tooling</b></td><td>Built in: LSP code intelligence (go-to-def, rename, references), ripgrep search, ruff/pyright/eslint diagnostics, git conflict resolution. Plug in any MCP server for more (e.g. a code-graph or browser server).</td></tr>
-<tr><td><b>A real terminal UI</b></td><td>Animated banner, slash-command autocomplete, live status spinner, session resume, and <code>ESC</code> to interrupt.</td></tr>
+<tr><td><b>A real terminal UI</b></td><td>Animated banner, slash-command autocomplete, live status spinner, session switching, <code>Ctrl+O</code> to watch/answer a running shell command, and <code>ESC</code> to interrupt.</td></tr>
 </table>
 
 ---
@@ -108,7 +108,7 @@ You: open notepad and type today's AI headlines
 | `/editagent <name>` | Edit one of your agents' prompt |
 | `/skills` | List saved skills with usage counts |
 | `/profile` | Show what Anet remembers about you (long-term memory) |
-| `/sessions` · `/session <name>` · `/new` | List / switch / start sessions |
+| `/sessions` · `/sessions <number>` · `/new` | List sessions · switch to one by number · start fresh |
 | `/forget` · `/compress` | Trim or summarise old context |
 | `/newtool <path>` | **ToolSmith** — scaffold, validate + register a new ExTool |
 | `/newagent <description>` | **AgentSmith** — design + register a new agent |
@@ -119,6 +119,7 @@ You: open notepad and type today's AI headlines
 | `/changepack <name?>` | Switch the active pack (your workspace) |
 | `/clear` | Clear the screen and redraw the startup view |
 | `/help` | Show the command list |
+| `Ctrl+O` | View the running shell command live — and type input to answer any prompt it raises |
 | `ESC` | Stop the running task, return to the prompt |
 | `exit` / `quit` | End the session (runs a final memory pass) |
 

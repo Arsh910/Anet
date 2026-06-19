@@ -138,6 +138,29 @@ To try it live:
    `tele_agent` block.
 3. Restart, then ask ANet: *"send me a Telegram saying hello"*.
 
+## Making a tool shareable (authoring rules)
+
+When you `/packsmith share`, the tool's **code travels in the zip** (it's yours), but
+its **dependencies don't**. So if your tool needs anything beyond the stdlib —a pip
+package, a CLI/binary on PATH, a cloned repo, an account/API key — add
+`ExTools/<name>/README.md` so PackSmith can tell the recipient what to install first:
+
+```markdown
+# <name> tool
+
+What it does: one short sentence.
+Requires:
+  - pip: pandas, openpyxl          (Python packages)
+  - system: ffmpeg                 (a CLI/binary on PATH)
+  - repo: https://github.com/…     (only if it shells out to / imports local repo code)
+Env: SOME_API_KEY                  (any keys, set where? — usually ExAgents/<agent>/.env)
+```
+
+A tool that only uses the stdlib needs no README — PackSmith falls back to scanning
+your imports. The README matters when there's something the recipient must obtain.
+`/newtool` writes a starter README from the wrapped code; review the `Requires`/`Env`
+lines before sharing.
+
 ## Checklist
 
 - [ ] `ExTools/<name>/__init__.py` exports `SCHEMA` and `run`
@@ -145,3 +168,4 @@ To try it live:
 - [ ] Registered under `tools:` in `exanet.config.yaml`
 - [ ] Given to an agent via `extra_tools:` or an ExAgent's `tools:`
 - [ ] Secrets come from env vars, not code
+- [ ] **to share:** a `README.md` if the tool needs deps/binaries/repos/keys
