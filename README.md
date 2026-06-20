@@ -302,4 +302,4 @@ Issues and PRs welcome. The engine has no heavy framework dependency (no LangCha
 
 ---
 
-<p align="center"><sub>MIT licensed · multi-agent · any model · no LangChain, no lock-in.</sub></p>
+<p align="center"><sub>MIT licensed · multi-agent · any model · no LangChain, no lock-in.</sub></p> 
