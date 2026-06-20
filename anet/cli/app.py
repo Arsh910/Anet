@@ -1290,7 +1290,7 @@ async def _handle_slash(
         console.print(_HELP_TEXT)
 
     elif command == "/clear":
-        console.clear()
+        os.system("cls" if os.name == "nt" else "clear")
         _print_startup_summary(enabled_agents, tool_map)
 
     elif command == "/changepack":

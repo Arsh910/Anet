@@ -44,6 +44,8 @@ from typing import Any
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+os.environ.setdefault("POSTHOG_DISABLED", "True")
 for _w in ("chromadb", "fastembed", "huggingface_hub", "onnxruntime", "posthog"):
     for _cat in (DeprecationWarning, UserWarning, FutureWarning):
         warnings.filterwarnings("ignore", category=_cat, module=rf"{_w}.*")
