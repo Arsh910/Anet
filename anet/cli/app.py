@@ -581,10 +581,8 @@ _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/addmcp",   "MCPSmith — draft + register an MCP server <path>"),
     ("/mcptest",  "Connect-test an MCP server <name>"),
     ("/changepack", "Switch the active pack (workspace) <name?>"),
-    ("/keys",     "Set your API keys (opens ~/.anet/.env in an editor)"),
-    ("/settings", "Edit models/providers (opens anet.config.yaml)"),
-    ("/editpack", "Edit the pack's tools/agents (opens exanet.config.yaml)"),
-    ("/editagent", "Edit an agent's prompt <name>"),
+    ("/settings", "Edit config — pick keys, models, tools/agents, a prompt, or persona"),
+    ("/keys",     "Shortcut to set your API keys (also /settings → 1)"),
     ("/packsmith", "Packs: new <name> | share <path?> | add <zip>"),
     ("/clear",    "Clear screen and redraw the startup view"),
     ("/help",     "Show the slash command list"),
@@ -1043,10 +1041,8 @@ _HELP_TEXT = """
   [bold cyan]/addmcp[/bold cyan] [dim]<path>[/dim]        MCPSmith: draft + register an MCP server from its docs
   [bold cyan]/mcptest[/bold cyan] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
   [bold cyan]/changepack[/bold cyan] [dim]<name>[/dim]    Switch the active pack (workspace) — lists packs if no name
-  [bold cyan]/keys[/bold cyan]                 Set your API keys (opens ~/.anet/.env in an editor)
-  [bold cyan]/settings[/bold cyan]             Edit models/providers (opens anet.config.yaml)
-  [bold cyan]/editpack[/bold cyan]             Edit the pack's tools/agents (opens exanet.config.yaml)
-  [bold cyan]/editagent[/bold cyan] [dim]<name>[/dim]   Edit one of your agents' prompt
+  [bold cyan]/settings[/bold cyan]             Edit config — pick: keys · models/providers · tools/agents · a prompt · persona
+  [bold cyan]/keys[/bold cyan]                 Shortcut straight to your API keys (same as /settings → 1)
   [bold cyan]/packsmith new[/bold cyan] [dim]<name>[/dim]     Create a blank pack in yourpacks/ and switch to it
   [bold cyan]/packsmith share[/bold cyan] [dim]<path?>[/dim]  Bundle a pack into a shareable zip (secrets stripped)
   [bold cyan]/packsmith add[/bold cyan] [dim]<zip>[/dim]      Install a received pack into shared_packs/
@@ -1177,6 +1173,84 @@ def _cmd_editagent(arg: str) -> None:
                       f"  [dim]It must be a pack ExAgent with a prompt_file. See /agents.[/dim]\n")
 
 
+async def _open_keys() -> None:
+    env_file = _ensure_home_env()
+    if _open_in_editor(env_file):
+        try:
+            from dotenv import load_dotenv as _ldenv
+            _ldenv(env_file, override=True)   # picked up on the next model call
+            console.print("  [green]keys reloaded[/green] — take effect on your next message.\n")
+        except Exception:
+            console.print("  [dim]saved — restart to apply.[/dim]\n")
+
+
+async def _cmd_settings(arg: str) -> None:
+    """One entry point for editing config — pick which file to open. Folds in the
+    old /keys, /editpack and /editagent commands so there's a single, discoverable
+    command instead of several."""
+    options = [
+        ("API keys",                "~/.anet/.env"),
+        ("Models & providers",      "anet.config.yaml"),
+        ("Tools & agents",          "exanet.config.yaml (this pack)"),
+        ("An agent's prompt",       "ExAgents/<name>/prompt.md"),
+        ("Persona",                 "SOUL.md"),
+    ]
+    choice = (arg or "").strip()
+    if not choice:
+        console.print("\n  [bold]Settings[/bold] — what do you want to edit?")
+        for i, (label, where) in enumerate(options, 1):
+            console.print(f"  [cyan]{i}[/cyan]  {label}  [dim]{where}[/dim]")
+        console.print("  [dim]enter a number (anything else cancels)[/dim]")
+        try:
+            choice = (await _read_input("  > ")).strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print(); return
+
+    if not (choice.isdigit() and 1 <= int(choice) <= len(options)):
+        console.print("  [dim]cancelled.[/dim]\n"); return
+    n = int(choice)
+
+    if n == 1:
+        await _open_keys()
+    elif n == 2:
+        _edit_yaml(_anet_paths.config_path(), "anet.config.yaml (models/providers)")
+    elif n == 3:
+        _edit_yaml(_anet_paths.exanet_path(), "exanet.config.yaml (tools/agents)")
+    elif n == 4:
+        await _pick_and_edit_agent()
+    elif n == 5:
+        soul = _anet_paths.soul_path()
+        if not soul.exists():
+            console.print(f"  [yellow]SOUL.md not found:[/yellow] {soul}\n"); return
+        if _open_in_editor(soul):
+            _apply_config_change()
+            console.print("  [green]SOUL.md updated[/green] — applied on your next message.\n")
+
+
+async def _pick_and_edit_agent() -> None:
+    """List the pack's editable agent prompts and open the chosen one."""
+    adir = _anet_paths.exagents_dir()
+    agents = sorted(
+        d.name for d in adir.iterdir()
+        if d.is_dir() and (d / "prompt.md").exists()
+    ) if adir.exists() else []
+    if not agents:
+        console.print("  [dim]No editable agent prompts in this pack. Create one with "
+                      "[cyan]/newagent[/cyan].[/dim]\n")
+        return
+    console.print("\n  [bold]Which agent's prompt?[/bold]")
+    for i, a in enumerate(agents, 1):
+        console.print(f"  [cyan]{i}[/cyan]  {a}")
+    try:
+        sel = (await _read_input("  > ")).strip()
+    except (EOFError, KeyboardInterrupt):
+        console.print(); return
+    if sel.isdigit() and 1 <= int(sel) <= len(agents):
+        _cmd_editagent(agents[int(sel) - 1])
+    else:
+        console.print("  [dim]cancelled.[/dim]\n")
+
+
 async def _cmd_packsmith_new(name: str) -> None:
     """Create a blank pack in yourpacks/<name> and switch to it (the /packsmith new
     command). Build it up afterward with /newtool, /newagent, /addmcp."""
@@ -1296,24 +1370,12 @@ async def _handle_slash(
     elif command == "/changepack":
         await _cmd_changepack(arg)
 
-    elif command == "/keys":
-        env_file = _ensure_home_env()
-        if _open_in_editor(env_file):
-            try:
-                from dotenv import load_dotenv as _ldenv
-                _ldenv(env_file, override=True)   # picked up on the next model call
-                console.print("  [green]keys reloaded[/green] — take effect on your next message.\n")
-            except Exception:
-                console.print("  [dim]saved — restart to apply.[/dim]\n")
-
     elif command == "/settings":
-        _edit_yaml(_anet_paths.config_path(), "anet.config.yaml (models/providers)")
+        await _cmd_settings(arg)
 
-    elif command == "/editpack":
-        _edit_yaml(_anet_paths.exanet_path(), "exanet.config.yaml (tools/agents)")
-
-    elif command == "/editagent":
-        _cmd_editagent(arg)
+    elif command == "/keys":
+        # Kept as a quick shortcut to the most common task (it's also /settings → 1).
+        await _open_keys()
 
     elif command == "/new":
         global _session_turn_count, _last_context_prompt_n
@@ -2053,7 +2115,7 @@ def _seed_and_migrate(home: Path, repo: Path | None = None) -> None:
             pass
 
 
-# ── Editor-based config editing (/keys, /settings, /editpack, /editagent) ─────
+# ── Editor-based config editing (the /settings hub, and the /keys shortcut) ───
 
 def _resolve_editor() -> list[str]:
     """Pick an editor: $VISUAL/$EDITOR, else notepad on Windows, else nano/vi."""

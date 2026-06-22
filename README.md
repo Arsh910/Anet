@@ -102,10 +102,8 @@ You: open notepad and type today's AI headlines
 | Command | What it does |
 |---|---|
 | `/agents` · `/tools` · `/mcps` | Show loaded agents / tools / MCP servers |
-| `/keys` | Set your API keys (opens `~/.anet/.env` in your editor) |
-| `/settings` | Edit models/providers (opens `anet.config.yaml`) |
-| `/editpack` | Edit the pack's tools/agents (opens `exanet.config.yaml`) |
-| `/editagent <name>` | Edit one of your agents' prompt |
+| `/settings` | Edit config — pick what to open: keys · models/providers · tools/agents · an agent's prompt · persona |
+| `/keys` | Shortcut straight to your API keys (same as `/settings` → 1) |
 | `/skills` | List saved skills with usage counts |
 | `/profile` | Show what Anet remembers about you (long-term memory) |
 | `/sessions` · `/sessions <number>` · `/new` | List sessions · switch to one by number · start fresh |
