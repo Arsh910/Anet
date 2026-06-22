@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ANet · Architecture · Level 2 — Under the Hood</title>
+<style>
+  /* ─────────────────────────────────────────────────────────────────
+     Reset & base (same palette as Level 1)
+     ───────────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.6;
+    color: #e6e9ef;
+    background: #07080c;
+    overflow-x: hidden;
+  }
+
+  body::before, body::after {
+    content: "";
+    position: fixed;
+    width: 600px; height: 600px;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.22;
+    z-index: -1;
+    pointer-events: none;
+    animation: float 22s ease-in-out infinite;
+  }
+  body::before {
+    background: radial-gradient(circle, #3B82F6 0%, transparent 70%);
+    top: -180px; left: -220px;
+  }
+  body::after {
+    background: radial-gradient(circle, #8B5CF6 0%, transparent 70%);
+    bottom: -220px; right: -180px;
+    animation-delay: -11s;
+  }
+  @keyframes float {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(80px, 60px); }
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 32px; }
+  section { padding: 80px 0; position: relative; }
+
+  /* Hero */
+  .hero {
+    min-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-top: 60px;
+  }
+  .pill {
+    display: inline-block;
+    padding: 6px 14px;
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    background: rgba(59, 130, 246, 0.08);
+    border-radius: 999px;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #93c5fd;
+    margin-bottom: 24px;
+    width: fit-content;
+    animation: fadeUp 0.8s ease both;
+  }
+  .pill .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: #3B82F6;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+    box-shadow: 0 0 8px #3B82F6;
+  }
+  h1 {
+    font-size: clamp(40px, 6vw, 68px);
+    line-height: 1.1;
+    margin: 0 0 24px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #fff 0%, #93c5fd 50%, #c4b5fd 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: fadeUp 0.9s 0.1s ease both;
+  }
+  .lede {
+    font-size: 19px;
+    max-width: 740px;
+    color: #b6bcca;
+    margin: 0 0 32px;
+    animation: fadeUp 0.9s 0.2s ease both;
+  }
+  .crumbs {
+    font-size: 13px;
+    color: #6b7280;
+    letter-spacing: 0.05em;
+    animation: fadeUp 0.9s 0.3s ease both;
+  }
+  .crumbs a { color: #93c5fd; text-decoration: none; }
+  .crumbs a:hover { text-decoration: underline; }
+  .crumbs .sep { margin: 0 8px; color: #4b5563; }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Section headers */
+  .eyebrow {
+    color: #3B82F6;
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  h2 {
+    font-size: clamp(28px, 4vw, 42px);
+    margin: 0 0 24px;
+    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #f5f7fa;
+  }
+  h2 .accent {
+    background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .section-intro {
+    font-size: 17px;
+    color: #b6bcca;
+    max-width: 760px;
+    margin: 0 0 36px;
+  }
+
+  /* Sub-header inside sections */
+  .sub-header {
+    font-size: 22px;
+    margin: 40px 0 14px;
+    color: #f5f7fa;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .sub-header .num {
+    font-size: 13px;
+    color: #3B82F6;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  /* Cards */
+  .grid { display: grid; gap: 20px; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 900px) {
+    .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 22px;
+    transition: transform 0.3s ease, border-color 0.3s ease;
+  }
+  .card:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.15); }
+  .card h3 { margin: 0 0 8px; color: #f5f7fa; font-size: 17px; font-weight: 600; }
+  .card .sub {
+    font-size: 12px; color: #8b94a7;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 12px;
+  }
+  .card p { margin: 0; font-size: 14px; color: #b6bcca; }
+  .card code, .ex-step code, .points code, p code, li code, td code {
+    color: #fda4af;
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    font-size: 0.88em;
+    background: rgba(253, 164, 175, 0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  /* Diagrams */
+  .diagram-wrap {
+    background: linear-gradient(180deg, rgba(20,22,30,0.6) 0%, rgba(10,12,18,0.6) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 20px;
+    padding: 36px 24px;
+    margin: 36px 0;
+    overflow: hidden;
+  }
+  .diagram-wrap svg { width: 100%; height: auto; display: block; }
+  .flow-line { stroke-dasharray: 6 8; animation: dashFlow 1.5s linear infinite; }
+  @keyframes dashFlow { to { stroke-dashoffset: -28; } }
+  .iter-glow { animation: iterPulse 2s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+  @keyframes iterPulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+
+  /* Code blocks */
+  pre.code {
+    background: #0c0e14;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 18px 22px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: #d1d5db;
+    margin: 16px 0;
+    position: relative;
+  }
+  pre.code .lbl {
+    position: absolute;
+    top: 8px; right: 14px;
+    font-size: 10px;
+    color: #6b7280;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  pre.code .k { color: #c4b5fd; }   /* keyword */
+  pre.code .s { color: #86efac; }   /* string */
+  pre.code .n { color: #fdba74; }   /* number */
+  pre.code .c { color: #6b7280; font-style: italic; }   /* comment */
+  pre.code .p { color: #93c5fd; }   /* property */
+  pre.code .b { color: #fda4af; }   /* builtin */
+
+  /* Tables */
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 14px;
+  }
+  .tbl th, .tbl td {
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    color: #d1d5db;
+    vertical-align: top;
+  }
+  .tbl th {
+    color: #f5f7fa;
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    background: rgba(255,255,255,0.025);
+  }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl td.mono { font-family: "JetBrains Mono", ui-monospace, monospace; color: #93c5fd; font-size: 13px; }
+
+  /* Points list */
+  .points { list-style: none; padding: 0; margin: 24px 0 0; counter-reset: pt; }
+  .points li {
+    padding: 16px 0 16px 48px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    position: relative;
+    color: #d1d5db;
+    font-size: 16px;
+  }
+  .points li:last-child { border-bottom: none; }
+  .points li::before {
+    counter-increment: pt;
+    content: counter(pt);
+    position: absolute;
+    left: 0; top: 18px;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px;
+  }
+  .points strong { color: #f5f7fa; }
+
+  /* Callouts */
+  .callout {
+    border-left: 3px solid #3B82F6;
+    background: rgba(59, 130, 246, 0.06);
+    padding: 18px 22px;
+    border-radius: 0 12px 12px 0;
+    margin: 28px 0;
+    font-size: 15px;
+    color: #93c5fd;
+  }
+  .callout strong { color: #fff; }
+  .callout.warn { border-color: #FF6B35; background: rgba(255,107,53,0.06); color: #fdba74; }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 60px 0 80px;
+    text-align: center;
+    color: #6b7280;
+    font-size: 14px;
+  }
+  .next-link {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-top: 16px; padding: 14px 24px;
+    background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+    color: #fff; text-decoration: none;
+    border-radius: 12px; font-weight: 600;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .next-link:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(59,130,246,0.3); }
+  .next-link[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; }
+  .next-link[aria-disabled="true"]:hover { transform: none; box-shadow: none; }
+
+  /* Reveal-on-scroll */
+  .reveal { opacity: 0; transform: translateY(30px); transition: opacity 0.7s ease, transform 0.7s ease; }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* Progress bar */
+  .progress {
+    position: fixed; top: 0; left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #3B82F6, #8B5CF6);
+    z-index: 100;
+    width: 0%;
+    transition: width 0.1s ease-out;
+  }
+
+  /* Example boxes */
+  .request-box, .output-box {
+    border-radius: 16px;
+    padding: 22px 26px;
+    margin: 28px 0;
+    font-size: 16px;
+    line-height: 1.65;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .request-box {
+    background: linear-gradient(135deg, rgba(139,92,246,0.10) 0%, rgba(139,92,246,0.02) 100%);
+    border-left: 3px solid #8B5CF6;
+  }
+  .output-box {
+    background: linear-gradient(135deg, rgba(34,197,94,0.10) 0%, rgba(34,197,94,0.02) 100%);
+    border-left: 3px solid #22c55e;
+  }
+  .request-label, .output-label {
+    display: inline-block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .request-label { color: #c4b5fd; }
+  .output-label  { color: #86efac; }
+  .request-text { margin: 0; color: #e6e9ef; font-style: italic; }
+  .output-text  { margin: 0; color: #e6e9ef; }
+
+  /* Step blocks (used in walkthrough) */
+  .ex-step {
+    display: flex; gap: 20px;
+    margin: 18px 0;
+    padding: 20px 24px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-left: 3px solid var(--c, #3B82F6);
+    transition: transform 0.3s ease, background 0.3s ease;
+  }
+  .ex-step:hover { transform: translateX(4px); background: rgba(255,255,255,0.04); }
+  .ex-step .marker {
+    flex-shrink: 0; width: 44px; height: 44px;
+    border-radius: 12px;
+    background: var(--c, #3B82F6);
+    color: #fff; display: flex;
+    align-items: center; justify-content: center;
+    font-weight: 800; font-size: 18px;
+  }
+  .ex-step .body { flex: 1; min-width: 0; }
+  .ex-step h4 { margin: 4px 0; font-size: 17px; color: #f5f7fa; font-weight: 700; }
+  .ex-step .agent-tag {
+    display: inline-block; font-size: 11px;
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.08); color: #93c5fd;
+    margin-left: 8px; font-weight: 600;
+    text-transform: lowercase; letter-spacing: 0.04em;
+    vertical-align: middle;
+  }
+  .ex-step p { margin: 6px 0; color: #b6bcca; font-size: 15px; }
+  .ex-step ol, .ex-step ul { margin: 8px 0; padding-left: 22px; color: #b6bcca; font-size: 15px; }
+  .ex-step.research { --c: #8B5CF6; }
+  .ex-step.code     { --c: #3B82F6; }
+  .ex-step.check    { --c: #FF6B35; }
+  .ex-step.tele     { --c: #22c55e; }
+
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .badge.success { background: rgba(34,197,94,0.15); color: #86efac; }
+  .badge.partial { background: rgba(255,107,53,0.15); color: #fdba74; }
+  .badge.fail    { background: rgba(239,68,68,0.15); color: #fca5a5; }
+
+  /* Inline 'kbd' style for constants */
+  .kbd {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    background: rgba(147, 197, 253, 0.1);
+    color: #93c5fd;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid rgba(147, 197, 253, 0.2);
+  }
+
+  /* DAG node staggered appear */
+  .visible .dag-node { animation: nodeAppear 0.6s ease both; }
+  .visible .dag-node:nth-child(1) { animation-delay: 0.1s; }
+  .visible .dag-node:nth-child(2) { animation-delay: 0.4s; }
+  .visible .dag-node:nth-child(3) { animation-delay: 0.7s; }
+  .visible .dag-node:nth-child(4) { animation-delay: 1.0s; }
+  .visible .dag-node:nth-child(5) { animation-delay: 1.3s; }
+  @keyframes nodeAppear {
+    from { opacity: 0; transform: translateY(10px) scale(0.92); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<!-- ────────────────────────────────────────────────────────────────
+     HERO
+     ──────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="container">
+    <span class="pill"><span class="dot"></span>Architecture · Level 2</span>
+    <h1>Under the hood.</h1>
+    <p class="lede">
+      Same four stages, same example — opened up. This level shows the actual
+      JSON the Planner emits, how the Executor uses <code>asyncio.gather</code>
+      to run independent steps at once, what the confirmation gate is really
+      checking, and how the Checker decides between <em>partial</em> and
+      <em>failure</em>. Real code excerpts, real prompts.
+    </p>
+    <div class="crumbs">
+      <a href="../l1/level1.html">← Level 1 · The mental model</a>
+      <span class="sep">/</span>
+      <span style="color: #93c5fd;">Level 2 · Under the hood</span>
+      <span class="sep">/</span>
+      <span style="color: #4b5563;">Level 3 · Code-deep (coming)</span>
+    </div>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     WHAT'S NEW AT L2
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">Orientation</div>
+    <h2>Same map, <span class="accent">deeper detail.</span></h2>
+    <p class="section-intro">
+      Level 1 was the picture you can sketch on a napkin. Level 2 is the
+      picture with annotations: the exact data structures that flow between
+      stages, the constants that bound the system, and the small but important
+      decisions each stage makes.
+    </p>
+
+    <div class="grid grid-3">
+      <div class="card">
+        <div class="sub">What L1 told you</div>
+        <h3>"The Planner emits a DAG."</h3>
+        <p>True, but the DAG has a precise schema with five fields per step. We'll look at it byte by byte.</p>
+      </div>
+      <div class="card">
+        <div class="sub">What L1 told you</div>
+        <h3>"Steps run in parallel."</h3>
+        <p>The mechanism is <code>asyncio.gather</code> over the steps whose dependencies are all done. We'll walk the algorithm.</p>
+      </div>
+      <div class="card">
+        <div class="sub">What L1 told you</div>
+        <h3>"The gate pauses for y/n/a."</h3>
+        <p>It's actually a per-tool, per-action policy table. We'll show the exact table from <code>orchestrator.py</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     THE PLANNER — output schema + prompt structure
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">Stage 1 · Planner</div>
+    <h2>What the Manager actually <span class="accent">outputs.</span></h2>
+    <p class="section-intro">
+      The Planner is one model call, with one job: turn your natural-language
+      message into a strictly-typed JSON object. Two shapes are valid — a
+      <code>simple</code> reply, or a <code>plan</code> with a list of
+      <code>steps</code>. Anything else is a bug.
+    </p>
+
+    <pre class="code"><span class="lbl">Planner output — schema</span><span class="c">// Shape A — direct reply (greetings, recall, trivial facts)</span>
+{
+  <span class="p">"type"</span>:  <span class="s">"simple"</span>,
+  <span class="p">"reply"</span>: <span class="s">"&lt;assistant's answer&gt;"</span>
+}
+
+<span class="c">// Shape B — a DAG to execute</span>
+{
+  <span class="p">"type"</span>: <span class="s">"plan"</span>,
+  <span class="p">"steps"</span>: [
+    {
+      <span class="p">"id"</span>:                <span class="n">1</span>,
+      <span class="p">"agent"</span>:             <span class="s">"&lt;agent name&gt;"</span>,
+      <span class="p">"task"</span>:              <span class="s">"&lt;full instruction, self-contained&gt;"</span>,
+      <span class="p">"success_criteria"</span>:  <span class="s">"&lt;verifiable outcome&gt;"</span>,
+      <span class="p">"check"</span>:             <span class="k">null</span>,   <span class="c">// or {action, ...} for cheap deterministic checks</span>
+      <span class="p">"depends_on"</span>:        [],     <span class="c">// e.g. [1, 2] → wait for steps 1 and 2</span>
+      <span class="p">"wait_for_async"</span>:    <span class="k">false</span>   <span class="c">// only matters for background async steps</span>
+    }
+  ]
+}</pre>
+
+    <p>
+      Every field is load-bearing. <code>depends_on</code> drives the
+      executor's parallelism. <code>success_criteria</code> is what the
+      Checker grades the result against. <code>check</code> (when not null)
+      lets the engine skip the LLM checker for cheap deterministic cases —
+      "is this window open?" / "does this file exist?".
+    </p>
+
+    <div class="callout">
+      <strong>Why JSON-only?</strong> The Planner prompt forbids prose. Even a
+      follow-up like <em>"explain what you just did"</em> must come back as
+      <code>{"type":"simple","reply":"..."}</code>. This makes the executor's
+      input always parseable — no regex around free text, no "did the model
+      drift today" branches.
+    </div>
+
+    <h3 class="sub-header"><span class="num">Prompt anatomy</span>What the Planner sees.</h3>
+    <p>
+      The system prompt is assembled fresh each turn from these pieces, in this order
+      (see <code>_plan_system_prompt</code> in <code>engine.py</code>):
+    </p>
+
+    <ol class="points">
+      <li><strong>Identity + date.</strong> "You are ANet. Current date: …" — so dated questions ("latest", "this week") have a frame.</li>
+      <li><strong>SOUL.md persona.</strong> The pack's personality file, injected verbatim if present.</li>
+      <li><strong>"What I know about you" profile.</strong> The 12 most relevant <em>always-inject</em> memories (preferences, identity).</li>
+      <li><strong>RELEVANT MEMORIES block.</strong> Semantic + keyword hits from mem0 against the current request.</li>
+      <li><strong>AVAILABLE AGENTS list.</strong> Each agent's name + its declared <code>task_types</code> — this is how routing actually works.</li>
+      <li><strong>The schema + rules.</strong> JSON spec, routing rules ("file_agent has no edit_tool"), correction-rule ("if the user pushes back, replan").</li>
+      <li><strong>Few-shot examples.</strong> 4 short pairs covering greeting, multi-agent, project scaffolding, correction.</li>
+    </ol>
+
+    <p>
+      Most of the prompt is fixed text, but those four memory/context blocks
+      change every turn — which is how a standing preference like "always
+      prefix functions with <code>anet_</code>" actually reaches a coding
+      task even when you don't mention it.
+    </p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     THE EXECUTOR — parallelism algorithm
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">Stage 2 · Executor</div>
+    <h2>How "steps run in parallel" <span class="accent">actually works.</span></h2>
+    <p class="section-intro">
+      The Executor is a small loop with three jobs: find every step whose
+      dependencies are done, run all of those at once, then ask the Checker
+      whether anything needs to retry. Repeat until no step is ready.
+    </p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 1000 360" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Executor loop: ready-set selection, asyncio gather, checker, decide retry or advance">
+        <defs>
+          <linearGradient id="g-exec1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#3B82F6"/><stop offset="100%" stop-color="#1D4ED8"/>
+          </linearGradient>
+          <linearGradient id="g-exec2" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#8B5CF6"/><stop offset="100%" stop-color="#6D28D9"/>
+          </linearGradient>
+          <linearGradient id="g-exec3" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#FF6B35"/><stop offset="100%" stop-color="#C2410C"/>
+          </linearGradient>
+          <marker id="ex-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#9ca3af"/>
+          </marker>
+          <marker id="ex-arr-o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#FF6B35"/>
+          </marker>
+        </defs>
+
+        <!-- ready set -->
+        <g>
+          <rect x="60" y="130" width="180" height="100" rx="14" fill="url(#g-exec1)"/>
+          <text x="150" y="166" text-anchor="middle" fill="#fff" font-size="15" font-weight="700">1. Ready set</text>
+          <text x="150" y="190" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">steps whose deps are done</text>
+          <text x="150" y="208" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="11">_has_ready_steps()</text>
+        </g>
+        <line class="flow-line" x1="240" y1="180" x2="295" y2="180" stroke="#9ca3af" stroke-width="2" marker-end="url(#ex-arr)"/>
+
+        <!-- gather -->
+        <g>
+          <rect x="300" y="130" width="200" height="100" rx="14" fill="url(#g-exec2)"/>
+          <text x="400" y="166" text-anchor="middle" fill="#fff" font-size="15" font-weight="700">2. asyncio.gather</text>
+          <text x="400" y="190" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">run all ready steps at once</text>
+          <text x="400" y="208" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="11">each spawns orchestrator.run()</text>
+        </g>
+        <line class="flow-line" x1="500" y1="180" x2="555" y2="180" stroke="#9ca3af" stroke-width="2" marker-end="url(#ex-arr)"/>
+
+        <!-- checker -->
+        <g>
+          <rect x="560" y="130" width="180" height="100" rx="14" fill="url(#g-exec3)"/>
+          <text x="650" y="166" text-anchor="middle" fill="#fff" font-size="15" font-weight="700">3. Checker</text>
+          <text x="650" y="190" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">label each result</text>
+          <text x="650" y="208" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="11">success / partial / fail</text>
+        </g>
+        <line class="flow-line" x1="740" y1="180" x2="795" y2="180" stroke="#9ca3af" stroke-width="2" marker-end="url(#ex-arr)"/>
+
+        <!-- decide -->
+        <g>
+          <rect x="800" y="130" width="160" height="100" rx="14" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.2)"/>
+          <text x="880" y="166" text-anchor="middle" fill="#e6e9ef" font-size="15" font-weight="700">4. Decide</text>
+          <text x="880" y="190" text-anchor="middle" fill="#9ca3af" font-size="12">advance or retry</text>
+          <text x="880" y="208" text-anchor="middle" fill="#9ca3af" font-size="11">attempts &lt; <tspan fill="#c4b5fd">_MAX_RETRIES</tspan></text>
+        </g>
+
+        <!-- retry loop -->
+        <path d="M 880 230 Q 880 300 400 300 Q 150 300 150 235"
+              fill="none" stroke="#FF6B35" stroke-width="1.5" stroke-dasharray="4 4"
+              marker-end="url(#ex-arr-o)" opacity="0.7"/>
+        <text x="500" y="320" text-anchor="middle" fill="#FF6B35" font-size="11">
+          on "partial" → new ready set, attempts++ (cap = 3)
+        </text>
+
+        <!-- advance arrow -->
+        <text x="880" y="100" text-anchor="middle" fill="#86efac" font-size="11">on "success" → mark step done, recompute ready set</text>
+      </svg>
+    </div>
+
+    <pre class="code"><span class="lbl">engine.py — the loop, simplified</span><span class="k">while</span> <span class="b">True</span>:
+    exec_r = <span class="k">await</span> self._execute(plan, step_statuses, ...)   <span class="c"># asyncio.gather over ready steps</span>
+
+    <span class="k">if</span> exec_r[<span class="s">"last_step_count"</span>] == <span class="n">0</span>:
+        <span class="k">break</span>   <span class="c"># nothing ran (all offloaded or no ready steps)</span>
+
+    check_r = <span class="k">await</span> self._check(plan, exec_r[<span class="s">"active_step_ids"</span>], ...)
+
+    <span class="k">if</span> check_r <span class="k">and</span> check_r.get(<span class="s">"retry"</span>):
+        attempts = check_r[<span class="s">"attempts"</span>]
+        <span class="k">continue</span>   <span class="c"># same step, with the checker's adjustment</span>
+
+    attempts = <span class="n">0</span>
+    <span class="k">if not</span> _has_ready_steps(plan, step_statuses):
+        <span class="k">break</span></pre>
+
+    <table class="tbl">
+      <thead><tr><th>Step status</th><th>Meaning</th><th>What the loop does</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">pending</td><td>Not yet attempted.</td><td>Eligible if all <code>depends_on</code> are <span class="badge success">success</span>.</td></tr>
+        <tr><td class="mono">in_progress</td><td>Currently running inside <code>gather</code>.</td><td>Skipped on the next ready-set scan.</td></tr>
+        <tr><td class="mono">success</td><td>Result satisfied <code>success_criteria</code>.</td><td>Unlocks any step that depends on it.</td></tr>
+        <tr><td class="mono">partial</td><td>Got <em>something</em> but not enough.</td><td>Retry up to <span class="kbd">_MAX_RETRIES = 3</span>, with the checker's hint.</td></tr>
+        <tr><td class="mono">failure</td><td>The agent gave up or the check failed deterministically.</td><td>Step is marked done (so the loop terminates); the Synthesizer reports it honestly.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout warn">
+      <strong>Important nuance:</strong> a <em>failure</em> doesn't crash the
+      plan. The Executor still finishes any independent branches, and the
+      Synthesizer reports exactly which parts ran and which didn't. Partial
+      success is a first-class outcome, not an exception.
+    </div>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     THE ORCHESTRATOR LOOP — gate, dispatch, cycle detection
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">Inside one step · the agentic loop</div>
+    <h2>The Orchestrator — <span class="accent">what one step really does.</span></h2>
+    <p class="section-intro">
+      Each step in the DAG is run by <code>orchestrator.run(...)</code>. This
+      is a tight loop: ask the agent's model what to do, intercept any tool
+      call, check the safety policy, run the tool, feed the result back. It
+      sounds simple — the details are where the safety lives.
+    </p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Orchestrator loop: model call, tool intercept, gate, run, append, next iteration">
+        <defs>
+          <linearGradient id="g-or1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#8B5CF6"/><stop offset="100%" stop-color="#6D28D9"/>
+          </linearGradient>
+          <linearGradient id="g-or2" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#FF6B35"/><stop offset="100%" stop-color="#C2410C"/>
+          </linearGradient>
+          <linearGradient id="g-or3" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#22c55e"/><stop offset="100%" stop-color="#15803d"/>
+          </linearGradient>
+          <marker id="or-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#9ca3af"/>
+          </marker>
+        </defs>
+
+        <!-- model -->
+        <g>
+          <rect x="60" y="80" width="180" height="80" rx="12" fill="url(#g-or1)"/>
+          <text x="150" y="110" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">Model call</text>
+          <text x="150" y="132" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="11">agent_runner.run_step()</text>
+          <text x="150" y="148" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="10">picks provider + dispatches</text>
+        </g>
+        <line x1="240" y1="120" x2="295" y2="120" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#or-arr)"/>
+
+        <!-- decide branch -->
+        <g>
+          <polygon points="295,80 410,80 470,120 410,160 295,160 355,120" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.25)"/>
+          <text x="380" y="116" text-anchor="middle" fill="#e6e9ef" font-size="13" font-weight="700">Tool call?</text>
+          <text x="380" y="134" text-anchor="middle" fill="#9ca3af" font-size="11">vs. final answer</text>
+        </g>
+
+        <!-- yes → gate -->
+        <line x1="470" y1="120" x2="525" y2="120" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#or-arr)"/>
+        <text x="497" y="108" text-anchor="middle" fill="#86efac" font-size="11">yes</text>
+
+        <!-- gate -->
+        <g>
+          <rect x="530" y="80" width="200" height="80" rx="12" fill="url(#g-or2)"/>
+          <text x="630" y="110" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">Safety gate</text>
+          <text x="630" y="132" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="11">_needs_confirm() + cycle check</text>
+          <text x="630" y="148" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="10">y / n / a</text>
+        </g>
+        <line x1="730" y1="120" x2="785" y2="120" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#or-arr)"/>
+
+        <!-- run -->
+        <g>
+          <rect x="790" y="80" width="180" height="80" rx="12" fill="url(#g-or3)"/>
+          <text x="880" y="110" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">Run tool</text>
+          <text x="880" y="132" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="11">built-in / ExTool / MCP</text>
+          <text x="880" y="148" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="10">await tool["run"](...)</text>
+        </g>
+
+        <!-- result back to model -->
+        <path d="M 880 160 Q 880 240 500 240 Q 150 240 150 165"
+              fill="none" stroke="#22c55e" stroke-width="2"
+              stroke-dasharray="6 8" class="flow-line"
+              marker-end="url(#or-arr)"/>
+        <text x="500" y="260" text-anchor="middle" fill="#22c55e" font-size="12">
+          append <tspan font-weight="700">{role:"tool", content: result}</tspan> → next iteration
+        </text>
+
+        <!-- no → return -->
+        <line x1="380" y1="160" x2="380" y2="230" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#or-arr)" stroke-dasharray="4 4"/>
+        <text x="400" y="200" fill="#9ca3af" font-size="11">no</text>
+        <rect x="280" y="240" width="200" height="60" rx="10" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.2)"/>
+        <text x="380" y="268" text-anchor="middle" fill="#e6e9ef" font-size="13" font-weight="700">Return final answer</text>
+        <text x="380" y="286" text-anchor="middle" fill="#9ca3af" font-size="11">→ checker_agent</text>
+
+        <!-- bounds -->
+        <g>
+          <text x="500" y="340" text-anchor="middle" fill="#9ca3af" font-size="12">
+            loop bounded by <tspan fill="#c4b5fd" font-weight="700">agent.max_steps</tspan> and the <tspan fill="#FF6B35" font-weight="700">cycle detector</tspan>
+          </text>
+          <text x="500" y="362" text-anchor="middle" fill="#6b7280" font-size="11">
+            (same write 3× in a sliding window → stop · reads are exempt)
+          </text>
+        </g>
+      </svg>
+    </div>
+
+    <h3 class="sub-header"><span class="num">2.1</span>The confirmation policy table.</h3>
+    <p>
+      Not every tool call asks for approval — that would make ANet unusable.
+      The orchestrator carries a small policy in <code>_CONFIRM_TOOLS</code>
+      that says, per tool, exactly which actions need a <code>y / n / a</code>:
+    </p>
+
+    <table class="tbl">
+      <thead><tr><th>Tool</th><th>Which actions need approval</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">shell_tool</td><td><strong>every</strong> command</td><td>Arbitrary shell — always dangerous.</td></tr>
+        <tr><td class="mono">code_execution</td><td><strong>every</strong> run</td><td>Runs arbitrary Python.</td></tr>
+        <tr><td class="mono">edit_tool</td><td><strong>every</strong> edit</td><td>Modifies your files.</td></tr>
+        <tr><td class="mono">download_file</td><td><strong>every</strong> download</td><td>Writes a file to disk.</td></tr>
+        <tr><td class="mono">file_tool</td><td>write_file, create_folder, delete_file, copy_file, move_file, rename_file, zip_files, unzip_file</td><td>The read actions (list_dir, read_file) pass through.</td></tr>
+        <tr><td class="mono">open_app</td><td>launch_and_type, type_text, click_element, keyboard_shortcut</td><td>Changes desktop state. Plain "open" is silent.</td></tr>
+        <tr><td class="mono">memory_tool</td><td>clear, delete</td><td>Never wipe memory silently.</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      Read-only operations are explicitly listed (<code>_READ_ONLY_OPS</code>,
+      <code>_READ_ONLY_ACTIONS</code>) so the cycle detector knows to exempt
+      them. The model can list a directory in a tight loop if it wants;
+      it just can't <em>write</em> in one.
+    </p>
+
+    <h3 class="sub-header"><span class="num">2.2</span>Provider dispatch — <code>agent_runner.py</code>.</h3>
+    <p>
+      Every agent declares its own <code>model</code> and <code>provider</code>.
+      <code>agent_runner</code> normalises that into a unified call. Two paths:
+    </p>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>OpenAI-compatible</h3>
+        <div class="sub">openrouter · openai · google · vertex_google</div>
+        <p>Uses <code>AsyncOpenAI</code> with a per-provider <code>base_url</code>. OpenRouter routes 300+ models. Gemini's "thought signature" extras are preserved verbatim in <code>_message_to_dict</code> so thinking models don't reject their own looped-back messages.</p>
+      </div>
+      <div class="card">
+        <h3>Anthropic native</h3>
+        <div class="sub">anthropic · vertex_anthropic</div>
+        <p>Uses <code>anthropic.AsyncAnthropic</code>. Tool-call shape is translated to match the OpenAI shape the orchestrator already speaks — one common return type either way.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-header"><span class="num">2.3</span>Memory injection — every step, every time.</h3>
+    <p>
+      Before the model call, <code>_memory_block(agent, task)</code> builds a
+      short "RELEVANT MEMORY" block by pulling:
+    </p>
+    <ul>
+      <li><strong>Standing memories</strong> — <code>always_inject</code> categories scoped to this agent (your preferences, your identity). Surfaces even when there's no keyword overlap.</li>
+      <li><strong>Task-relevant facts</strong> — semantic search against the task with <code>min_score = 0.34</code>, so "write a function" doesn't drag in every memory mentioning code.</li>
+    </ul>
+    <p>
+      Snippets are capped at 240 chars each — no single mega-memory can flood
+      a small model's context. The block is empty (and omitted entirely) when
+      nothing is relevant.
+    </p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     THE CHECKER — partial vs failure, retry budget
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">Stage 3 · Checker</div>
+    <h2>How "good enough" <span class="accent">gets decided.</span></h2>
+    <p class="section-intro">
+      The Checker runs after every batch of steps the Executor finishes.
+      There are two flavours — a cheap deterministic one for things you can
+      literally check (is this window open?), and an LLM one for everything
+      else.
+    </p>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Explicit check</h3>
+        <div class="sub">when step.check ≠ null</div>
+        <p>The Planner pre-declares <em>"verify by opening the window 'Notepad'"</em>. The Checker just runs <code>check_window</code> / <code>check_process</code> / <code>check_path</code> — no LLM call. Fast and certain.</p>
+      </div>
+      <div class="card">
+        <h3>Implicit check (LLM)</h3>
+        <div class="sub">when step.check is null</div>
+        <p>The Checker model reads the step's output, the original task, and the <code>success_criteria</code>, then emits one of three verdicts plus an optional <em>adjustment</em> string.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-header"><span class="num">3.1</span>The three verdicts.</h3>
+    <table class="tbl">
+      <thead><tr><th>Verdict</th><th>Trigger</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="badge success">success</span></td>
+          <td>Output meets <code>success_criteria</code>.</td>
+          <td>Step marked done. Dependent steps become eligible.</td>
+        </tr>
+        <tr>
+          <td><span class="badge partial">partial</span></td>
+          <td>Output has <em>something</em> but missed a requirement.</td>
+          <td>Checker writes an adjustment hint; Executor retries the step with that hint appended, <span class="kbd">attempts</span> ++.</td>
+        </tr>
+        <tr>
+          <td><span class="badge fail">failure</span></td>
+          <td>Output is empty / wrong tool / errored.</td>
+          <td>Step is closed; Synthesizer reports it honestly. Dependent steps are skipped.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-header"><span class="num">3.2</span>The retry budget.</h3>
+    <pre class="code"><span class="lbl">engine.py — line 24</span>_MAX_RETRIES = <span class="n">3</span>
+
+<span class="c"># Inside the check phase:</span>
+advance = status == <span class="s">"success"</span> <span class="k">or</span> attempts &gt;= _MAX_RETRIES - <span class="n">1</span></pre>
+    <p>
+      Three attempts total, ever. After the third <em>partial</em>, the step
+      advances anyway — the Synthesizer will report what got done, the user
+      can decide to ask for more. This is the load-bearing rule that keeps
+      the system from looping on its own work for an hour.
+    </p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     THE SYNTHESIZER — streaming + dedup
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">Stage 4 · Synthesizer</div>
+    <h2>One coherent reply, <span class="accent">streamed.</span></h2>
+    <p class="section-intro">
+      With every step labelled, the Synthesizer composes the final user-facing
+      reply. It's the only stage that writes plain prose (every other stage
+      speaks JSON). The output is streamed token-by-token to the terminal.
+    </p>
+
+    <ol class="points">
+      <li><strong>Input:</strong> the full list of <code>step_results</code> (agent name, task, raw output, status) plus the original user message.</li>
+      <li><strong>System prompt:</strong> "present the actual content fully, don't summarise it away, and if any step partially ran, say exactly what was completed and what was skipped."</li>
+      <li><strong>Streaming:</strong> tokens arrive over the network and are printed live — no perceived "stuck" gap between the last agent finishing and the user seeing a reply.</li>
+      <li><strong>Dedup pass (<code>_dedup_reply</code>):</strong> removes accidental repeated paragraphs some models emit on long syntheses. Defensive, rarely triggers.</li>
+      <li><strong>Persistence:</strong> reply is stored in <code>conversations.db</code> under the thread, ready for next turn / <code>--resume</code>.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     PERSISTENCE
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">Where state lives</div>
+    <h2>One DB, one summary, <span class="accent">one vector store.</span></h2>
+    <p class="section-intro">
+      Three things outlive a single request. Knowing where each lives makes
+      session switching, <code>--resume</code>, and memory recall stop feeling
+      like magic.
+    </p>
+
+    <div class="grid grid-3">
+      <div class="card">
+        <h3>conversations.db</h3>
+        <div class="sub">sessions/conversations.db</div>
+        <p>One shared SQLite file, accessed via <code>aiosqlite</code>. Rows are keyed by <code>thread</code> — a session is just a thread name. Switching <code>/session</code> is a string change, not a DB swap.</p>
+      </div>
+      <div class="card">
+        <h3>Rolling summary</h3>
+        <div class="sub">in-engine + same DB</div>
+        <p>Each thread has a single text summary covering everything older than the recent verbatim window. Recomputed (one LLM call) only when the window overflows <code>recent_tokens</code> — typically once every several turns, not every turn.</p>
+      </div>
+      <div class="card">
+        <h3>mem0 + Chroma</h3>
+        <div class="sub">~/.anet/memory/</div>
+        <p>Long-term facts. mem0 reads the recent conversation every <span class="kbd">incremental_interval = 5</span> turns (and once on clean exit), extracts durable facts, de-duplicates, and writes to a local Chroma DB with on-device fastembed embeddings.</p>
+      </div>
+    </div>
+
+    <pre class="code"><span class="lbl">engine.py — when extraction fires</span><span class="k">if</span> interval &gt; <span class="n">0</span> <span class="k">and</span> n % interval == <span class="n">0</span>:
+    <span class="k">async def</span> _extract(snap=messages_snap, tid=thread_id):
+        <span class="k">await</span> asyncio.to_thread(memory_store.add_conversation, snap[-<span class="n">30</span>:], run_id=tid)
+    asyncio.create_task(_extract())   <span class="c"># fire-and-forget; turn returns immediately</span></pre>
+
+    <p>
+      The extraction runs in a background thread (mem0 is sync) so the user's
+      next prompt isn't blocked by an LLM call they didn't ask for. If
+      extraction fails or the model is unreachable, the turn just doesn't
+      get extracted — no error reaches the user.
+    </p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     SAFETY CONSTANTS
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">The constants that bound everything</div>
+    <h2>Five numbers <span class="accent">that hold the line.</span></h2>
+    <p class="section-intro">
+      ANet's safety isn't policy text — it's hard caps in code, low enough
+      that a runaway loop hits one of them in seconds, not minutes.
+    </p>
+
+    <table class="tbl">
+      <thead><tr><th>Constant</th><th>Default</th><th>What it bounds</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">_MAX_RETRIES</td><td>3</td><td>How many times a single step can come back <span class="badge partial">partial</span> before the engine moves on.</td></tr>
+        <tr><td class="mono">agent.max_steps</td><td>research 10, code 60, file 25, computer 20, checker 8</td><td>Per-agent cap on tool calls inside one step's agentic loop.</td></tr>
+        <tr><td class="mono">cycle threshold</td><td>3 identical writes in a sliding window</td><td>If the same write tool + args repeats 3×, the loop stops.</td></tr>
+        <tr><td class="mono">spawn_tool depth</td><td>2</td><td>One agent can spawn another, but not infinite delegation.</td></tr>
+        <tr><td class="mono">incremental_interval</td><td>5</td><td>Turns between mem0 fact-extraction passes.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>Read together:</strong> the worst case for a runaway is bounded
+      by <em>max_steps × _MAX_RETRIES</em> tool calls per step, with cycle
+      detection killing anything that repeats. There is no path to "ANet
+      burned $200 overnight."
+    </div>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     WORKED EXAMPLE AT LEVEL 2 DEPTH
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">A worked example, revisited</div>
+    <h2>The same request, <span class="accent">with the data shown.</span></h2>
+    <p class="section-intro">
+      Same prompt as Level 1. This time we'll show the actual JSON the
+      Planner emits, the gate prompts that appear, and the Checker's verdict
+      at each hand-off.
+    </p>
+
+    <div class="request-box">
+      <div class="request-label">You type into the terminal:</div>
+      <p class="request-text">
+        "Search the web for the top 5 most starred Python repositories on GitHub
+        right now. Write a Python script that fetches their README (first 500
+        chars) via the GitHub API and saves a <code>report.json</code> with
+        name, stars, and readme snippet for each. Write a test that validates
+        the JSON structure and that all 5 entries exist. Run it, fix any
+        failures, re-run until clean. Then send the final
+        <code>report.json</code> contents as a formatted message to a Telegram bot."
+      </p>
+    </div>
+
+    <!-- ─────────────────────────────────────── -->
+    <h3 class="sub-header"><span class="num">Step 1</span>The Planner's JSON output.</h3>
+    <p>
+      The Manager LLM runs once and emits the following — this is what
+      <code>engine._plan()</code> returns and what the Executor consumes:
+    </p>
+
+    <pre class="code"><span class="lbl">Planner output for this request</span>{
+  <span class="p">"type"</span>: <span class="s">"plan"</span>,
+  <span class="p">"steps"</span>: [
+    {
+      <span class="p">"id"</span>:               <span class="n">1</span>,
+      <span class="p">"agent"</span>:            <span class="s">"research_agent"</span>,
+      <span class="p">"task"</span>:             <span class="s">"Find the top 5 most starred Python repositories on GitHub right now. Return name + star count for each."</span>,
+      <span class="p">"success_criteria"</span>: <span class="s">"5 repositories returned with names and star counts"</span>,
+      <span class="p">"check"</span>:            <span class="k">null</span>,
+      <span class="p">"depends_on"</span>:       [],
+      <span class="p">"wait_for_async"</span>:   <span class="k">false</span>
+    },
+    {
+      <span class="p">"id"</span>:               <span class="n">2</span>,
+      <span class="p">"agent"</span>:            <span class="s">"code_agent"</span>,
+      <span class="p">"task"</span>:             <span class="s">"Using the 5 repos from step 1, write fetch_report.py (fetches each README via the GitHub API, takes the first 500 chars, saves report.json with name/stars/readme), write test_report.py that validates the JSON structure and all 5 entries exist, run pytest, fix any failures, re-run until all green."</span>,
+      <span class="p">"success_criteria"</span>: <span class="s">"report.json exists with 5 entries and pytest exits 0"</span>,
+      <span class="p">"check"</span>:            <span class="k">null</span>,
+      <span class="p">"depends_on"</span>:       [<span class="n">1</span>],
+      <span class="p">"wait_for_async"</span>:   <span class="k">false</span>
+    },
+    {
+      <span class="p">"id"</span>:               <span class="n">3</span>,
+      <span class="p">"agent"</span>:            <span class="s">"tele_agent"</span>,
+      <span class="p">"task"</span>:             <span class="s">"Read report.json from the project root, format the contents as a Markdown summary (one bullet per repo with name, stars, snippet), send it to the configured Telegram chat."</span>,
+      <span class="p">"success_criteria"</span>: <span class="s">"Result must contain 'message_id' confirming Telegram delivery"</span>,
+      <span class="p">"check"</span>:            <span class="k">null</span>,
+      <span class="p">"depends_on"</span>:       [<span class="n">2</span>],
+      <span class="p">"wait_for_async"</span>:   <span class="k">false</span>
+    }
+  ]
+}</pre>
+
+    <p>
+      Notice <code>depends_on</code>: <code>[1]</code> on step 2 and
+      <code>[2]</code> on step 3 — purely sequential. The Executor's first
+      "ready set" scan finds only step 1; step 2 unlocks when step 1 is
+      <span class="badge success">success</span>; step 3 unlocks when step 2 is.
+      That <code>tele_agent</code> success criterion mentioning
+      <code>message_id</code> isn't accidental — it's the
+      TELEGRAM-TASKS rule baked into the Planner prompt.
+    </p>
+
+    <!-- DAG render with checker -->
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 1000 460" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Execution timeline for the example showing each step gated by the Checker">
+        <defs>
+          <linearGradient id="t-research" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"  stop-color="#8B5CF6"/><stop offset="100%" stop-color="#6D28D9"/>
+          </linearGradient>
+          <linearGradient id="t-code" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"  stop-color="#3B82F6"/><stop offset="100%" stop-color="#1D4ED8"/>
+          </linearGradient>
+          <linearGradient id="t-check" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"  stop-color="#FF6B35"/><stop offset="100%" stop-color="#C2410C"/>
+          </linearGradient>
+          <linearGradient id="t-tele" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"  stop-color="#22c55e"/><stop offset="100%" stop-color="#15803d"/>
+          </linearGradient>
+          <marker id="t-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#9ca3af"/>
+          </marker>
+        </defs>
+
+        <!-- timeline axis label -->
+        <text x="40" y="32" fill="#6b7280" font-size="11" letter-spacing="0.15em">TIME ─→</text>
+
+        <!-- Step 1: research -->
+        <g class="dag-node">
+          <rect x="60" y="70" width="220" height="70" rx="12" fill="url(#t-research)"/>
+          <text x="170" y="98" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">step 1 · research_agent</text>
+          <text x="170" y="118" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="11">5 repos {name, stars}</text>
+        </g>
+        <!-- check 1 -->
+        <g class="dag-node">
+          <rect x="300" y="80" width="120" height="50" rx="10" fill="url(#t-check)"/>
+          <text x="360" y="100" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">checker</text>
+          <text x="360" y="118" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="11">success ✓</text>
+        </g>
+        <line x1="280" y1="105" x2="298" y2="105" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#t-arrow)"/>
+
+        <!-- Step 2: code (with internal iterations) -->
+        <g class="dag-node">
+          <rect x="60" y="180" width="420" height="100" rx="12" fill="url(#t-code)"/>
+          <text x="270" y="210" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">step 2 · code_agent (agentic loop)</text>
+          <text x="270" y="232" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="11">edit fetch_report.py → gate y → edit test_report.py → gate y → shell pytest → gate y → FAIL</text>
+          <text x="270" y="250" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="11">→ grep_tool (read) → edit (fix slice) → gate y → shell pytest → gate y → PASS</text>
+          <text x="270" y="268" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="10">7 tool calls · 1 internal iteration · within max_steps=60</text>
+        </g>
+        <!-- check 2 -->
+        <g class="dag-node">
+          <rect x="500" y="200" width="120" height="60" rx="10" fill="url(#t-check)"/>
+          <text x="560" y="225" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">checker</text>
+          <text x="560" y="245" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="11">success ✓</text>
+        </g>
+        <line x1="480" y1="230" x2="498" y2="230" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#t-arrow)"/>
+
+        <!-- Step 3: tele -->
+        <g class="dag-node">
+          <rect x="60" y="320" width="420" height="70" rx="12" fill="url(#t-tele)"/>
+          <text x="270" y="348" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">step 3 · tele_agent</text>
+          <text x="270" y="368" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="11">file_tool(read_file report.json) → tele_tool(send_message) → message_id 1283</text>
+        </g>
+        <!-- check 3 -->
+        <g class="dag-node">
+          <rect x="500" y="335" width="120" height="50" rx="10" fill="url(#t-check)"/>
+          <text x="560" y="355" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">checker</text>
+          <text x="560" y="373" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="11">success ✓ (msg_id ✓)</text>
+        </g>
+        <line x1="480" y1="360" x2="498" y2="360" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#t-arrow)"/>
+
+        <!-- vertical sequence arrows -->
+        <line x1="170" y1="140" x2="170" y2="175" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#t-arrow)" stroke-dasharray="3 3"/>
+        <line x1="270" y1="280" x2="270" y2="315" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#t-arrow)" stroke-dasharray="3 3"/>
+
+        <!-- Synth box -->
+        <g class="dag-node">
+          <rect x="660" y="200" width="300" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.25)"/>
+          <text x="810" y="232" text-anchor="middle" fill="#e6e9ef" font-size="14" font-weight="700">Synthesizer</text>
+          <text x="810" y="254" text-anchor="middle" fill="#9ca3af" font-size="11">reads all 3 step_results</text>
+          <text x="810" y="272" text-anchor="middle" fill="#9ca3af" font-size="11">streams plain-prose reply</text>
+          <text x="810" y="288" text-anchor="middle" fill="#9ca3af" font-size="11">persists to conversations.db</text>
+        </g>
+        <line x1="620" y1="250" x2="658" y2="250" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#t-arrow)"/>
+      </svg>
+    </div>
+
+    <!-- ─────────────────────────────────────── -->
+    <h3 class="sub-header"><span class="num">Step 2</span>What the gate actually says.</h3>
+    <p>
+      Inside <code>code_agent</code>'s loop, every <code>edit_tool</code> and
+      every <code>shell_tool</code> call hits <code>_needs_confirm</code> and
+      stops to ask. In your terminal you'd see something like:
+    </p>
+
+    <pre class="code"><span class="lbl">Confirmation gate (terminal view)</span><span class="b">edit_tool</span> wants to write fetch_report.py
+  + 47 lines, - 0 lines  ·  full diff:
+  + import requests, json
+  + ...
+[<span class="k">y</span>] yes  [<span class="k">n</span>] no  [<span class="k">a</span>] all-for-this-step ›
+
+<span class="b">shell_tool</span> wants to run: <span class="s">pytest test_report.py -q</span>
+  cwd: /home/you/project
+[<span class="k">y</span>] yes  [<span class="k">n</span>] no  [<span class="k">a</span>] all-for-this-step ›</pre>
+
+    <p>
+      Press <code>a</code> on the first edit and you won't be asked again for
+      that step — useful when you trust the agent on this run but not the
+      next one. The "all" scope is one step, not one session.
+    </p>
+
+    <!-- ─────────────────────────────────────── -->
+    <h3 class="sub-header"><span class="num">Step 3</span>The Checker's verdicts, one by one.</h3>
+
+    <div class="ex-step research">
+      <div class="marker">1</div>
+      <div class="body">
+        <h4>After step 1 (research) <span class="agent-tag">research_agent</span></h4>
+        <p>Result: a JSON-ish list of 5 repos with names and star counts. Implicit check (no <code>check</code> declared).</p>
+        <p><strong>Checker reads:</strong> the task, the success criteria ("5 repositories returned"), the result. Sees 5 entries. <strong>Verdict:</strong> <span class="badge success">success</span>. Step 2 unlocks.</p>
+      </div>
+    </div>
+
+    <div class="ex-step code">
+      <div class="marker">2</div>
+      <div class="body">
+        <h4>After step 2 (code) <span class="agent-tag">code_agent</span></h4>
+        <p>Result: "report.json saved, pytest exited 0 (4 passed)". Internal iterations not visible to the Checker — only the final agent output.</p>
+        <p><strong>Checker reads:</strong> success_criteria says "report.json exists with 5 entries and pytest exits 0". Output confirms both. <strong>Verdict:</strong> <span class="badge success">success</span>. Step 3 unlocks.</p>
+        <p style="opacity:0.75"><em>Counter-factual:</em> if the agent had said "I wrote the script but the tests are still failing", the verdict would be <span class="badge partial">partial</span> — Executor would re-run step 2 with the Checker's adjustment, up to <span class="kbd">_MAX_RETRIES = 3</span> total attempts.</p>
+      </div>
+    </div>
+
+    <div class="ex-step tele">
+      <div class="marker">3</div>
+      <div class="body">
+        <h4>After step 3 (telegram) <span class="agent-tag">tele_agent</span></h4>
+        <p>Result: "Sent — message_id 1283".</p>
+        <p><strong>Checker reads:</strong> success_criteria explicitly requires <code>message_id</code> in the result string. Found. <strong>Verdict:</strong> <span class="badge success">success</span>. No steps remaining.</p>
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────────────── -->
+    <h3 class="sub-header"><span class="num">Step 4</span>The Synthesizer composes a reply.</h3>
+    <p>
+      The Synthesizer gets <code>step_results = [r1, r2, r3]</code> — each
+      with <code>agent</code>, <code>task</code>, <code>output</code>,
+      <code>status</code>. Its system prompt tells it to present the actual
+      content rather than just announce that work happened. Tokens stream live:
+    </p>
+
+    <div class="output-box">
+      <div class="output-label">ANet replies in your terminal:</div>
+      <p class="output-text">
+        Done. Pulled the top 5 starred Python repos
+        (<code>public-apis/public-apis</code>, <code>vinta/awesome-python</code>,
+        <code>donnemartin/system-design-primer</code>,
+        <code>TheAlgorithms/Python</code>, <code>jackfrued/Python-100-Days</code>).
+        Wrote <code>fetch_report.py</code> and <code>test_report.py</code>.
+        First test run failed (snippet length), fixed the slice to
+        <code>readme[:500]</code> and re-ran — 4 tests passing.
+        <code>report.json</code> saved at the project root, and the formatted
+        summary was sent to your Telegram bot (message_id 1283).
+      </p>
+    </div>
+
+    <!-- ─────────────────────────────────────── -->
+    <h3 class="sub-header"><span class="num">Step 5</span>What got persisted.</h3>
+    <ul>
+      <li><strong>conversations.db</strong> — your request and ANet's reply, both stamped with this session's <code>thread</code>.</li>
+      <li><strong>Rolling summary</strong> — unchanged this turn (window didn't overflow); will update later when it does.</li>
+      <li><strong>mem0</strong> — extraction fires every 5 turns, so depending on where you are in the session, this turn may not write anything new. If it does, expect a fact like <em>"User is interested in tracking top starred Python repos and uses a Telegram bot for delivery."</em></li>
+    </ul>
+
+    <div class="callout">
+      <strong>That's the entire Level 2 picture.</strong> Same example, same
+      four stages — but now you can see the JSON shape, the gate prompt, the
+      verdict logic, and what each stage actually returns to the next.
+    </div>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     RECAP
+     ──────────────────────────────────────────────────────────────── -->
+<section class="reveal">
+  <div class="container">
+    <div class="eyebrow">Level 2 recap</div>
+    <h2>The deep cuts, <span class="accent">in five.</span></h2>
+
+    <ol class="points">
+      <li><strong>The Planner emits one of two JSON shapes</strong> — <code>simple</code> or <code>plan</code>. Each step is a 7-field record: id, agent, task, success_criteria, check, depends_on, wait_for_async.</li>
+      <li><strong>The Executor is a ready-set + asyncio.gather loop.</strong> Independent steps run concurrently; dependents wait. Retries cap at <span class="kbd">_MAX_RETRIES = 3</span>.</li>
+      <li><strong>The Orchestrator runs each step.</strong> It dispatches to the agent's provider, intercepts every tool call, runs it through the per-tool/per-action confirmation policy, and feeds the result back. Bounded by <code>max_steps</code> and the cycle detector.</li>
+      <li><strong>The Checker has two flavours:</strong> deterministic (<code>check_window</code>/<code>check_path</code>/<code>check_process</code>) when the Planner pre-declared one, LLM-judged otherwise. Three verdicts: success / partial / failure.</li>
+      <li><strong>State is small and shared.</strong> One <code>conversations.db</code> keyed by thread, one per-thread rolling summary, one local mem0 store that extracts facts every 5 turns.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────────
+     FOOTER
+     ──────────────────────────────────────────────────────────────── -->
+<footer>
+  <div class="container">
+    <p>That's the engine with its hood up.</p>
+    <p>Level 3 will go all the way down — actual function names, the exact prompt strings, the cycle-detector data structure, the mem0 categories schema, and the same example traced through with real <code>step_results</code> objects.</p>
+    <a href="../l3/index.html" class="next-link">Level 3 — Code-deep →</a>
+    <p style="margin-top: 30px; font-size: 12px;">ANet · architecture/docs/l2/level2.html</p>
+  </div>
+</footer>
+
+<script>
+  /* Scroll progress bar */
+  const progress = document.getElementById('progress');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+    progress.style.width = pct + '%';
+  });
+
+  /* Reveal-on-scroll */
+  const io = new IntersectionObserver(
+    entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('visible');
+          io.unobserve(e.target);
+        }
+      });
+    },
+    { threshold: 0.12 }
+  );
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+
+</body>
+</html>

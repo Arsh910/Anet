@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>1a · engine.py — Setup · ANet L3</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="topbar">
+  <div class="container">
+    <div class="row">
+      <div class="crumbs">
+        <a href="../index.html">L3 index</a>
+        <span class="sep">/</span>
+        <a href="1_engine.html">01 · engine.py</a>
+        <span class="sep">/</span>
+        <span style="color: #86efac;">1a · setup</span>
+      </div>
+      <div class="nav-links">
+        <a href="1_engine.html">← prev</a>
+        <a href="1b_helpers.html">next →</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="container">
+    <span class="eyebrow">engine.py · section 1 of 5</span>
+    <h1>Imports, constants, SOUL.</h1>
+    <p class="lede">
+      Lines 1–36. Boring on the surface, load-bearing in practice. This is
+      where the file declares its dependencies, sets two constants the rest
+      of the file leans on, and reads <code>SOUL.md</code> exactly once so
+      it can be injected into every planner prompt without re-reading the
+      file each turn.
+    </p>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>The module docstring <span class="lineno">lines 1–7</span></h2>
+
+<pre class="code"><span class="lbl">engine.py:1–7</span><span class="ln"><span class="s">"""</span></span><span class="ln"><span class="s">engine.py — Pure-Python replacement for graph_builder.py + LangGraph StateGraph.</span></span><span class="ln"></span><span class="ln"><span class="s">Same planner → executor → checker → synthesizer pipeline, implemented as</span></span><span class="ln"><span class="s">async methods on the Engine class. No LangGraph, no LangChain.</span></span><span class="ln"><span class="s">Messages are plain dicts {"role": "user"|"assistant", "content": str}.</span></span><span class="ln"><span class="s">"""</span></span></pre>
+
+    <div class="note">
+      <strong>What this tells you up front:</strong>
+      <ul>
+        <li><strong>"Pure-Python replacement"</strong> — this file used to be a LangGraph <code>StateGraph</code>. It isn't anymore. There's no framework hiding control flow; everything you see runs in plain <code>async</code>/<code>await</code>.</li>
+        <li><strong>"No LangGraph, no LangChain"</strong> — load-bearing in the README's "no framework lock-in" claim. Confirming it here in the file's own docstring matters: a future contributor who reaches for LangChain's <code>RunnableSequence</code> should pause.</li>
+        <li><strong>"Messages are plain dicts"</strong> — the entire engine speaks one shape: <code>{"role": "user"|"assistant", "content": str}</code>. No Pydantic models, no custom classes. This is what makes the conversation cheap to serialise into <code>conversations.db</code> and easy to pass to any provider's SDK.</li>
+      </ul>
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>Standard-library imports <span class="lineno">lines 9–17</span></h2>
+
+<pre class="code"><span class="lbl">engine.py:9–17</span><span class="ln"><span class="k">import</span> asyncio</span><span class="ln"><span class="k">import</span> hashlib</span><span class="ln"><span class="k">import</span> json</span><span class="ln"><span class="k">import</span> os</span><span class="ln"><span class="k">import</span> re</span><span class="ln"><span class="k">import</span> sys</span><span class="ln"><span class="k">from</span> dataclasses <span class="k">import</span> dataclass, field</span><span class="ln"><span class="k">from</span> datetime <span class="k">import</span> datetime</span><span class="ln"><span class="k">from</span> pathlib <span class="k">import</span> Path</span></pre>
+
+    <div class="note">
+      <strong>Each one earns its keep:</strong>
+      <table class="tbl">
+        <thead><tr><th>Module</th><th>Used for</th></tr></thead>
+        <tbody>
+          <tr><td><code>asyncio</code></td><td>The whole pipeline is async; used directly for <code>gather</code>, <code>create_task</code>, and <code>to_thread</code> (mem0 is sync — we shove it into a thread so the turn returns).</td></tr>
+          <tr><td><code>hashlib</code></td><td>Just one use: <code>_cache_key()</code> hashes a task string to make a stable cache key for the in-memory result cache.</td></tr>
+          <tr><td><code>json</code></td><td>Parsing the planner's output — the planner only ever returns JSON.</td></tr>
+          <tr><td><code>os</code></td><td>Reading env vars (<code>ASSISTANT_NAME</code>, the provider API keys).</td></tr>
+          <tr><td><code>re</code></td><td>Used by <code>_extract_json</code> to dig a JSON object out of a model reply that wrapped it in <code>```json</code> fences.</td></tr>
+          <tr><td><code>sys</code></td><td>Printing diagnostics to <code>stderr</code> — never to <code>stdout</code>, because the TUI writes there.</td></tr>
+          <tr><td><code>dataclasses</code></td><td>Only used once: the tiny <code>EngineResult</code> at line 458.</td></tr>
+          <tr><td><code>datetime</code></td><td>Time-stamping the planner prompt with <em>"current date and time"</em> so the model can answer "what's the latest X".</td></tr>
+          <tr><td><code>pathlib.Path</code></td><td>Filesystem paths, naturally.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note info">
+      <strong>Imported but trim:</strong> note that <code>Path</code>,
+      <code>field</code>, and <code>re</code> each have only one or two call
+      sites in the file. They're imported at the top anyway because the
+      cost is zero and the search-and-find experience for a future reader
+      is much better when imports live where you expect them.
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>The third-party + intra-package imports <span class="lineno">lines 19–22</span></h2>
+
+<pre class="code"><span class="lbl">engine.py:19–22</span><span class="ln"><span class="k">from</span> openai <span class="k">import</span> AsyncOpenAI</span><span class="ln"></span><span class="ln"><span class="k">from</span> anet.core <span class="k">import</span> orchestrator</span><span class="ln"><span class="k">from</span> anet.core.context <span class="k">import</span> on_status <span class="k">as</span> _status_var, on_token <span class="k">as</span> _token_var, is_cancelled <span class="k">as</span> _is_cancelled</span></pre>
+
+    <div class="note">
+      <strong>Three imports, three distinct roles:</strong>
+      <ul>
+        <li><strong><code>AsyncOpenAI</code></strong> — the <em>only</em> LLM SDK engine.py touches directly, used solely for the manager call (planner + synthesizer). Worker-agent calls go through <code>orchestrator → agent_runner</code>, which handles Anthropic and Vertex as well. The manager is always OpenAI-compatible (OpenRouter / Google / OpenAI / Vertex via OpenAI compat) — see <code>_MANAGER_PROVIDERS</code> in chapter 1b.</li>
+        <li><strong><code>orchestrator</code></strong> — the agentic loop that runs one step. Engine.py never calls into a model directly for agent work; every step is shipped off to <code>orchestrator.run(...)</code>. Covered fully in <strong>chapter 02</strong>.</li>
+        <li><strong><code>on_status</code>, <code>on_token</code>, <code>is_cancelled</code></strong> — three <code>ContextVar</code>-style hooks defined in <code>anet/core/context.py</code> (chapter 16). They let the engine emit status updates ("manager: planning…") and token streams to whatever UI is listening, and check if the user pressed ESC, <em>without</em> the engine knowing anything about the UI. The underscore-prefix + <code>as</code>-rename makes it clear these are private-by-convention re-exports for use only inside this file.</li>
+      </ul>
+    </div>
+
+    <div class="note warn">
+      <strong>The decoupling matters:</strong> these three context vars are
+      the entire interface between engine and CLI. Swap the CLI for a web
+      UI (the planned <code>anet-server</code>) and engine doesn't change a
+      line — only the UI's <code>on_status</code>/<code>on_token</code>
+      handlers do.
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>Two constants <span class="lineno">lines 24–25</span></h2>
+
+<pre class="code"><span class="lbl">engine.py:24–25</span><span class="ln">_MAX_RETRIES    = <span class="n">3</span></span><span class="ln">_ASSISTANT_NAME = os.getenv(<span class="s">"ASSISTANT_NAME"</span>, <span class="s">"Anet"</span>)</span></pre>
+
+    <div class="note">
+      <strong><code>_MAX_RETRIES = 3</code></strong> — the entire reason the
+      engine can't run away. Every <em>partial</em> verdict from the checker
+      bumps an <code>attempts</code> counter; when <code>attempts >= 3 - 1</code>
+      the step is forced to advance even if the verdict is still partial.
+      We meet this constant again in chapter 1e's <code>_check</code>
+      method, but it's declared here so the bound is visible at the top of
+      the file. Changing it to <code>5</code> here would change the engine's
+      patience globally — no other file needs editing.
+    </div>
+
+    <div class="note">
+      <strong><code>_ASSISTANT_NAME</code></strong> — defaults to
+      <code>"Anet"</code>, but can be overridden with the
+      <code>ASSISTANT_NAME</code> env var so a forked deployment can rebrand
+      without touching code. It's injected into the planner and synthesizer
+      prompts ("You are Anet, an AI assistant…").
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>Loading <code>SOUL.md</code> once <span class="lineno">lines 27–36</span></h2>
+
+<pre class="code"><span class="lbl">engine.py:27–36</span><span class="ln"><span class="c"># ── Soul (loaded once at import, injected into manager prompts) ───────────────</span></span><span class="ln"></span><span class="ln"><span class="k">def</span> <span class="b">_load_soul_once</span>() <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    <span class="k">try</span>:</span><span class="ln">        <span class="k">from</span> anet.core.config_loader <span class="k">import</span> load_soul</span><span class="ln">        <span class="k">return</span> load_soul()</span><span class="ln">    <span class="k">except</span> <span class="b">Exception</span>:</span><span class="ln">        <span class="k">return</span> <span class="s">""</span></span><span class="ln"></span><span class="ln">_SOUL = _load_soul_once()</span></pre>
+
+    <div class="note">
+      <strong>Why "loaded once":</strong> <code>SOUL.md</code> is the active
+      pack's persona file — a few hundred bytes of free-form text that gets
+      glued into the system prompt every turn. Reading the file from disk
+      every <code>_plan()</code> call would be wasteful and would also make
+      hot-reloading unpredictable. Reading it once at <strong>import
+      time</strong> means:
+      <ul>
+        <li>It's loaded before <code>run_turn</code> ever runs (zero per-turn cost).</li>
+        <li>If <code>SOUL.md</code> doesn't exist (pack without one), <code>load_soul()</code> raises, we swallow the exception, and <code>_SOUL = ""</code> — every downstream check is just <code>if _SOUL</code>.</li>
+        <li>Switching packs via <code>/changepack</code> requires <em>rebuilding the engine</em> (which re-imports nothing — but reload of config <em>is</em> triggered). The CLI handles this; engine.py treats <code>_SOUL</code> as immutable for the lifetime of the engine instance.</li>
+      </ul>
+    </div>
+
+    <div class="note warn">
+      <strong>The bare-<code>except Exception</code></strong> looks lazy but
+      is deliberate: this code runs at <em>module import</em>. If it raises,
+      <code>engine.py</code> can't be imported, and the CLI dies before
+      printing anything useful. A silent empty-string fallback is strictly
+      better than a stack trace on startup when the pack hasn't been set up
+      yet (e.g. on first run before <code>~/.anet/</code> is seeded).
+    </div>
+
+    <div class="note info">
+      <strong>Lazy import inside the function:</strong>
+      <code>from anet.core.config_loader import load_soul</code> is inside
+      <code>_load_soul_once()</code>, not at the top. This is the pattern
+      we'll see again and again: top-of-file imports stay minimal (just
+      stdlib + <code>openai</code> + <code>orchestrator</code> + the three
+      context-vars), and anything that touches the workspace is imported
+      lazily so circular imports and partially-initialised states never
+      blow up engine import.
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>What this 36-line section leaves you with</h2>
+    <p class="section-intro">
+      Three things in module scope, ready for the rest of the file to use:
+    </p>
+    <table class="tbl">
+      <thead><tr><th>Symbol</th><th>Type</th><th>Used by</th></tr></thead>
+      <tbody>
+        <tr><td><code>_MAX_RETRIES</code></td><td><code>int = 3</code></td><td><code>_check()</code> (chapter 1e), the executor loop in <code>run_turn()</code></td></tr>
+        <tr><td><code>_ASSISTANT_NAME</code></td><td><code>str</code></td><td>Both prompt builders in chapter 1c</td></tr>
+        <tr><td><code>_SOUL</code></td><td><code>str</code> (may be empty)</td><td>Both prompt builders in chapter 1c</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      Next up: the module-level helpers — the dozen or so functions that
+      live above the Engine class and do all the "glue" work the methods
+      depend on.
+    </p>
+
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="page-nav">
+      <a href="1_engine.html">
+        <span class="dir">← Previous</span>
+        <span class="title">1 · engine.py overview</span>
+      </a>
+      <a class="next" href="1b_helpers.html">
+        <span class="dir">Next →</span>
+        <span class="title">1b · Module-level helpers</span>
+      </a>
+    </div>
+    <p class="meta">ANet · architecture/docs/l3/1engine/1a_setup.html</p>
+  </div>
+</footer>
+
+<script>
+  const progress = document.getElementById('progress');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+    progress.style.width = pct + '%';
+  });
+</script>
+</body>
+</html>

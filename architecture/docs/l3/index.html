@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ANet · Architecture · Level 3 — Code-Deep</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="topbar">
+  <div class="container">
+    <div class="row">
+      <div class="crumbs">
+        <a href="../l1/level1.html">Level 1</a>
+        <span class="sep">/</span>
+        <a href="../l2/level2.html">Level 2</a>
+        <span class="sep">/</span>
+        <span style="color: #86efac;">Level 3 · Code-deep</span>
+      </div>
+      <span class="pill"><span class="dot"></span>Level 3 · Index</span>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="container">
+    <h1>The core, file by file.</h1>
+    <p class="lede">
+      Level 1 gave you the mental model. Level 2 opened the engine's hood.
+      Level 3 is the line-by-line walkthrough of every file in
+      <code>anet/core/</code>, in the order you should read them. Each page is
+      a guided tour: the actual source on the left intent, the reason for
+      every choice on the right.
+    </p>
+
+    <h2>How to read Level 3</h2>
+    <p class="section-intro">
+      Files are ordered <strong>top-down by dependency</strong>: we start with
+      the entry point (<code>engine.py</code>, the file that orchestrates
+      everything else), and each time it imports something we haven't seen,
+      that file becomes the next chapter. By the time you reach
+      <code>paths.py</code> at the bottom, every line in the core makes
+      sense in context.
+    </p>
+
+    <div class="note info">
+      <strong>Each file gets its own folder</strong> with one overview page
+      (<code>N_filename.html</code>) and sub-pages
+      (<code>Na_…, Nb_…</code>) when the file is too long for one screen.
+      The reading order is given by the leading number, the letter sub-orders
+      within a folder.
+    </div>
+
+    <h2>Reading order</h2>
+
+    <div class="grid grid-2" style="margin-top: 20px;">
+
+      <a class="file-card current" href="1engine/1_engine.html">
+        <span class="num">01 · 1141 lines · 6 pages</span>
+        <h3>engine.py</h3>
+        <p>The conductor. Owns the run_turn pipeline: planner → executor → checker → synthesizer. Everything else gets called from here.</p>
+        <div class="lines">overview · setup · helpers · prompts · class · phases</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">02 · 498 lines · planned</span>
+        <h3>orchestrator.py</h3>
+        <p>The agentic loop for one step. Tool dispatch, confirmation gate, cycle detection, memory injection. Called by engine._execute.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">03 · 377 lines · planned</span>
+        <h3>agent_runner.py</h3>
+        <p>One model call. Provider dispatch (OpenAI / Anthropic / Vertex). Tool-call normalisation. The thinnest wrapper around the LLM SDKs.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">04 · 594 lines · planned</span>
+        <h3>memory_store.py</h3>
+        <p>Long-term memory: mem0 + Chroma + fastembed. Classification, standing memories, search, add, delete.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">05 · 636 lines · planned</span>
+        <h3>skill_manager.py</h3>
+        <p>Self-improving skills: search, create, curate. Hooked from engine and orchestrator after complex tasks.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">06 · 286 lines · planned</span>
+        <h3>mcp_loader.py</h3>
+        <p>MCP server lifecycle — launch, list tools, keep alive. Mounts external MCP tools into agents that requested them.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">07 · 203 lines · planned</span>
+        <h3>ex_loader.py</h3>
+        <p>Loads ExTools + ExAgents from <code>exanet.config.yaml</code>. Bridges user-authored Python into the engine's agent/tool dicts.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">08 · 147 lines · planned</span>
+        <h3>extool_validator.py</h3>
+        <p>Validates a new ExTool before it's registered. Used by ToolSmith.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">09 · 99 lines · planned</span>
+        <h3>mcp_doctor.py</h3>
+        <p>Connection test for an MCP server. Used by MCPSmith.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">10 · 53 lines · planned</span>
+        <h3>tool_loader.py</h3>
+        <p>Loads built-in tools from <code>anet/AnetTools/</code> into a tool dict the engine and orchestrator consume.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">11 · 100 lines · planned</span>
+        <h3>store.py</h3>
+        <p>The conversation store. One shared <code>conversations.db</code>, accessed via <code>aiosqlite</code>, keyed by thread.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">12 · 133 lines · planned</span>
+        <h3>context_window.py</h3>
+        <p>Token-budgeted window planning + summary message builder. Owned by engine._maintain_summary.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">13 · 97 lines · planned</span>
+        <h3>config_loader.py</h3>
+        <p>Reads the active pack's YAML configs (<code>anet.config.yaml</code> + <code>exanet.config.yaml</code>). Caches the parsed result.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">14 · 110 lines · planned</span>
+        <h3>workspace.py</h3>
+        <p>Active-pack resolution and per-session workspace paths. Used by the loaders.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">15 · 83 lines · planned</span>
+        <h3>shell_session.py</h3>
+        <p>Tracks the currently active <code>shell_tool</code> session so ESC can interrupt it cleanly.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">16 · 63 lines · planned</span>
+        <h3>context.py</h3>
+        <p>Context-var plumbing: <code>on_status</code>, <code>on_token</code>, <code>is_cancelled</code>. The wiring that lets the engine talk to the UI without coupling to it.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">17 · 37 lines · planned</span>
+        <h3>todo_state.py</h3>
+        <p>Module-level mutable list backing <code>todo_tool</code>. Cleared between steps.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+      <a class="file-card todo" href="#">
+        <span class="num">18 · 231 lines · planned</span>
+        <h3>paths.py</h3>
+        <p>The foundation. Resolves <code>home()</code>, the active pack, default pack, sessions dir, downloads dir. Imported by almost everything else.</p>
+        <div class="lines">coming next</div>
+      </a>
+
+    </div>
+
+    <h2>Total scope</h2>
+    <table class="tbl">
+      <thead>
+        <tr><th>Metric</th><th>Value</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Files in <code>anet/core/</code></td><td class="mono">18</td></tr>
+        <tr><td>Total lines of code</td><td class="mono">~4,888</td></tr>
+        <tr><td>L3 pages planned</td><td class="mono">~40 (1 index + 1–6 per file)</td></tr>
+        <tr><td>Coverage strategy</td><td>Every public function and every non-obvious private one; trivial getters batched.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note">
+      <strong>Currently complete:</strong> the engine.py walkthrough (pages
+      1, 1a, 1b, 1c). The Engine class itself (1d, 1e) and all subsequent
+      files are queued. Open <a href="1engine/1_engine.html" style="color:#86efac;">01 · engine.py overview →</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="page-nav">
+      <a class="disabled" href="#">
+        <span class="dir">← Previous</span>
+        <span class="title">—</span>
+      </a>
+      <a class="next" href="1engine/1_engine.html">
+        <span class="dir">Next →</span>
+        <span class="title">01 · engine.py overview</span>
+      </a>
+    </div>
+    <p class="meta">ANet · architecture/docs/l3/index.html</p>
+  </div>
+</footer>
+
+<script>
+  const progress = document.getElementById('progress');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+    progress.style.width = pct + '%';
+  });
+</script>
+</body>
+</html>
