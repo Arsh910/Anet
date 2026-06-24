@@ -19,12 +19,13 @@ Use any model, per agent. Claude for code, Gemini for research, GPT for planning
 <table>
 <tr><td><b>Multi-agent, multi-model</b></td><td>Five built-in agents (research, code, file, computer, checker) plus your own. Each picks its own model + provider in <code>anet.config.yaml</code>. The manager plans a DAG and runs independent steps in parallel.</td></tr>
 <tr><td><b>Builds its own integrations</b></td><td>The <b>ToolSmith</b> (<code>/newtool</code>), <b>MCPSmith</b> (<code>/addmcp</code>), and <b>AgentSmith</b> (<code>/newagent</code>) scaffold a new tool, MCP server, or agent from your code/description, validate it, then wire it into the agents you pick — editing only <code>exanet.config.yaml</code>, never the core.</td></tr>
-<tr><td><b>Shareable packs</b></td><td>Your whole setup — tools, agents, skills, MCP wiring, persona — is one folder. <b>PackSmith</b> (<code>/packsmith share</code>) bundles it into a zip (secrets stripped, README written); anyone runs <code>/packsmith add</code> + <code>/changepack</code> to get your exact setup. Switch between packs anytime.</td></tr>
+<tr><td><b>Shareable packs</b></td><td>Your whole setup — tools, agents, skills, MCP wiring, persona, <b>and its color theme</b> — is one folder. <b>PackSmith</b> (<code>/packsmith share</code>) bundles it into a zip (secrets stripped, README written); anyone runs <code>/packsmith add</code> + <code>/changepack</code> to get your exact setup. Switch between packs anytime.</td></tr>
+<tr><td><b>Themed, per pack</b></td><td>Pick a color theme with <code>/theme</code> (cyan · emerald · amber · violet · crimson · matrix · mono). The theme is stored <em>in the pack</em>, so different packs wear different colors — you can tell which workspace you're in at a glance, and the theme ships when you share the pack.</td></tr>
 <tr><td><b>Safe by default</b></td><td>Every shell command, file edit, and destructive file op pauses for explicit <code>y/n/a</code> approval. Per-agent step caps and cycle detection stop runaways.</td></tr>
 <tr><td><b>Remembers you</b></td><td>Long-term memory via <a href="https://github.com/mem0ai/mem0">mem0</a> — a local vector store (Chroma) with on-device embeddings (fastembed); your LLM extracts and de-duplicates the salient facts as you work, so it knows your stack and preferences next time. No server, no hosted service. See <code>/profile</code>.</td></tr>
 <tr><td><b>Learns from experience</b></td><td>After a complex, self-corrected task it writes a reusable <b>skill</b>; relevant skills are injected into future tasks, and a Curator improves them over time.</td></tr>
 <tr><td><b>Real developer tooling</b></td><td>Built in: LSP code intelligence (go-to-def, rename, references), ripgrep search, ruff/pyright/eslint diagnostics, git conflict resolution. Plug in any MCP server for more (e.g. a code-graph or browser server).</td></tr>
-<tr><td><b>A real terminal UI</b></td><td>Animated banner, slash-command autocomplete, live status spinner, session switching, <code>Ctrl+O</code> to watch/answer a running shell command, and <code>ESC</code> to interrupt.</td></tr>
+<tr><td><b>A real terminal UI</b></td><td>Animated banner, slash-command autocomplete, a live working animation, and <b>menu-driven commands</b> — arrow-key / clickable selection lists for sessions, packs, themes, settings and the smiths. <code>Ctrl+O</code> watches/answers a running shell command; <code>ESC</code> interrupts a task or backs out of a menu.</td></tr>
 </table>
 
 ---
@@ -99,26 +100,30 @@ You: open notepad and type today's AI headlines
 
 ## Command reference
 
+Every command is **menu-driven**: run it bare and ANet guides you — an arrow-key
+selection list (`↑/↓`, Enter, Esc to go back, clickable) when there are options, or a
+labelled prompt when it needs a path/description. Typing the argument inline still works.
+
 | Command | What it does |
 |---|---|
 | `/agents` · `/tools` · `/mcps` | Show loaded agents / tools / MCP servers |
-| `/settings` | Edit config — pick what to open: keys · models/providers · tools/agents · an agent's prompt · persona |
-| `/keys` | Shortcut straight to your API keys (same as `/settings` → 1) |
+| `/settings` | Config menu → keys · models/providers · tools/agents · an agent's prompt · persona · theme |
+| `/theme` | Pick a color theme (per-pack — see below); `/theme <name>` to set directly |
+| `/keys` | Shortcut straight to your API keys |
 | `/skills` | List saved skills with usage counts |
 | `/profile` | Show what Anet remembers about you (long-term memory) |
-| `/sessions` · `/sessions <number>` · `/new` | List sessions · switch to one by number · start fresh |
+| `/sessions` | Pick a past session to resume (shows title + message count); `/new` starts fresh |
 | `/forget` · `/compress` | Trim or summarise old context |
-| `/newtool <path>` | **ToolSmith** — scaffold, validate + register a new ExTool |
-| `/newagent <description>` | **AgentSmith** — design + register a new agent |
-| `/addmcp <path>` | **MCPSmith** — draft, connect-test + register an MCP server |
-| `/mcptest <name>` | Connect-test an MCP server |
-| `/packsmith new <name>` | **PackSmith** — create a blank pack and switch to it |
-| `/packsmith share <path?>` · `/packsmith add <zip>` | **PackSmith** — bundle your setup to share, or install someone's |
-| `/changepack <name?>` | Switch the active pack (your workspace) |
+| `/newtool` | **ToolSmith** — prompts for a code path, then scaffolds, validates + registers an ExTool |
+| `/newagent` | **AgentSmith** — prompts for a description, then designs + registers an agent |
+| `/addmcp` | **MCPSmith** — prompts for a repo/README path, drafts + connect-tests + registers an MCP server |
+| `/mcptest` | Connect-test an MCP server (pick from the pack's configured servers) |
+| `/packsmith` | **PackSmith** menu → **new** (blank pack) · **share** (bundle to a zip) · **add** (install a zip) |
+| `/changepack` | Switch the active pack (pick from a list) |
 | `/clear` | Clear the screen and redraw the startup view |
 | `/help` | Show the command list |
 | `Ctrl+O` | View the running shell command live — and type input to answer any prompt it raises |
-| `ESC` | Stop the running task, return to the prompt |
+| `ESC` | Stop the running task; in a menu/prompt, cancel and go back |
 | `exit` / `quit` | End the session (runs a final memory pass) |
 
 ---
@@ -179,9 +184,9 @@ Add your own tools, agents, MCP servers, and skills **without touching the core 
 
 | Guide | Add via smith | Add manually |
 |---|---|---|
-| 🔧 **[ExTools](anet_pack/ExTools/README.md)** — custom tools | `/newtool <path>` | `ExTools/<name>/__init__.py` + register in `exanet.config.yaml` |
-| 🤖 **[ExAgents](anet_pack/ExAgents/README.md)** — custom agents | `/newagent <description>` | inline block under `agents:` in `exanet.config.yaml` |
-| 🔌 **[mcps](anet_pack/mcps/README.md)** — MCP servers | `/addmcp <path>` | `mcps/<name>/config.yaml` + wire to an agent |
+| 🔧 **[ExTools](anet_pack/ExTools/README.md)** — custom tools | `/newtool` (prompts for a code path) | `ExTools/<name>/__init__.py` + register in `exanet.config.yaml` |
+| 🤖 **[ExAgents](anet_pack/ExAgents/README.md)** — custom agents | `/newagent` (prompts for a description) | inline block under `agents:` in `exanet.config.yaml` |
+| 🔌 **[mcps](anet_pack/mcps/README.md)** — MCP servers | `/addmcp` (prompts for a repo/README path) | `mcps/<name>/config.yaml` + wire to an agent |
 | 🧠 **[skills](anet_pack/skills/README.md)** — learned procedures | written automatically | drop a `skills/<name>.md` file |
 
 > The smiths now **finish the integration for you**: after creating and validating, they show you the available agents (built-in + your own) and attach the new tool/MCP to the ones you pick (multi-select). They only ever write `exanet.config.yaml` — never `anet.config.yaml` or the core `anet/` package.
