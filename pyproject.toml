@@ -83,5 +83,7 @@ exclude = [
     "tests",
     "ReadmeImages",
     "design",
+    "references",
+    "dist",
     "anet-ui",
 ]
