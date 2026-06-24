@@ -25,18 +25,13 @@ Prereqs: API key.
 **Watch for:** a sub-agent invocation **without** returning to the manager.
 **Pass if:** a spawned research sub-task runs and its result folds into the code summary.
 
-### O4 — Spawn depth limit
-**Prompt:** `spawn an agent that spawns an agent that spawns an agent to count files — show what happens at the limit`
-**Exercises:** spawn depth cap (=2) safety mechanism
-**Pass if:** delegation stops at depth 2 and the system reports/handles the cap (no infinite chain).
-
-### O5 — Checker retry on partial result
+### O4 — Checker retry on partial result
 **Prompt:** `create scratch/report.md that contains BOTH the latest Python version AND the latest Java LTS — verify both are present before finishing`
 **Exercises:** `checker_agent` classifying partial → retry loop
 **Watch for:** if the first attempt misses one, a retry fills it in.
 **Pass if:** final file has both versions; a retry is visible if the first pass was partial.
 
-### O6 — todo_tool across a multi-step plan
+### O5 — todo_tool across a multi-step plan
 **Prompt:** `plan and execute: make scratch/site/ with index.html, style.css, app.js stubs, track each as a todo, and tick them off as you go`
 **Exercises:** `todo_tool` live checklist across a real multi-step build
 **Pass if:** the checklist updates live and all three files exist at the end.

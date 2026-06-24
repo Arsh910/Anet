@@ -377,6 +377,15 @@ CRITICAL — agent routing for file management vs code editing:
   external service). Split those into a separate step for the matching agent, even inside a coding pipeline.
 - NEVER route to file_agent: editing UI, fixing layouts, adding components, modifying source code,
   changing HTML/CSS/JS/Python/TypeScript files, or ANY task inside a software project folder.
+- PRODUCE-A-FILE TASKS (create/write/save a file/report/document containing info that must first be
+  gathered or computed): the plan MUST END with a code_agent step that actually WRITES the file, and
+  that step MUST depends_on (and context_from) the research/gathering steps. research_agent gathers
+  facts but has NO file tools — it can NOT create the file, so a research-only plan will fail.
+  Example — "create report.md with the latest Python and Java versions":
+    step 1 research_agent (find latest Python), step 2 research_agent (find latest Java),
+    step 3 code_agent depends_on:[1,2] context_from:[1,2] "write the report to <path> with both versions".
+  Never end such a task on a research step; never let an agent fake file creation via download_file
+  of a data: URI — that is wrong, the real file must be written by code_agent.
 
 APPROVAL GATE — 3D rendering:
 - If the user asks for a 3D model WITHOUT providing an image path, plan ONLY the
@@ -417,6 +426,14 @@ EXAMPLES:
 → {{"type":"plan","steps":[
   {{"id":1,"agent":"research_agent","task":"Find latest AI news headlines and summaries","success_criteria":"3+ news items returned","check":null,"depends_on":[],"wait_for_async":false}},
   {{"id":2,"agent":"computer_agent","task":"Open Notepad and type the AI news","success_criteria":"Notepad open with news typed","check":{{"action":"check_window","title":"Notepad"}},"depends_on":[1],"wait_for_async":false}}
+]}}
+
+"create C:\\out\\report.md containing the latest Python version and latest Java LTS"
+(research must be GATHERED, then a code_agent step WRITES the file — research_agent has no file tools)
+→ {{"type":"plan","steps":[
+  {{"id":1,"agent":"research_agent","task":"Find the latest stable Python version (number + release date) from python.org","success_criteria":"latest Python version number returned","check":null,"depends_on":[],"wait_for_async":false}},
+  {{"id":2,"agent":"research_agent","task":"Find the latest Java LTS version (number + release date)","success_criteria":"latest Java LTS version returned","check":null,"depends_on":[],"wait_for_async":false}},
+  {{"id":3,"agent":"code_agent","task":"Write a markdown report to C:\\out\\report.md containing BOTH the latest Python version and the latest Java LTS version from the previous steps","success_criteria":"file C:\\out\\report.md exists and contains both versions","check":null,"depends_on":[1,2],"wait_for_async":false,"context_from":[1,2]}}
 ]}}
 
 "create a react vite app in c:\\projects\\myapp"

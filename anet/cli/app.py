@@ -850,13 +850,15 @@ def _make_ask_fn(live: "Live") -> callable:
         async with _lock:
             live.stop()
             try:
-                # With options → an inline checkbox menu (pick one OR several, e.g. the
-                # smiths' "attach to which agents?"). Esc cancels → empty answer.
-                if options:
+                # 2+ options → an inline checkbox menu (pick one OR several, e.g. the
+                # smiths' "attach to which agents?"). A single option is really a yes/no,
+                # and 0 options is free text — both use the plain prompt below (more
+                # robust; avoids a one-row checkbox grid over the spinner). Esc cancels.
+                if len(options) >= 2:
                     _pause_esc_watcher()
                     try:
                         chosen = await _inline_multiselect(
-                            question, [(o, o) for o in options],
+                            _fit(question, 120), [(o, _fit(o)) for o in options],
                             subtitle="Space toggles · Enter confirms (pick one or several)")
                     finally:
                         _resume_esc_watcher()
@@ -1296,6 +1298,13 @@ async def _select_menu(title: str, options: list[tuple[str, str]],
 _SENTINEL = object()   # distinguishes "inline menu unavailable" from "user cancelled"
 
 
+def _fit(s: str, n: int = 100) -> str:
+    """One-line, length-capped label for a menu row — so a stray huge string (e.g. a
+    base64 data: URI an agent passes as an option) can't blow up / garble the menu."""
+    s = " ".join(str(s or "").split())   # collapse newlines/runs of whitespace
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
 async def _inline_select(title, options, current=None, subtitle=""):
     """Inline arrow-key/click list selector via a non-fullscreen prompt_toolkit app.
     Returns the selected value, None if cancelled, or _SENTINEL if it can't run (so
@@ -1322,9 +1331,9 @@ async def _inline_select(title, options, current=None, subtitle=""):
     header_lines = 2 + (1 if subtitle else 0)   # title (+subtitle) + blank line
 
     def render():
-        frags = [("bold", f"  {title}\n")]
+        frags = [("bold", f"  {_fit(title)}\n")]
         if subtitle:
-            frags.append(("class:muted", f"  {subtitle}\n"))
+            frags.append(("class:muted", f"  {_fit(subtitle)}\n"))
         frags.append(("", "\n"))
         for i, (_v, label) in enumerate(options):
             def _click(mouse_event, i=i):
@@ -1332,9 +1341,9 @@ async def _inline_select(title, options, current=None, subtitle=""):
                     sel[0] = i
                     app.exit(result=options[i][0])
             if i == sel[0]:
-                frags.append(("class:sel", f"  ▶ {label}\n", _click))
+                frags.append(("class:sel", f"  ▶ {_fit(label)}\n", _click))
             else:
-                frags.append(("", f"    {label}\n", _click))
+                frags.append(("", f"    {_fit(label)}\n", _click))
         frags.append(("", "\n"))
         frags.append(("class:muted", "  Enter to confirm · Esc to cancel"))
         return frags
@@ -1398,9 +1407,9 @@ async def _inline_multiselect(title, options, subtitle=""):
     header_lines = 2 + (1 if subtitle else 0)
 
     def render():
-        frags = [("bold", f"  {title}\n")]
+        frags = [("bold", f"  {_fit(title)}\n")]
         if subtitle:
-            frags.append(("class:muted", f"  {subtitle}\n"))
+            frags.append(("class:muted", f"  {_fit(subtitle)}\n"))
         frags.append(("", "\n"))
         for i, (v, label) in enumerate(options):
             def _click(mouse_event, i=i):
@@ -1411,7 +1420,7 @@ async def _inline_multiselect(title, options, subtitle=""):
             box = "[x]" if v in checked else "[ ]"
             cur = "▶ " if i == sel[0] else "  "
             cls = "class:sel" if i == sel[0] else ("class:on" if v in checked else "")
-            frags.append((cls, f"  {cur}{box} {label}\n", _click))
+            frags.append((cls, f"  {cur}{box} {_fit(label)}\n", _click))
         frags.append(("", "\n"))
         frags.append(("class:muted", "  Space toggles · Enter confirms · Esc cancels"))
         return frags
