@@ -172,16 +172,20 @@ def show_banner(
     name: str = "ANET",
     animate: bool = True,
     tagline: str | None = _TAGLINE,
+    gradient: list[str] | None = None,
 ) -> bool:
     """Render the block-art logo with binary background + tagline. Returns True
-    on success, False if it can't render (caller falls back to a plain rule)."""
+    on success, False if it can't render (caller falls back to a plain rule).
+
+    `gradient` overrides the vertical color stops (the active theme passes its own)."""
     try:
         word = name.upper()
         if not word or any(ch not in _LETTERS for ch in word):
             return False  # only ANET's letters are hand-drawn
 
+        stops = gradient or _GRADIENT
         bg, is_logo, prow, height, field_w = _build_grid(console, word)
-        row_colors = [_interp(_GRADIENT, r / max(1, _PIX_H - 1)) for r in range(_PIX_H)]
+        row_colors = [_interp(stops, r / max(1, _PIX_H - 1)) for r in range(_PIX_H)]
 
         console.print()
         if animate and console.is_terminal:

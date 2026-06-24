@@ -29,7 +29,6 @@ from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.rule import Rule
-from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
@@ -144,9 +143,28 @@ def _check_api_keys() -> None:
     for env_key, label in missing:
         console.print(f"  [yellow]WARNING:[/yellow] {env_key} is not set — needed for {label}.")
     if missing:
-        console.print("  [dim]→ run [cyan]/keys[/cyan] to set your API keys.[/dim]")
+        console.print("  [dim]→ run [accent]/keys[/accent] to set your API keys.[/dim]")
 
-console = Console()
+# Console carries the active theme's named styles ("accent", "assistant"), so all
+# [accent]…/border_style="accent" markup recolors when the theme changes. The theme
+# is per-pack, so it's (re)applied after the home/pack is resolved and on /changepack.
+from anet.cli import theme as _theme
+console = Console(theme=_theme.rich_theme())
+_theme_applied = False
+
+
+def _activate_theme_styles(name: str | None = None) -> None:
+    """Make `name` (or the active pack's theme) the live console theme. Keeps the
+    theme stack at base + 1 so repeated switches don't pile up."""
+    global _theme_applied
+    try:
+        if _theme_applied:
+            console.pop_theme()
+            _theme_applied = False
+        console.push_theme(_theme.rich_theme(name))
+        _theme_applied = True
+    except Exception:
+        pass
 
 
 # ── Live spinner display ──────────────────────────────────────────────────────
@@ -174,13 +192,43 @@ def _ctx_enabled()   -> bool: return bool(_context_cfg().get("enabled", True))
 def _ctx_threshold() -> int:  return int(_context_cfg().get("threshold", _CONTEXT_THRESHOLD))
 def _ctx_keep()      -> int:  return int(_context_cfg().get("keep",      _CONTEXT_KEEP))
 
+# Working animation — a left↔right "pulse". Frames + interval live here so they're
+# easy to swap / make theme-driven later.
+_ANIM_FRAMES   = ["●∙∙", "∙●∙", "∙∙●", "∙●∙"]
+_ANIM_INTERVAL = 0.12   # seconds per frame
+_ANIM_STYLE    = "accent"  # resolves to the active theme's accent via the console theme
+
+
+class _Anim:
+    """A persistent, self-timing line animation. The frame is derived from the console
+    clock on EACH render, so it advances even though the object is reused across
+    renders — which is the fix for the frozen indicator (rich re-zeroes a freshly
+    constructed Spinner every frame, so the old code never animated)."""
+
+    def __init__(self, frames: list[str], interval: float, style: str = "cyan") -> None:
+        self.frames   = frames
+        self.interval = interval
+        self.style    = style
+        self.payload: Text = Text("")
+
+    def __rich_console__(self, console, options):
+        i = int(console.get_time() / self.interval) % len(self.frames)
+        line = Text("  ")
+        line.append(self.frames[i], style=self.style)
+        line.append("  ")
+        line.append_text(self.payload)
+        yield line
+
+
 class _LiveStatus:
-    """Rich renderable: rolling step log + animated spinner + elapsed time."""
+    """Rich renderable: rolling step log + animated indicator + elapsed time."""
 
     def __init__(self) -> None:
         self._current = "Thinking..."
         self.log: list[str] = []
         self._start = time.monotonic()
+        # Persisted across renders so the animation actually advances.
+        self._anim = _Anim(_ANIM_FRAMES, _ANIM_INTERVAL, _ANIM_STYLE)
 
     def update(self, msg: str) -> None:
         self._current = msg
@@ -225,11 +273,15 @@ class _LiveStatus:
         for step in past:
             parts.append(Text.from_markup(f"  [dim]├─ {step}[/dim]"))
 
-        # ── Current step: spinner + elapsed ───────────────────────────────────
-        spinner = Spinner("dots", text=f"  {self._current}  [dim]{elapsed_str}[/dim]")
-        parts.append(spinner)
+        # ── Current step: animated indicator + elapsed ────────────────────────
+        # Build the payload as a Text (NOT markup) so a status line containing
+        # brackets — e.g. "2 steps [parallel]" — never breaks rendering.
+        payload = Text(self._current or "")
+        payload.append(f"   {elapsed_str}", style="dim")
+        self._anim.payload = payload
+        parts.append(self._anim)
 
-        return Group(*parts) if len(parts) > 1 else spinner
+        return Group(*parts)
 
 
 # ── Thinking panel (collapsed block shown after work completes) ───────────────
@@ -460,7 +512,8 @@ def _print_startup_summary(enabled_agents: list[dict], tool_map: dict) -> None:
     console.print()
     try:
         from anet.cli.banner import show_banner
-        _bannered = show_banner(console, _ASSISTANT_NAME.upper())
+        _bannered = show_banner(console, _ASSISTANT_NAME.upper(),
+                                gradient=_theme.banner_stops())
     except Exception:
         _bannered = False
     if not _bannered:
@@ -581,8 +634,9 @@ _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/addmcp",   "MCPSmith — draft + register an MCP server <path>"),
     ("/mcptest",  "Connect-test an MCP server <name>"),
     ("/changepack", "Switch the active pack (workspace) <name?>"),
-    ("/settings", "Edit config — pick keys, models, tools/agents, a prompt, or persona"),
-    ("/keys",     "Shortcut to set your API keys (also /settings → 1)"),
+    ("/settings", "Edit config — keys, models, tools/agents, a prompt, persona, or theme"),
+    ("/theme",    "Pick a color theme"),
+    ("/keys",     "Shortcut to set your API keys (also under /settings)"),
     ("/packsmith", "Packs: new <name> | share <path?> | add <zip>"),
     ("/clear",    "Clear screen and redraw the startup view"),
     ("/help",     "Show the slash command list"),
@@ -607,14 +661,22 @@ if _HAS_PT:
                     )
 
 
+_CANCEL = object()       # returned by a cancellable prompt when the user presses Esc
+_esc_cancels = False     # toggled per-prompt by _read_input(cancellable=True)
+
+
 def _make_prompt_session():
-    """Build a prompt_toolkit session with ESC-to-clear and slash-command autocomplete."""
+    """Build a prompt_toolkit session with context-aware ESC + slash autocomplete."""
     kb = KeyBindings()
 
     @kb.add("escape", eager=True)
     def _esc(event):
-        # Clear the buffer; prompt_toolkit will redraw the empty prompt automatically.
-        event.current_buffer.reset()
+        # In a guided sub-prompt (cancellable) Esc aborts and goes back; on the main
+        # prompt it just clears the current line.
+        if _esc_cancels:
+            event.app.exit(result=_CANCEL)
+        else:
+            event.current_buffer.reset()
 
     return PromptSession(
         key_bindings=kb,
@@ -627,13 +689,20 @@ def _make_prompt_session():
 _pt_session: "PromptSession | None" = None
 
 
-async def _read_input(prompt_text: str) -> str:
-    """Read one line of input. Paste-safe and ESC-to-clear when prompt_toolkit is available."""
-    global _pt_session
+async def _read_input(prompt_text: str, cancellable: bool = False) -> str:
+    """Read one line of input. `cancellable=True` makes Esc abort the prompt and
+    return "" (used by guided sub-prompts so Esc goes back); otherwise Esc clears the
+    line. Paste-safe when prompt_toolkit is available."""
+    global _pt_session, _esc_cancels
     if _HAS_PT:
         if _pt_session is None:
             _pt_session = _make_prompt_session()
-        return await _pt_session.prompt_async(prompt_text)
+        _esc_cancels = cancellable
+        try:
+            result = await _pt_session.prompt_async(prompt_text)
+        finally:
+            _esc_cancels = False
+        return "" if result is _CANCEL else result
     # fallback: plain input() in executor
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, input, prompt_text)
@@ -718,9 +787,9 @@ def _make_confirm_fn(live: "Live") -> callable:
 
             live.stop()
             console.print()
-            console.print(f"  [bold cyan]┌─ Permission required[/bold cyan]")
-            console.print(f"  [cyan]│[/cyan]  {summary}")
-            console.print(f"  [cyan]└─[/cyan] [dim]{choices}[/dim]")
+            console.print(f"  [bold accent]┌─ Permission required[/bold accent]")
+            console.print(f"  [accent]│[/accent]  {summary}")
+            console.print(f"  [accent]└─[/accent] [dim]{choices}[/dim]")
 
             async def _read(prompt: str) -> str:
                 _pause_esc_watcher()   # release stdin so this prompt can read it
@@ -767,7 +836,7 @@ def _make_confirm_fn(live: "Live") -> callable:
 
 def _print_notice(text: str) -> None:
     """Print a short, persistent note above the spinner (stays after it advances)."""
-    console.print(f"  [cyan]▶[/cyan] [dim]{text}[/dim]")
+    console.print(f"  [accent]▶[/accent] [dim]{text}[/dim]")
 
 
 def _make_ask_fn(live: "Live") -> callable:
@@ -780,34 +849,50 @@ def _make_ask_fn(live: "Live") -> callable:
         options = options or []
         async with _lock:
             live.stop()
-            console.print()
-            console.print("  [bold yellow]┌─ Anet needs your input[/bold yellow]")
-            console.print(f"  [yellow]│[/yellow]  {question}")
-            for i, opt in enumerate(options, 1):
-                console.print(f"  [yellow]│[/yellow]    [bold]{i}.[/bold] {opt}")
-            hint = "type your answer, or a number to pick" if options else "type your answer"
-            console.print(f"  [yellow]└─[/yellow] [dim]{hint}[/dim]")
-
-            _pause_esc_watcher()   # release stdin so this prompt can read it
             try:
-                if _HAS_PT and _pt_session is not None:
-                    raw = await _pt_session.prompt_async("  > ")
-                else:
-                    loop = asyncio.get_event_loop()
-                    raw = await loop.run_in_executor(None, input, "  > ")
+                # With options → an inline checkbox menu (pick one OR several, e.g. the
+                # smiths' "attach to which agents?"). Esc cancels → empty answer.
+                if options:
+                    _pause_esc_watcher()
+                    try:
+                        chosen = await _inline_multiselect(
+                            question, [(o, o) for o in options],
+                            subtitle="Space toggles · Enter confirms (pick one or several)")
+                    finally:
+                        _resume_esc_watcher()
+                    if chosen is not _SENTINEL:
+                        return "" if chosen is None else ", ".join(chosen)
+                    # menu unavailable → fall through to the text prompt
+
+                console.print()
+                console.print("  [bold yellow]┌─ Anet needs your input[/bold yellow]")
+                console.print(f"  [yellow]│[/yellow]  {question}")
+                for i, opt in enumerate(options, 1):
+                    console.print(f"  [yellow]│[/yellow]    [bold]{i}.[/bold] {opt}")
+                hint = "type your answer, or numbers to pick (e.g. 1,3)" if options else "type your answer"
+                console.print(f"  [yellow]└─[/yellow] [dim]{hint}[/dim]")
+
+                _pause_esc_watcher()   # release stdin so this prompt can read it
+                try:
+                    if _HAS_PT and _pt_session is not None:
+                        raw = await _pt_session.prompt_async("  > ")
+                    else:
+                        loop = asyncio.get_event_loop()
+                        raw = await loop.run_in_executor(None, input, "  > ")
+                finally:
+                    _resume_esc_watcher()
+
+                raw = (raw or "").strip()
+                # Numbers (single or a "1,3" list) select options.
+                if options and raw:
+                    picks = [options[int(x) - 1] for x in raw.replace(",", " ").split()
+                             if x.isdigit() and 1 <= int(x) <= len(options)]
+                    if picks:
+                        return ", ".join(picks)
+                return raw
             finally:
-                _resume_esc_watcher()
-
-            console.print()
-            live.start()
-
-            raw = (raw or "").strip()
-            # A bare number selects the matching option.
-            if options and raw.isdigit():
-                idx = int(raw) - 1
-                if 0 <= idx < len(options):
-                    return options[idx]
-            return raw
+                console.print()
+                live.start()
 
     return _ask
 
@@ -899,12 +984,12 @@ async def _show_shell_view(live: "Live", session) -> None:
     live.stop()
     session.viewing = True
     console.print()
-    console.print(f"  [bold cyan]┌─ shell[/bold cyan]  [dim]{session.command}[/dim]")
+    console.print(f"  [bold accent]┌─ shell[/bold accent]  [dim]{session.command}[/dim]")
     console.print(
-        "  [cyan]│[/cyan]  [dim]live output below · type input + Enter to send to the "
+        "  [accent]│[/accent]  [dim]live output below · type input + Enter to send to the "
         "command · [bold]:q[/bold] to close (command keeps running)[/dim]"
     )
-    console.print("  [cyan]└─[/cyan]")
+    console.print("  [accent]└─[/accent]")
 
     shown = 0
 
@@ -1027,31 +1112,32 @@ async def _run_turn_with_esc(engine, thread_id, store, user_input, cancel_event,
 _HELP_TEXT = """
 [bold]Slash commands[/bold]
 
-  [bold cyan]/new[/bold cyan]                  Start a fresh session (clears history)
-  [bold cyan]/sessions[/bold cyan] [dim]<number?>[/dim]   List saved sessions; with a number, switch to it
-  [bold cyan]/agents[/bold cyan]               Show loaded agents and their tools
-  [bold cyan]/tools[/bold cyan]                Show loaded tools
-  [bold cyan]/mcps[/bold cyan]                 Show connected MCP servers and their tools
-  [bold cyan]/forget[/bold cyan]               Drop oldest messages, keep last 20
-  [bold cyan]/compress[/bold cyan]             Summarise old messages into one block
-  [bold cyan]/profile[/bold cyan]              Show what Anet remembers about you
-  [bold cyan]/skills[/bold cyan]               List all saved skills
-  [bold cyan]/newtool[/bold cyan] [dim]<path>[/dim]       ToolSmith: scaffold + register an ExTool from code
-  [bold cyan]/newagent[/bold cyan] [dim]<desc>[/dim]      AgentSmith: design + register a new agent
-  [bold cyan]/addmcp[/bold cyan] [dim]<path>[/dim]        MCPSmith: draft + register an MCP server from its docs
-  [bold cyan]/mcptest[/bold cyan] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
-  [bold cyan]/changepack[/bold cyan] [dim]<name>[/dim]    Switch the active pack (workspace) — lists packs if no name
-  [bold cyan]/settings[/bold cyan]             Edit config — pick: keys · models/providers · tools/agents · a prompt · persona
-  [bold cyan]/keys[/bold cyan]                 Shortcut straight to your API keys (same as /settings → 1)
-  [bold cyan]/packsmith new[/bold cyan] [dim]<name>[/dim]     Create a blank pack in yourpacks/ and switch to it
-  [bold cyan]/packsmith share[/bold cyan] [dim]<path?>[/dim]  Bundle a pack into a shareable zip (secrets stripped)
-  [bold cyan]/packsmith add[/bold cyan] [dim]<zip>[/dim]      Install a received pack into shared_packs/
-  [bold cyan]/clear[/bold cyan]                Clear the screen
-  [bold cyan]/help[/bold cyan]                 Show this message
+  [bold accent]/new[/bold accent]                  Start a fresh session (clears history)
+  [bold accent]/sessions[/bold accent] [dim]<number?>[/dim]   List saved sessions; with a number, switch to it
+  [bold accent]/agents[/bold accent]               Show loaded agents and their tools
+  [bold accent]/tools[/bold accent]                Show loaded tools
+  [bold accent]/mcps[/bold accent]                 Show connected MCP servers and their tools
+  [bold accent]/forget[/bold accent]               Drop oldest messages, keep last 20
+  [bold accent]/compress[/bold accent]             Summarise old messages into one block
+  [bold accent]/profile[/bold accent]              Show what Anet remembers about you
+  [bold accent]/skills[/bold accent]               List all saved skills
+  [bold accent]/newtool[/bold accent] [dim]<path>[/dim]       ToolSmith: scaffold + register an ExTool from code
+  [bold accent]/newagent[/bold accent] [dim]<desc>[/dim]      AgentSmith: design + register a new agent
+  [bold accent]/addmcp[/bold accent] [dim]<path>[/dim]        MCPSmith: draft + register an MCP server from its docs
+  [bold accent]/mcptest[/bold accent] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
+  [bold accent]/changepack[/bold accent] [dim]<name>[/dim]    Switch the active pack (workspace) — lists packs if no name
+  [bold accent]/settings[/bold accent]             Edit config — keys · models · tools/agents · a prompt · persona · theme (arrow-key menu)
+  [bold accent]/theme[/bold accent]                Pick a color theme (arrow-key menu)
+  [bold accent]/keys[/bold accent]                 Shortcut straight to your API keys (also under /settings)
+  [bold accent]/packsmith new[/bold accent] [dim]<name>[/dim]     Create a blank pack in yourpacks/ and switch to it
+  [bold accent]/packsmith share[/bold accent] [dim]<path?>[/dim]  Bundle a pack into a shareable zip (secrets stripped)
+  [bold accent]/packsmith add[/bold accent] [dim]<zip>[/dim]      Install a received pack into shared_packs/
+  [bold accent]/clear[/bold accent]                Clear the screen
+  [bold accent]/help[/bold accent]                 Show this message
 
-  [bold cyan]Ctrl+O[/bold cyan]                View the running shell command live and answer any prompt
-  [bold cyan]ESC[/bold cyan]                   Stop the running task and return to the prompt
-  [bold cyan]exit[/bold cyan] [dim]or[/dim] [bold cyan]quit[/bold cyan]           End the session
+  [bold accent]Ctrl+O[/bold accent]                View the running shell command live and answer any prompt
+  [bold accent]ESC[/bold accent]                   Stop the running task and return to the prompt
+  [bold accent]exit[/bold accent] [dim]or[/dim] [bold accent]quit[/bold accent]           End the session
 """
 
 
@@ -1068,7 +1154,7 @@ def _cmd_agents(enabled_agents: list[dict], tool_map: dict) -> None:
             preview += ", …"
         t.add_row(a["name"], a.get("model", "?"), tools, preview)
     console.print()
-    console.print(Panel(t, title="[bold]Loaded Agents[/bold]", border_style="green"))
+    console.print(Panel(t, title="[bold]Loaded Agents[/bold]", border_style="assistant"))
     console.print()
 
 
@@ -1109,27 +1195,27 @@ async def _cmd_changepack(arg: str = "") -> None:
     packs  = _anet_paths.list_packs()
     active = _anet_paths.active_pack()
 
-    # Resolve the target: an explicit arg (name or number), else show a picker.
+    # Resolve the target: an explicit arg (name or number), else an inline picker.
     target = None
     choice = arg.strip()
-    if not choice:
-        console.print("\n  [bold]Available packs[/bold]")
-        for i, p in enumerate(packs, 1):
-            marker = "  [green]← active[/green]" if p == active else ""
-            kind = f"[dim]({_anet_paths.pack_kind(p)})[/dim]"
-            console.print(f"   [cyan]{i}[/cyan]. {p} {kind}{marker}")
-        console.print()
-        choice = (await _read_input("  pick a pack (number or name, blank to cancel): ")).strip()
-
-    if not choice:
-        console.print("  [dim]no change[/dim]\n")
-        return
-    if choice.isdigit() and 1 <= int(choice) <= len(packs):
-        target = packs[int(choice) - 1]
-    elif choice in packs:
-        target = choice
+    if choice:
+        if choice.isdigit() and 1 <= int(choice) <= len(packs):
+            target = packs[int(choice) - 1]
+        elif choice in packs:
+            target = choice
+        else:
+            console.print(f"  [yellow]unknown pack:[/yellow] {choice}\n")
+            return
     else:
-        console.print(f"  [yellow]unknown pack:[/yellow] {choice}  [dim](see the list above)[/dim]\n")
+        options = [
+            (p, f"{p}   ({_anet_paths.pack_kind(p)}){'   ← active' if p == active else ''}")
+            for p in packs
+        ]
+        target = await _select_menu("Switch pack", options, current=active,
+                                    subtitle="Select the workspace to use.")
+
+    if not target:
+        console.print("  [dim]no change[/dim]\n")
         return
 
     if target == active:
@@ -1149,6 +1235,8 @@ def _switch_pack(name: str) -> None:
         reset_cache()
     except Exception:
         pass
+    # Adopt the new pack's theme so the colors switch with the pack.
+    _activate_theme_styles()
     _force_reload = True
 
 
@@ -1167,7 +1255,7 @@ def _cmd_editagent(arg: str) -> None:
     # Helpful diagnosis if not found.
     if any(a.get("name") == name for a in AGENTS):
         console.print(f"\n  [yellow]'{name}' is a built-in agent[/yellow] — its prompt lives in the read-only core, "
-                      f"so it isn't editable here. Create your own with [cyan]/newagent[/cyan].\n")
+                      f"so it isn't editable here. Create your own with [accent]/newagent[/accent].\n")
     else:
         console.print(f"\n  [yellow]No editable prompt found for '{name}'[/yellow] at {prompt_file}.\n"
                       f"  [dim]It must be a pack ExAgent with a prompt_file. See /agents.[/dim]\n")
@@ -1184,47 +1272,254 @@ async def _open_keys() -> None:
             console.print("  [dim]saved — restart to apply.[/dim]\n")
 
 
-async def _cmd_settings(arg: str) -> None:
-    """One entry point for editing config — pick which file to open. Folds in the
-    old /keys, /editpack and /editagent commands so there's a single, discoverable
-    command instead of several."""
+async def _select_menu(title: str, options: list[tuple[str, str]],
+                       current: str | None = None, subtitle: str = "") -> str | None:
+    """An INLINE selection menu (not a full-screen dialog): renders in the normal
+    scroll flow below the prompt, like the slash-command suggestions — a ▶ cursor,
+    ↑/↓ to move, Enter to confirm, Esc/q to cancel, clickable rows, and it scrolls
+    when the list is long. `options` is [(value, label)]. Returns the chosen value or
+    None. Falls back to a numbered prompt if prompt_toolkit isn't usable."""
+    sel = await _inline_select(title, options, current=current, subtitle=subtitle)
+    if sel is not _SENTINEL:
+        return sel
+    # Fallback: numbered prompt
+    console.print(f"\n  [bold]{title}[/bold]")
+    for i, (_v, label) in enumerate(options, 1):
+        console.print(f"  [accent]{i}[/accent]  {label}")
+    try:
+        raw = (await _read_input("  > ", cancellable=True)).strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+    return options[int(raw) - 1][0] if raw.isdigit() and 1 <= int(raw) <= len(options) else None
+
+
+_SENTINEL = object()   # distinguishes "inline menu unavailable" from "user cancelled"
+
+
+async def _inline_select(title, options, current=None, subtitle=""):
+    """Inline arrow-key/click list selector via a non-fullscreen prompt_toolkit app.
+    Returns the selected value, None if cancelled, or _SENTINEL if it can't run (so
+    the caller falls back)."""
+    if not _HAS_PT:
+        return _SENTINEL
+    try:
+        from prompt_toolkit.application import Application
+        from prompt_toolkit.key_binding import KeyBindings
+        from prompt_toolkit.layout import Layout
+        from prompt_toolkit.layout.containers import Window
+        from prompt_toolkit.layout.controls import FormattedTextControl
+        from prompt_toolkit.layout.dimension import Dimension
+        from prompt_toolkit.data_structures import Point
+        from prompt_toolkit.mouse_events import MouseEventType
+    except Exception:
+        return _SENTINEL
+
+    sel = [0]
+    for i, (v, _l) in enumerate(options):
+        if v == current:
+            sel[0] = i
+            break
+    header_lines = 2 + (1 if subtitle else 0)   # title (+subtitle) + blank line
+
+    def render():
+        frags = [("bold", f"  {title}\n")]
+        if subtitle:
+            frags.append(("class:muted", f"  {subtitle}\n"))
+        frags.append(("", "\n"))
+        for i, (_v, label) in enumerate(options):
+            def _click(mouse_event, i=i):
+                if mouse_event.event_type == MouseEventType.MOUSE_UP:
+                    sel[0] = i
+                    app.exit(result=options[i][0])
+            if i == sel[0]:
+                frags.append(("class:sel", f"  ▶ {label}\n", _click))
+            else:
+                frags.append(("", f"    {label}\n", _click))
+        frags.append(("", "\n"))
+        frags.append(("class:muted", "  Enter to confirm · Esc to cancel"))
+        return frags
+
+    control = FormattedTextControl(
+        render, focusable=True, show_cursor=False,
+        get_cursor_position=lambda: Point(x=0, y=header_lines + sel[0]),
+    )
+    total = header_lines + len(options) + 2
+    window = Window(control, height=Dimension(min=1, preferred=total, max=16),
+                    always_hide_cursor=True)
+
+    kb = KeyBindings()
+    @kb.add("up")
+    def _(e): sel[0] = (sel[0] - 1) % len(options)
+    @kb.add("down")
+    def _(e): sel[0] = (sel[0] + 1) % len(options)
+    @kb.add("enter")
+    def _(e): e.app.exit(result=options[sel[0]][0])
+    @kb.add("escape")
+    @kb.add("c-c")
+    @kb.add("q")
+    def _(e): e.app.exit(result=None)
+
+    try:
+        from prompt_toolkit.styles import Style
+        acc = _theme.pt_accent()
+        style = Style.from_dict({
+            "sel":   (f"bold {acc}" if acc else "bold reverse"),  # selected row → theme accent
+            "muted": "#888888",
+        })
+        app = Application(layout=Layout(window), key_bindings=kb, style=style,
+                          full_screen=False, mouse_support=True, erase_when_done=True)
+        return await app.run_async()
+    except Exception:
+        # Any construction/run failure (e.g. no real console) → caller falls back.
+        return _SENTINEL
+
+
+async def _inline_multiselect(title, options, subtitle=""):
+    """Inline CHECKBOX selector: Space toggles, Enter confirms, Esc cancels; clickable
+    + scrollable. Returns a list of selected values, None if cancelled, or _SENTINEL if
+    it can't run. Used where the user may pick SEVERAL (e.g. the smiths' attach step)."""
+    if not _HAS_PT:
+        return _SENTINEL
+    try:
+        from prompt_toolkit.application import Application
+        from prompt_toolkit.key_binding import KeyBindings
+        from prompt_toolkit.layout import Layout
+        from prompt_toolkit.layout.containers import Window
+        from prompt_toolkit.layout.controls import FormattedTextControl
+        from prompt_toolkit.layout.dimension import Dimension
+        from prompt_toolkit.data_structures import Point
+        from prompt_toolkit.mouse_events import MouseEventType
+        from prompt_toolkit.styles import Style
+    except Exception:
+        return _SENTINEL
+
+    sel = [0]
+    checked: set = set()
+    header_lines = 2 + (1 if subtitle else 0)
+
+    def render():
+        frags = [("bold", f"  {title}\n")]
+        if subtitle:
+            frags.append(("class:muted", f"  {subtitle}\n"))
+        frags.append(("", "\n"))
+        for i, (v, label) in enumerate(options):
+            def _click(mouse_event, i=i):
+                if mouse_event.event_type == MouseEventType.MOUSE_UP:
+                    sel[0] = i
+                    val = options[i][0]
+                    checked.discard(val) if val in checked else checked.add(val)
+            box = "[x]" if v in checked else "[ ]"
+            cur = "▶ " if i == sel[0] else "  "
+            cls = "class:sel" if i == sel[0] else ("class:on" if v in checked else "")
+            frags.append((cls, f"  {cur}{box} {label}\n", _click))
+        frags.append(("", "\n"))
+        frags.append(("class:muted", "  Space toggles · Enter confirms · Esc cancels"))
+        return frags
+
+    control = FormattedTextControl(
+        render, focusable=True, show_cursor=False,
+        get_cursor_position=lambda: Point(x=0, y=header_lines + sel[0]),
+    )
+    total = header_lines + len(options) + 2
+    window = Window(control, height=Dimension(min=1, preferred=total, max=16),
+                    always_hide_cursor=True)
+
+    kb = KeyBindings()
+    @kb.add("up")
+    def _(e): sel[0] = (sel[0] - 1) % len(options)
+    @kb.add("down")
+    def _(e): sel[0] = (sel[0] + 1) % len(options)
+    @kb.add("space")
+    def _(e):
+        v = options[sel[0]][0]
+        checked.discard(v) if v in checked else checked.add(v)
+    @kb.add("enter")
+    def _(e): e.app.exit(result=[v for v, _l in options if v in checked])
+    @kb.add("escape")
+    @kb.add("c-c")
+    def _(e): e.app.exit(result=None)
+
+    try:
+        acc = _theme.pt_accent()
+        style = Style.from_dict({
+            "sel": (f"bold {acc}" if acc else "bold reverse"),
+            "on":  (acc or "bold"),
+            "muted": "#888888",
+        })
+        app = Application(layout=Layout(window), key_bindings=kb, style=style,
+                          full_screen=False, mouse_support=True, erase_when_done=True)
+        return await app.run_async()
+    except Exception:
+        return _SENTINEL
+
+
+def _apply_theme(name: str) -> None:
+    """Save the theme into THIS pack's anet.config.yaml and live-apply it. Accent/
+    borders/animation recolor on the next render; the banner recolors on next launch
+    (or /clear redraws the summary)."""
+    if name not in _theme.PRESETS:
+        console.print(f"  [yellow]Unknown theme '{name}'.[/yellow]\n"); return
+    saved = _theme.set_active(name)            # writes the pack's anet.config.yaml
+    _activate_theme_styles(name)               # swap style resolution live
+    where = "saved to this pack" if saved else "applied for this session only (couldn't write the pack config)"
+    console.print(f"\n  [accent]●[/accent] theme set to [bold accent]{name}[/bold accent] "
+                  f"[dim]— {where}; restart or /clear to recolor the banner.[/dim]\n")
+
+
+async def _cmd_theme(arg: str) -> None:
+    """Pick a color theme from an arrow-key menu (or /theme <name> directly)."""
+    name = (arg or "").strip().lower()
+    if name in _theme.PRESETS:
+        _apply_theme(name); return
+    current = _theme.active_name()
     options = [
-        ("API keys",                "~/.anet/.env"),
-        ("Models & providers",      "anet.config.yaml"),
-        ("Tools & agents",          "exanet.config.yaml (this pack)"),
-        ("An agent's prompt",       "ExAgents/<name>/prompt.md"),
-        ("Persona",                 "SOUL.md"),
+        (n, f"{n}{'   ← current' if n == current else ''}")
+        for n in _theme.NAMES
     ]
-    choice = (arg or "").strip()
+    chosen = await _select_menu("Theme & colors", options, current=current,
+                                subtitle="Select a theme to apply.")
+    if chosen:
+        _apply_theme(chosen)
+    else:
+        console.print("  [dim]cancelled.[/dim]\n")
+
+
+async def _cmd_settings(arg: str) -> None:
+    """One entry point for configuration — an arrow-key menu. Folds in the old /keys,
+    /editpack, /editagent commands plus theme selection."""
+    options = [
+        ("keys",   "API keys              (~/.anet/.env)"),
+        ("models", "Models & providers    (anet.config.yaml)"),
+        ("exanet", "Tools & agents        (exanet.config.yaml)"),
+        ("agent",  "An agent's prompt     (ExAgents/<name>/prompt.md)"),
+        ("soul",   "Persona               (SOUL.md)"),
+        ("theme",  "Theme & colors"),
+    ]
+    valid = {v for v, _ in options}
+    choice = (arg or "").strip().lower()
+    if choice not in valid:
+        choice = await _select_menu("Settings", options,
+                                    subtitle="Select what to edit.")
     if not choice:
-        console.print("\n  [bold]Settings[/bold] — what do you want to edit?")
-        for i, (label, where) in enumerate(options, 1):
-            console.print(f"  [cyan]{i}[/cyan]  {label}  [dim]{where}[/dim]")
-        console.print("  [dim]enter a number (anything else cancels)[/dim]")
-        try:
-            choice = (await _read_input("  > ")).strip()
-        except (EOFError, KeyboardInterrupt):
-            console.print(); return
-
-    if not (choice.isdigit() and 1 <= int(choice) <= len(options)):
         console.print("  [dim]cancelled.[/dim]\n"); return
-    n = int(choice)
 
-    if n == 1:
+    if choice == "keys":
         await _open_keys()
-    elif n == 2:
+    elif choice == "models":
         _edit_yaml(_anet_paths.config_path(), "anet.config.yaml (models/providers)")
-    elif n == 3:
+    elif choice == "exanet":
         _edit_yaml(_anet_paths.exanet_path(), "exanet.config.yaml (tools/agents)")
-    elif n == 4:
+    elif choice == "agent":
         await _pick_and_edit_agent()
-    elif n == 5:
+    elif choice == "soul":
         soul = _anet_paths.soul_path()
         if not soul.exists():
             console.print(f"  [yellow]SOUL.md not found:[/yellow] {soul}\n"); return
         if _open_in_editor(soul):
             _apply_config_change()
             console.print("  [green]SOUL.md updated[/green] — applied on your next message.\n")
+    elif choice == "theme":
+        await _cmd_theme("")
 
 
 async def _pick_and_edit_agent() -> None:
@@ -1236,13 +1531,13 @@ async def _pick_and_edit_agent() -> None:
     ) if adir.exists() else []
     if not agents:
         console.print("  [dim]No editable agent prompts in this pack. Create one with "
-                      "[cyan]/newagent[/cyan].[/dim]\n")
+                      "[accent]/newagent[/accent].[/dim]\n")
         return
     console.print("\n  [bold]Which agent's prompt?[/bold]")
     for i, a in enumerate(agents, 1):
-        console.print(f"  [cyan]{i}[/cyan]  {a}")
+        console.print(f"  [accent]{i}[/accent]  {a}")
     try:
-        sel = (await _read_input("  > ")).strip()
+        sel = (await _read_input("  > ", cancellable=True)).strip()
     except (EOFError, KeyboardInterrupt):
         console.print(); return
     if sel.isdigit() and 1 <= int(sel) <= len(agents):
@@ -1265,7 +1560,7 @@ async def _cmd_packsmith_new(name: str) -> None:
     _switch_pack(created)
     console.print(
         f"  [green]switched to[/green] [bold]{created}[/bold] — build it with "
-        f"[cyan]/newtool[/cyan] · [cyan]/newagent[/cyan] · [cyan]/addmcp[/cyan]. "
+        f"[accent]/newtool[/accent] · [accent]/newagent[/accent] · [accent]/addmcp[/accent]. "
         f"Reloading on next message…\n"
     )
 
@@ -1336,7 +1631,7 @@ def _print_sessions(current: str | None = None) -> None:
             marker = "  [green]← active[/green]"
         elif sid == last and not current:
             marker = "  [green]← last[/green]"
-        console.print(f"  [cyan]{i:>2}[/cyan]  {label}  [dim]{sid} ({size})[/dim]{marker}")
+        console.print(f"  [accent]{i:>2}[/accent]  {label}  [dim]{sid} ({size})[/dim]{marker}")
     console.print()
     console.print("  [dim]/sessions <number>  switch · /new  fresh session[/dim]")
     console.print()
@@ -1373,8 +1668,11 @@ async def _handle_slash(
     elif command == "/settings":
         await _cmd_settings(arg)
 
+    elif command == "/theme":
+        await _cmd_theme(arg)
+
     elif command == "/keys":
-        # Kept as a quick shortcut to the most common task (it's also /settings → 1).
+        # Kept as a quick shortcut to the most common task (it's also under /settings).
         await _open_keys()
 
     elif command == "/new":
@@ -1389,29 +1687,40 @@ async def _handle_slash(
 
     elif command == "/sessions":
         current = config["configurable"].get("thread_id")
-        if not arg:
-            # Just list — numbered, so the user can switch by number next.
-            _print_sessions(current)
-        else:
+        sid = None
+        if arg:
+            # Explicit: /sessions <number-or-id> switches directly.
             sid = _resolve_session_arg(arg)
             if sid is None:
                 # Don't silently create an empty session — that was the old bug that
                 # looked like "switched but it forgot everything".
                 console.print(f"\n  [yellow]No saved session matching '{arg}'.[/yellow] "
-                              "Pick a number from the list below, or [bold]/new[/bold] "
-                              "for a fresh one.")
-                _print_sessions(current)
-            elif sid == current:
-                console.print(f"\n  [dim]Already in [bold]{sid}[/bold].[/dim]\n")
+                              "Run /sessions to pick one, or [bold]/new[/bold] for a fresh one.\n")
+        else:
+            ids = _ordered_session_ids()
+            if not ids:
+                console.print("\n  [dim]No sessions saved yet.[/dim]\n")
             else:
-                # (these are declared global by the /new branch above)
-                _session_turn_count = 0
-                _last_context_prompt_n = 0
-                _save_last_session(sid)
-                config["configurable"]["thread_id"] = sid
-                n = _session_msg_count(sid)
-                console.print(f"\n  [green]Switched to[/green] [bold]{sid}[/bold] "
-                              f"[dim]({n} msg — history loaded)[/dim]\n")
+                options = []
+                for s in ids:
+                    title = _session_title(_MEMORY_DIR / s) or "(untitled)"
+                    n = _session_msg_count(s)
+                    mark = "   ← active" if s == current else ""
+                    options.append((s, f"{title}   [{n} msg]{mark}"))
+                sid = await _select_menu("Sessions", options, current=current,
+                                         subtitle="Select a session to switch to.")
+
+        if sid and sid != current:
+            # (declared global by the /new branch above)
+            _session_turn_count = 0
+            _last_context_prompt_n = 0
+            _save_last_session(sid)
+            config["configurable"]["thread_id"] = sid
+            n = _session_msg_count(sid)
+            console.print(f"\n  [green]Switched to[/green] [bold]{sid}[/bold] "
+                          f"[dim]({n} msg — history loaded)[/dim]\n")
+        elif sid and sid == current:
+            console.print(f"\n  [dim]Already in [bold]{sid}[/bold].[/dim]\n")
 
     elif command == "/agents":
         _cmd_agents(enabled_agents, tool_map)
@@ -1468,7 +1777,7 @@ async def _handle_slash(
                     pin = "📌" if _sm.is_pinned(f.stem) else ""
                     t.add_row(name, applies_to or "—", str(used), pin)
                 console.print()
-                console.print(Panel(t, title="[bold]Skills[/bold]", border_style="cyan"))
+                console.print(Panel(t, title="[bold]Skills[/bold]", border_style="accent"))
                 console.print("  [dim]/skills pin <name> to protect a skill from the curator[/dim]\n")
         except Exception as exc:
             console.print(f"\n  [red]Error: {exc}[/red]\n")
@@ -1494,75 +1803,87 @@ async def _handle_slash(
                     for m in facts:
                         t.add_row(m.get("content", ""), m.get("category") or m.get("project_path") or "")
                     console.print()
-                    console.print(Panel(t, title=f"[bold]Memory[/bold] ({len(mems)})", border_style="cyan"))
+                    console.print(Panel(t, title=f"[bold]Memory[/bold] ({len(mems)})", border_style="accent"))
                     console.print("  [dim]/forget <id> via the assistant, or ask it to update what it knows[/dim]\n")
         except Exception as exc:
             console.print(f"\n  [red]Error: {exc}[/red]\n")
 
     elif command == "/newtool":
-        if not arg:
-            console.print(
-                "\n  [yellow]Usage:[/yellow] /newtool <path-to-tool-source>\n"
-                "  [dim]Generates ExTools/<name>/__init__.py from existing code, validates it,[/dim]\n"
-                "  [dim]and prints the registration stanza. Example: /newtool ExTools/myzip/myzip_repo[/dim]\n"
-            )
+        path = arg.strip()
+        if not path:
+            console.print("\n  [dim]ToolSmith — wrap existing code into an ExTool "
+                          "(scaffold · validate · register).[/dim]")
+            path = (await _read_input("  path to the tool's source (file or folder): ", cancellable=True)).strip()
+        if path:
+            await _run_toolsmith(path, tool_map)
         else:
-            await _run_toolsmith(arg, tool_map)
+            console.print("  [dim]cancelled.[/dim]\n")
 
     elif command == "/newagent":
-        if not arg:
-            console.print(
-                "\n  [yellow]Usage:[/yellow] /newagent <describe the agent you want>\n"
-                "  [dim]Designs an ExAgent: writes its prompt, lets you pick tools/MCP, and[/dim]\n"
-                "  [dim]registers it. Example: /newagent an agent that summarises PDFs and emails them[/dim]\n"
-            )
+        desc = arg.strip()
+        if not desc:
+            console.print("\n  [dim]AgentSmith — design a new agent from a description "
+                          "(writes its prompt · picks tools/MCP · registers).[/dim]")
+            desc = (await _read_input("  describe the agent you want: ", cancellable=True)).strip()
+        if desc:
+            await _run_agentsmith(desc, tool_map)
         else:
-            await _run_agentsmith(arg, tool_map)
+            console.print("  [dim]cancelled.[/dim]\n")
 
     elif command == "/addmcp":
-        if not arg:
-            console.print(
-                "\n  [yellow]Usage:[/yellow] /addmcp <path-to-mcp-repo-or-readme>\n"
-                "  [dim]Drafts mcps/<name>/config.yaml from the server's docs, verifies it[/dim]\n"
-                "  [dim]connects, attaches it to agents you pick, and confirms. Example: /addmcp ../some-mcp-server[/dim]\n"
-            )
+        src = arg.strip()
+        if not src:
+            console.print("\n  [dim]MCPSmith — add an MCP server from its repo/README "
+                          "(drafts the config · connect-tests · attaches it).[/dim]")
+            src = (await _read_input("  path to the MCP repo/README (or package name): ", cancellable=True)).strip()
+        if src:
+            await _run_mcpsmith(src, tool_map)
         else:
-            await _run_mcpsmith(arg, tool_map)
+            console.print("  [dim]cancelled.[/dim]\n")
 
     elif command == "/mcptest":
-        if not arg:
-            console.print(
-                "\n  [yellow]Usage:[/yellow] /mcptest <server-name>\n"
-                "  [dim]Connect-tests an existing mcps/<name>/config.yaml and lists its tools.[/dim]\n"
-            )
-        else:
-            await _run_mcp_doctor(arg.split()[0])
+        name = arg.split()[0] if arg.strip() else ""
+        if not name:
+            servers = []
+            try:
+                from anet.core import mcp_loader
+                servers = mcp_loader.list_available_servers()
+            except Exception:
+                pass
+            if not servers:
+                console.print("\n  [dim]No MCP servers configured in this pack (mcps/).[/dim]\n")
+            else:
+                name = await _select_menu("Test an MCP server",
+                                          [(s, s) for s in servers],
+                                          subtitle="Select a server to connect-test.")
+        if name:
+            await _run_mcp_doctor(name)
 
     elif command == "/packsmith":
         sub_parts = arg.split(None, 1)
         sub  = sub_parts[0].lower() if sub_parts else ""
         rest = sub_parts[1].strip() if len(sub_parts) > 1 else ""
+        if sub not in ("new", "share", "add"):
+            sub = await _select_menu("PackSmith", [
+                ("new",   "new     — create a blank pack and switch to it"),
+                ("share", "share   — bundle a pack into a shareable .zip"),
+                ("add",   "add     — install a received pack .zip"),
+            ], subtitle="What do you want to do?")
         if sub == "new":
-            if not rest:
-                console.print("\n  [yellow]Usage:[/yellow] /packsmith new <name>\n")
+            name = rest.split()[0] if rest else (await _read_input("  pack name: ", cancellable=True)).strip()
+            if name:
+                await _cmd_packsmith_new(name)
             else:
-                await _cmd_packsmith_new(rest.split()[0])
+                console.print("  [dim]cancelled.[/dim]\n")
         elif sub == "share":
             await _run_packsmith("share", rest, tool_map)
         elif sub == "add":
-            if not rest:
-                console.print("\n  [yellow]Usage:[/yellow] /packsmith add <path-to-pack.zip>\n")
+            path = rest or (await _read_input("  path to pack .zip: ", cancellable=True)).strip()
+            if path:
+                await _run_packsmith("add", path, tool_map)
             else:
-                await _run_packsmith("add", rest, tool_map)
-        else:
-            console.print(
-                "\n  [yellow]Usage:[/yellow] /packsmith new [dim]<name>[/dim]\n"
-                "          /packsmith share [dim]<pack path — blank = active pack>[/dim]\n"
-                "          /packsmith add [dim]<path-to-pack.zip>[/dim]\n"
-                "  [dim]new:   create a blank pack in yourpacks/ and switch to it — build it with the smiths.[/dim]\n"
-                "  [dim]share: bundle a pack into a shareable zip (secrets stripped, README added).[/dim]\n"
-                "  [dim]add:   install a received pack zip into shared_packs/, then /changepack to it.[/dim]\n"
-            )
+                console.print("  [dim]cancelled.[/dim]\n")
+        # sub is None → the menu was cancelled; do nothing.
 
     else:
         console.print(f"\n  [yellow]Unknown command:[/yellow] {command}  "
@@ -1630,7 +1951,7 @@ async def _run_standalone_agent(agent_def: dict, user_message: str, tool_map: di
         console.print(f"  [yellow]{name}: tools not loaded, skipping:[/yellow] {', '.join(missing)}")
 
     console.print()
-    console.print(f"  [bold cyan]{name}[/bold cyan] [dim]{banner}[/dim]\n")
+    console.print(f"  [bold accent]{name}[/bold accent] [dim]{banner}[/dim]\n")
 
     live_status = _LiveStatus()
 
@@ -1687,7 +2008,7 @@ async def _run_standalone_agent(agent_def: dict, user_message: str, tool_map: di
 
     text = (result or {}).get("text") or "Done."
     console.print(Panel(Markdown(text), title=f"[bold]{name}[/bold]",
-                        border_style="green", padding=(1, 2)))
+                        border_style="assistant", padding=(1, 2)))
     console.print()
 
 
@@ -1780,7 +2101,7 @@ async def _run_mcp_doctor(name: str) -> None:
     """Connect-test an existing MCP server config (the /mcptest command)."""
     from anet.core.mcp_doctor import diagnose
     console.print()
-    console.print(f"  [bold cyan]mcp doctor[/bold cyan] [dim]testing[/dim] {name}\n")
+    console.print(f"  [bold accent]mcp doctor[/bold accent] [dim]testing[/dim] {name}\n")
     try:
         res = await diagnose(name)
     except Exception as exc:
@@ -1934,7 +2255,7 @@ async def _chat_turn(
     console.print(Panel(
         Markdown(response),
         title=f"[bold]{_ASSISTANT_NAME}[/bold]",
-        border_style="green",
+        border_style="assistant",
         padding=(1, 2),
     ))
     console.print()
@@ -2139,7 +2460,7 @@ def _open_in_editor(path: Path) -> bool:
     if not path.exists():
         path.write_text("", encoding="utf-8")
     editor = _resolve_editor()
-    console.print(f"  [dim]opening[/dim] [cyan]{path}[/cyan] [dim]in {editor[0]} — save & close to continue…[/dim]")
+    console.print(f"  [dim]opening[/dim] [accent]{path}[/accent] [dim]in {editor[0]} — save & close to continue…[/dim]")
     try:
         subprocess.run([*editor, str(path)])
         return True
@@ -2233,6 +2554,10 @@ def _setup_anet_home(interactive: bool = True) -> None:
 
     # Fold any legacy per-session checkpoint.db files into the shared db.
     _migrate_per_session_dbs()
+
+    # Now that the active pack is resolved, apply ITS theme (per-pack colors) before
+    # the banner / startup view render.
+    _activate_theme_styles()
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -2353,12 +2678,13 @@ async def main() -> None:
             except Exception:
                 pass
 
-            # Give the manager memory_tool directly, so saving/recalling a fact the
-            # user mentions in conversation is a one-step manager action — never a
-            # slow detour through a worker agent.
+            # The manager gets NO direct tools. Memory is handled conversationally:
+            # facts the user mentions are captured by background extraction, and recall
+            # comes from the profile/memories injected into the planner prompt — so the
+            # planner only ever returns a plan or a simple reply, never a (mis)fired
+            # tool call. (Giving it memory_tool made it spuriously tool-call non-memory
+            # requests and collapse to "Done.".)
             manager_tools: dict = {}
-            if "memory_tool" in combined_tools:
-                manager_tools["memory_tool"] = combined_tools["memory_tool"]
             return all_agents, combined_tools, manager_tools, len(ex_agents)
 
         # Initial build
@@ -2441,6 +2767,13 @@ async def main() -> None:
             try:
                 await notifier
             except asyncio.CancelledError:
+                pass
+            # Tear down MCP subprocesses cleanly BEFORE the loop closes, so their
+            # stdio pipes don't get GC'd post-close (proactor errors on Windows).
+            try:
+                from anet.core import mcp_loader
+                await mcp_loader.disconnect_all()
+            except Exception:
                 pass
 
 

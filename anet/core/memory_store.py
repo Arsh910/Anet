@@ -46,6 +46,10 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 os.environ.setdefault("POSTHOG_DISABLED", "True")
+# Disable mem0's own (PostHog) telemetry: it spawns a background thread that, on
+# exit, tries to flush and can hang / throw on Ctrl+C. Off = privacy-friendly + clean
+# shutdown. Read at mem0 import, so it must be set before get_memory() imports mem0.
+os.environ.setdefault("MEM0_TELEMETRY", "False")
 for _w in ("chromadb", "fastembed", "huggingface_hub", "onnxruntime", "posthog"):
     for _cat in (DeprecationWarning, UserWarning, FutureWarning):
         warnings.filterwarnings("ignore", category=_cat, module=rf"{_w}.*")

@@ -271,7 +271,8 @@ One or more agents needed:
       "success_criteria": "<verifiable outcome>",
       "check": {{"action": "check_window"|"check_process"|"check_path", "<param>": "<value>"}} | null,
       "depends_on": [],
-      "wait_for_async": false
+      "wait_for_async": false,
+      "context_from": [<step ids whose output this step should SEE> ]   // optional
     }}
   ]}}
 
@@ -283,6 +284,17 @@ RULES:
 - depends_on: [] means run immediately in parallel with other free steps. Steps sharing no deps run concurrently.
 - depends_on: [1, 2] means wait for steps with id 1 and 2 to complete first.
 - wait_for_async: true means block until the dependency's background async task fully completes (e.g. 3D render).
+- context_from controls WHAT a step SEES (separate from depends_on, which controls ORDER):
+  * OMIT it for normal chaining — the step then sees all prior outputs (the default).
+  * context_from: [] (empty) = the step works BLIND, seeing no prior outputs — use for
+    INDEPENDENT attempts that must not influence each other.
+  * context_from: [2,3,4] = the step sees ONLY those steps' outputs — use for a step that
+    COMBINES/COMPARES specific earlier results.
+  * DEBATE / BEST-OF-N pattern (use for hard reasoning where one shot is risky): emit N
+    independent attempt steps, each depends_on:[] and context_from:[] (blind, run in parallel),
+    then a final synthesis step that depends_on all of them and context_from all of them — it
+    reads the N attempts and produces the single best/combined answer. Reserve this for genuinely
+    hard problems; simple tasks stay one step.
 - check: use the SPECIFIC name/title being acted on, not generic terms.
   Opening "ikarus" folder  → check_window title="ikarus"
   Opening Notepad          → check_window title="Notepad"
@@ -290,6 +302,20 @@ RULES:
 - NEVER use check_path for file search or file read tasks — the exact path is unknown until the
   agent runs. Use check: null and let the LLM classifier verify the result.
 - System auto-injects each step's output into the next step.
+- DIRECT-AGENT DELEGATION — when the user addresses a specific agent and tells IT to delegate
+  ("as the code agent, do Y, and delegate the lookup to the research agent yourself", "have the
+  file agent handle it and pull in research if needed"), make ONE step assigned to that named
+  agent and put the WHOLE request (including the "delegate sub-parts to <other> yourself" part)
+  into its task. Do NOT split it into separate steps per agent — that agent has spawn_tool and
+  will delegate the sub-part itself mid-task. (Only this explicit "as the X agent … yourself"
+  framing — normal requests still decompose into a DAG as usual.)
+- SPAWNING IS REAL — agents CAN delegate to other agents mid-task via spawn_tool (code_agent and
+  file_agent have it; nesting is capped at depth 2, and a deeper spawn is rejected with a clear
+  "Spawn depth limit reached" message). So a request to "spawn an agent that spawns…", to have an
+  agent delegate to another, or that deliberately tests nested spawning, is a DO task: route it as
+  a SINGLE step to a spawn-capable agent (file_agent for file work, else code_agent) and let IT
+  spawn — the depth cap will surface naturally. NEVER answer type:"simple" claiming spawning isn't
+  supported or that there's "no recursion to hit" — that is false.
 - TASK SPECIFICATION — when writing a task for an agent, include ALL context it needs to act
   without asking follow-up questions:
   * Always include the FULL absolute path of any project/folder/file referenced.
@@ -303,19 +329,14 @@ RULES:
   greetings, factual questions, "explain it", "what does it say", "summarise what you found" —
   but ONLY when the answer already exists in conversation context and no agent work is required.
   NEVER use type:"simple" when the user wants you to DO or BUILD something.
-- MEMORY (do NOT delegate memory to a worker agent — it is YOUR job):
-  * When the user just SHARES a fact or preference about themselves in conversation
-    ("I like X", "my name is Y", "I work at Z", "I love the Beatles"), that is type:"simple".
-    Reply naturally and briefly. ANet already remembers such facts automatically in the
-    background — you do NOT need to call any tool or route to an agent for this.
-  * RECALL is ALREADY handled for you: the user profile and relevant memories are injected
-    into THIS prompt above (under "What I know about you" / "RELEVANT MEMORIES"). Any "tell me
-    about me", "what do you know about me", "what's my name" → type:"simple", answered straight
-    from that injected context. NEVER call memory_tool to search/list for these — just read
-    what's above and reply.
-  * ONLY call the memory_tool yourself (it is a direct tool you have) when the user EXPLICITLY
-    asks to SAVE/REMEMBER a specific thing, or to FORGET/DELETE/CLEAR memories. Never send a
-    memory task to file_agent or any other agent.
+- MEMORY (handle it conversationally — never route memory to a worker agent):
+  * When the user SHARES or asks you to REMEMBER a fact/preference ("I like X", "my name is
+    Y", "I work at Z", "remember that I love the Beatles") → type:"simple". Reply naturally and
+    briefly (e.g. "Got it."). ANet captures durable facts automatically in the background, so
+    you do NOT call any tool and do NOT route to an agent.
+  * RECALL ("tell me about me", "what do you know about me", "what's my name") → type:"simple",
+    answered straight from the user profile / "RELEVANT MEMORIES" injected into THIS prompt
+    above. No tool, no agent — just read what's there and reply.
 - CORRECTION RULE (HIGHEST PRIORITY — overrides everything else): If the user indicates the
   previous result was wrong, incomplete, or not what they wanted — ANY phrasing like "you didn't
   do X", "you didn't make X", "that's not what I asked", "you only did Y not Z", "you missed X",
@@ -843,6 +864,45 @@ class Engine:
         self._result_cache[key] = text
         return step, text, offload
 
+    def _step_context(self, step: dict, step_results: list[dict], async_results: dict) -> str:
+        """Build the prior-output context a step is allowed to see (the Conductor's
+        'access list' idea). `context_from` controls visibility:
+          • absent           → all prior outputs (+ async results) — the default;
+          • [ids]            → ONLY those steps' outputs (e.g. a synthesis step that
+                               combines several independent attempts);
+          • []   (present)   → blind — no prior outputs (independent parallel attempts).
+        Lets the planner express debate / best-of-N, not just always-forward chaining."""
+        if "context_from" in step:
+            wanted  = {str(x) for x in (step.get("context_from") or [])}
+            visible = [r for r in step_results if str(r.get("step_id")) in wanted]
+            include_async = False
+        else:
+            visible = list(step_results)
+            include_async = True
+
+        parts = [
+            f"=== Output from {r['agent']} ===\n{r['result']}"
+            for r in visible
+            if r.get("status") in ("success", "failure", "partial", "offloaded")
+        ]
+        if include_async:
+            for k, v in async_results.items():
+                parts.append(f"=== Async result [{k}] ===\n{v}")
+        context_block = ("\n\n" + "\n\n".join(parts)) if parts else ""
+
+        # Downloaded-file paths from the visible outputs (so agents reuse exact paths).
+        dl = [
+            ln.strip()
+            for r in visible
+            for ln in (r.get("result") or "").splitlines()
+            if ln.strip().startswith("Downloaded:")
+        ]
+        file_injection = (
+            "\n\nFiles downloaded in previous steps — use these EXACT paths:\n" + "\n".join(dl)
+        ) if dl else ""
+
+        return context_block + file_injection
+
     async def _execute(
         self,
         plan:            list[dict],
@@ -862,25 +922,9 @@ class Engine:
                 "new_offloaded": {}, "pending_steps": [],
             }
 
-        # Build context from completed + async results
-        parts = []
-        for r in step_results:
-            if r.get("status") in ("success", "failure", "partial", "offloaded"):
-                parts.append(f"=== Output from {r['agent']} ===\n{r['result']}")
-        for k, v in async_results.items():
-            parts.append(f"=== Async result [{k}] ===\n{v}")
-        context_block = ("\n\n" + "\n\n".join(parts)) if parts else ""
-
-        # File path injection (avoid agents having to parse context for download paths)
-        downloaded_paths: list[str] = []
-        for r in step_results:
-            for line in (r.get("result") or "").splitlines():
-                if line.strip().startswith("Downloaded:"):
-                    downloaded_paths.append(line.strip())
-        file_injection = (
-            "\n\nFiles downloaded in previous steps — use these EXACT paths:\n"
-            + "\n".join(downloaded_paths)
-        ) if downloaded_paths else ""
+        # Per-step context is built below via _step_context() — it honors each step's
+        # `context_from` (selective visibility), so independent/blind attempts and a
+        # later synthesis/debate step are now expressible.
 
         adj_block = ""
         if attempts > 0:
@@ -952,11 +996,13 @@ class Engine:
             if role in ("user", "assistant"):
                 conv_history.append({"role": role, "content": content})
 
-        # Run all ready steps concurrently
+        # Run all ready steps concurrently — each step gets only the prior outputs it's
+        # allowed to see (selective visibility), so blind parallel attempts don't leak
+        # into each other and a synthesis step can pull them all together.
         coros = [
             self._run_one(
                 s,
-                s.get("task", "") + context_block + adj_block + file_injection,
+                s.get("task", "") + self._step_context(s, step_results, async_results) + adj_block,
                 attempts,
                 history=conv_history,
             )
@@ -1028,12 +1074,14 @@ class Engine:
         success_criteria = step.get("success_criteria", "Task completed without errors.")
         checker_tool     = self._tools.get("checker")
 
-        self._notify("checker: validating...")
+        self._notify("verifier: checking...")
 
         status, reason = "unknown", ""
         if check and checker_tool:
             status, reason = await _run_explicit_check(checker_tool, check, self._notify)
 
+        # Verifier (rigorous): returns its verdict AND the concrete fix in one call.
+        verifier_fix = ""
         if status == "unknown":
             if checker_tool:
                 cl = await checker_tool["run"]({
@@ -1044,13 +1092,19 @@ class Engine:
                 })
                 status = cl.get("status", "failure")
                 reason = cl.get("reason", "")
+                verifier_fix = (cl.get("adjustment") or "").strip()
+                issues = cl.get("issues") or []
+                if issues and not reason:
+                    reason = "; ".join(str(i) for i in issues)
             else:
                 status, reason = "success", "No checker."
 
-        self._notify(f"checker: {status} — {reason}")
+        self._notify(f"verifier: {'ACCEPT' if status == 'success' else 'REVISE'} — {reason}")
 
-        adjustment = ""
-        if status != "success" and checker_tool:
+        # Use the verifier's own fix; only fall back to a separate diagnose call if it
+        # didn't give one (saves a round-trip and keeps the fix grounded in the issues found).
+        adjustment = verifier_fix
+        if status != "success" and checker_tool and not adjustment:
             diag = await checker_tool["run"]({
                 "action":         "diagnose",
                 "task":           step["task"],
@@ -1059,14 +1113,14 @@ class Engine:
                 "attempt_number": attempts + 1,
             })
             adjustment = diag.get("adjustment", "")
-            if adjustment:
-                self._notify(f"checker: adjustment → {adjustment}")
+        if status != "success" and adjustment:
+            self._notify(f"verifier: fix → {adjustment}")
 
         advance = status == "success" or attempts >= _MAX_RETRIES - 1
 
         if advance:
             if attempts >= _MAX_RETRIES - 1 and status != "success":
-                self._notify(f"checker: max retries — proceeding with {status}")
+                self._notify(f"verifier: budget exhausted — proceeding with {status}")
             for sid in active_step_ids:
                 step_statuses[sid] = "completed" if status == "success" else "failed"
             new_entries = [

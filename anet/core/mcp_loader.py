@@ -284,3 +284,15 @@ def list_available_servers() -> list[str]:
         d.name for d in _mcp_dir().iterdir()
         if d.is_dir() and (d / "config.yaml").exists()
     ]
+
+
+async def disconnect_all() -> None:
+    """Close every live MCP server connection. Call this on shutdown BEFORE the event
+    loop closes, so the subprocess stdio transports are torn down cleanly instead of
+    being garbage-collected after close (which spews proactor errors on Windows)."""
+    for name in list(_connections):
+        try:
+            await _connections[name].close()
+        except Exception:
+            pass
+        _connections.pop(name, None)

@@ -123,7 +123,11 @@ SCHEMA = {
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-_CHECKER_MODEL = "meta-llama/llama-3.1-8b-instruct"
+# Verification is the highest-leverage role in a multi-agent system (see TRINITY /
+# Conductor): a strong verifier that hunts for what's WRONG lifts the whole pipeline.
+# Default stays small/cheap; point ANET_CHECKER_MODEL at a stronger model to improve
+# verification quality.
+_CHECKER_MODEL = os.environ.get("ANET_CHECKER_MODEL", "meta-llama/llama-3.1-8b-instruct")
 _VISION_MODEL  = "google/gemini-flash-1.5"
 _API_URL       = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -195,11 +199,23 @@ def _find_win(title: str):
 # ── LLM-based handlers ────────────────────────────────────────────────────────
 
 def _do_classify(inp: dict) -> dict:
+    """Rigorous verification (the Verifier role). Don't rubber-stamp — actively hunt
+    for what's wrong or missing, and return the fix together with the verdict (so the
+    next attempt is grounded in the exact problems found)."""
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a task validation agent. "
+                "You are a rigorous VERIFIER for an AI task executor. Your job is to find "
+                "what is WRONG, MISSING, or UNVERIFIED — NOT to rubber-stamp. A result that "
+                "looks plausible but is incomplete, incorrect, only partially done, or "
+                "fabricated must NOT pass. Check that the result is:\n"
+                "  • CORRECT — no factual or logical errors;\n"
+                "  • COMPLETE — every part of the task is done, including obvious edge cases "
+                "and requirements that are clearly implied even if not spelled out;\n"
+                "  • RESPONSIVE — it actually answers/does what was asked, not something near it;\n"
+                "  • GROUNDED — claims are backed by the result, not invented.\n"
+                "Only return success when you genuinely cannot find a real problem. "
                 "Respond with ONLY a valid JSON object — no prose, no markdown."
             ),
         },
@@ -207,10 +223,15 @@ def _do_classify(inp: dict) -> dict:
             "role": "user",
             "content": (
                 f"Task: {inp['task']}\n\n"
-                f"Result: {inp['result']}\n\n"
+                f"Result produced:\n{inp['result']}\n\n"
                 f"Success criteria: {inp['success_criteria']}\n\n"
-                "Did this result satisfy the success criteria?\n"
-                'Respond with exactly: {"status": "success"|"failure"|"partial", "reason": "<brief explanation>"}'
+                "Verify strictly. List the specific problems you find (empty list if none), "
+                "then give the SINGLE most important concrete fix for the next attempt "
+                "(empty string if it already passes).\n"
+                'Respond with exactly: {"status": "success"|"partial"|"failure", '
+                '"reason": "<brief explanation of the verdict>", '
+                '"issues": ["<specific problem>", ...], '
+                '"adjustment": "<the one concrete fix for the next attempt, or empty>"}'
             ),
         },
     ]
@@ -219,6 +240,8 @@ def _do_classify(inp: dict) -> dict:
     if parsed.get("status") not in ("success", "failure", "partial"):
         parsed["status"] = "failure"
         parsed.setdefault("reason", "Could not determine status from model response.")
+    parsed.setdefault("issues", [])
+    parsed.setdefault("adjustment", "")
     return parsed
 
 
