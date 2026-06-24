@@ -51,7 +51,8 @@ PRESETS: dict[str, dict] = {
     },
     "mono": {  # minimal / light-terminal friendly — no accent color
         "accent": "default", "assistant": "default",
-        "banner": ["grey85", "grey66", "grey50", "grey39"],
+        # Hex greys (the banner gradient interpolates hex; named colors would fail).
+        "banner": ["#d9d9d9", "#a8a8a8", "#808080", "#636363"],
     },
 }
 

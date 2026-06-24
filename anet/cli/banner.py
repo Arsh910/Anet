@@ -78,9 +78,16 @@ _LETTERS: dict[str, list[str]] = {
 _PIX_H = 7            # glyph height in pixels
 
 
-def _hex_to_rgb(h: str) -> tuple[int, int, int]:
+def _hex_to_rgb(h: str) -> tuple[int, int, int] | None:
+    """Parse '#rrggbb' → (r,g,b). Returns None for anything that isn't a hex color
+    (e.g. a named rich color), so the gradient can fall back instead of crashing."""
     h = h.lstrip("#")
-    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    if len(h) != 6:
+        return None
+    try:
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return None
 
 
 def _interp(stops: list[str], t: float) -> str:
@@ -93,6 +100,9 @@ def _interp(stops: list[str], t: float) -> str:
     i = int(seg)
     f = seg - i
     a, b = _hex_to_rgb(stops[i]), _hex_to_rgb(stops[i + 1])
+    if a is None or b is None:
+        # A stop isn't hex (named color) — can't interpolate; use the nearer stop.
+        return stops[i] if f < 0.5 else stops[i + 1]
     r, g, bl = (round(a[k] + (b[k] - a[k]) * f) for k in range(3))
     return f"#{r:02x}{g:02x}{bl:02x}"
 
