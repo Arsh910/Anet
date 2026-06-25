@@ -219,7 +219,7 @@ def _known_agents() -> list[str]:
         from anet.AnetAgents.agents_config import AGENTS
         return [a.get("name") for a in AGENTS if a.get("name")]
     except Exception:
-        return ["research_agent", "code_agent", "file_agent",
+        return ["research_agent", "code_agent",
                 "computer_agent", "checker_agent"]
 
 

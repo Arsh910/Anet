@@ -18,7 +18,7 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-from anet.core import orchestrator
+from anet.core.OldEngine import orchestrator
 from anet.core.context import on_status as _status_var, on_token as _token_var, is_cancelled as _is_cancelled
 
 _MAX_RETRIES    = 3
@@ -707,7 +707,7 @@ class Engine:
         `summary`. Summarisation fires only when turns overflow the recent-token
         budget — typically once every several turns, not every turn.
         """
-        from anet.core import context_window as cw
+        from anet.core.OldEngine import context_window as cw
 
         recent_tokens, min_recent = _context_settings()
         try:
@@ -725,6 +725,8 @@ class Engine:
                     model=model, temperature=0, max_tokens=700,
                     messages=cw.build_summary_messages(summary, overflow),
                 )
+                from anet.core import tokens as _tok
+                _tok.record(resp, stage="compress")
                 new_summary = (resp.choices[0].message.content or "").strip()
                 if new_summary:
                     summary = new_summary
@@ -757,6 +759,8 @@ class Engine:
                     {"role": "assistant", "content": "Action result: " + " | ".join(tool_results)},
                 ],
             )
+            from anet.core import tokens as _tok
+            _tok.record(resp, stage="manager")
             from anet.core.agent_runner import _message_from_response
             m = _message_from_response(resp, model)
             return (m.content or "Done.").strip()
@@ -780,7 +784,7 @@ class Engine:
         if keep_from is None:
             api_msgs = messages[-8:]
         else:
-            from anet.core import context_window as cw
+            from anet.core.OldEngine import context_window as cw
             api_msgs = cw.assemble(messages, summary, keep_from)
 
         msgs = [
@@ -801,6 +805,8 @@ class Engine:
                 kwargs["tools"] = tools_param
 
             resp = await client.chat.completions.create(**kwargs)
+            from anet.core import tokens as _tok
+            _tok.record(resp, stage="manager")
             from anet.core.agent_runner import _message_from_response
             msg  = _message_from_response(resp, manager_model)
 
@@ -1180,17 +1186,28 @@ class Engine:
         )
 
         try:
-            stream = await client.chat.completions.create(
-                model=manager_model,
-                messages=[
-                    {"role": "system", "content": _synthesis_system_prompt(interim=is_interim)},
-                    {"role": "user", "content": f"Original request: {user_msg}\n\nAgent outputs:\n{results_text}"},
-                ],
-                temperature=0.3,
-                stream=True,
-            )
+            _syn_msgs = [
+                {"role": "system", "content": _synthesis_system_prompt(interim=is_interim)},
+                {"role": "user", "content": f"Original request: {user_msg}\n\nAgent outputs:\n{results_text}"},
+            ]
+            try:
+                # Ask for usage in the terminal chunk; some providers reject this —
+                # fall back to a plain stream (synthesis must never break for a token count).
+                stream = await client.chat.completions.create(
+                    model=manager_model, messages=_syn_msgs, temperature=0.3,
+                    stream=True, stream_options={"include_usage": True},
+                )
+            except Exception:
+                stream = await client.chat.completions.create(
+                    model=manager_model, messages=_syn_msgs, temperature=0.3, stream=True,
+                )
+            from anet.core import tokens as _tok
             reply = ""
             async for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    _tok.record(chunk, stage="manager")
+                if not chunk.choices:        # usage-only terminal chunk has no choices
+                    continue
                 delta = chunk.choices[0].delta.content or ""
                 if delta:
                     reply += delta

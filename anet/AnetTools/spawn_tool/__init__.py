@@ -113,7 +113,7 @@ async def run(params: dict) -> dict:
     if context:
         message = f"{task}\n\nContext from parent agent:\n{context}"
 
-    from anet.core import orchestrator
+    from anet.core.OldEngine import orchestrator
     from anet.core.context import on_status as _status_var
 
     # Increment depth for the child chain, reset on return

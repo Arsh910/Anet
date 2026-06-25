@@ -47,10 +47,10 @@ flowchart LR
     subgraph CLI["CLI · main.py"]
         IN["Prompt + slash commands"]
     end
-    subgraph ENG["Engine · engine.py"]
+    subgraph ENG["Engine · OldEngine/engine.py"]
         PL["Planner"] --> EX["Executor"] --> CH["Checker"] --> SY["Synthesizer"]
     end
-    subgraph RUN["Orchestrator + agent_runner"]
+    subgraph RUN["Agent loop · OldEngine/orchestrator.py + agent_runner"]
         LOOP["Agentic loop · cycle detection"]
     end
 
@@ -66,9 +66,11 @@ flowchart LR
 
 | Module | Responsibility |
 |---|---|
-| `anet/core/engine.py` | Planner → executor → checker → synthesizer pipeline (pure Python, no LangChain) |
-| `anet/core/orchestrator.py` | The agentic loop for one agent: model ↔ tool-call iterations, cycle detection, confirmation gate, skill tracking |
+| `anet/core/OldEngine/engine.py` | **Active** orchestration coordinator: planner → executor → checker → synthesizer (pure Python, no LangChain) |
+| `anet/core/OldEngine/orchestrator.py` | The agentic loop for one agent: model ↔ tool-call iterations, cycle detection, confirmation gate, skill tracking. Shared — also used by `spawn_tool` and the AdaptOrch executors |
 | `anet/core/agent_runner.py` | One model call; provider dispatch (OpenAI-compatible, Anthropic, Vertex) |
+| `anet/core/{dag,decomposer,router,executors,synthesizer}/` | **AdaptOrch** — task-adaptive orchestration (decompose → DAG metrics ω/δ/γ → topology router → parallel/sequential/hierarchical/hybrid executors → adaptive synthesis). Built and unit-tested; replaces the OldEngine coordinator behind `orchestration.mode` once integrated |
+| `anet/AnetTools/toolsets.py` | Capability bundles + the COMMON baseline every agent inherits |
 | `anet/core/store.py` | `aiosqlite` conversation store — one shared DB keyed by `thread` |
 | `anet/core/memory_store.py` | Long-term memory backend — wraps mem0 (local Chroma + fastembed + your LLM) |
 | `anet/core/skill_manager.py` | Self-improving skills — search, create, curate |
@@ -247,7 +249,7 @@ Anet/
 │   ├── AnetAgents/          # Built-in agent definitions
 │   ├── AnetTools/           # Built-in tool implementations (+ registrar)
 │   ├── cli/banner.py        # Animated startup banner + README image export
-│   └── core/                # engine, orchestrator, agent_runner, store, memory, skills, loaders, paths, workspace
+│   └── core/                # OldEngine/ (engine+orchestrator), AdaptOrch phases (dag, decomposer, router, executors, synthesizer), agent_runner, store, memory, skills, loaders, paths, workspace
 │
 ├── anet_pack/               # the DEFAULT PACK (ships with ANet; the dev workspace)
 │   ├── __init__.py          # makes it an importable package (so it ships in the wheel)

@@ -17,7 +17,7 @@
 Use any model, per agent. Claude for code, Gemini for research, GPT for planning, a free model for the rest — set it in one YAML file via [OpenRouter](https://openrouter.ai), Google, OpenAI, Anthropic, or Vertex AI. No framework lock-in, no LangChain.
 
 <table>
-<tr><td><b>Multi-agent, multi-model</b></td><td>Five built-in agents (research, code, file, computer, checker) plus your own. Each picks its own model + provider in <code>anet.config.yaml</code>. The manager plans a DAG and runs independent steps in parallel.</td></tr>
+<tr><td><b>Multi-agent, multi-model</b></td><td>Four built-in agents (research, code, computer, checker) plus your own. Each picks its own model + provider in <code>anet.config.yaml</code>. The manager plans a DAG and runs independent steps in parallel.</td></tr>
 <tr><td><b>Builds its own integrations</b></td><td>The <b>ToolSmith</b> (<code>/newtool</code>), <b>MCPSmith</b> (<code>/addmcp</code>), and <b>AgentSmith</b> (<code>/newagent</code>) scaffold a new tool, MCP server, or agent from your code/description, validate it, then wire it into the agents you pick — editing only <code>exanet.config.yaml</code>, never the core.</td></tr>
 <tr><td><b>Shareable packs</b></td><td>Your whole setup — tools, agents, skills, MCP wiring, persona, <b>and its color theme</b> — is one folder. <b>PackSmith</b> (<code>/packsmith share</code>) bundles it into a zip (secrets stripped, README written); anyone runs <code>/packsmith add</code> + <code>/changepack</code> to get your exact setup. Switch between packs anytime.</td></tr>
 <tr><td><b>Themed, per pack</b></td><td>Pick a color theme with <code>/theme</code> (cyan · emerald · amber · violet · crimson · matrix · mono). The theme is stored <em>in the pack</em>, so different packs wear different colors — you can tell which workspace you're in at a glance, and the theme ships when you share the pack.</td></tr>
@@ -83,8 +83,8 @@ A banner and a **compact status line** — not a wall of text:
 ```text
 Manager: nex-agi/nex-n2-pro:free — plans and coordinates all requests
 
-  Agents   6/6 loaded       /agents to view
-  Tools    20/20 ready      /tools to view
+  Agents   5/5 loaded       /agents to view
+  Tools    22/22 ready      /tools to view
   MCP      2/2 connected    /mcps to view
 ```
 
@@ -133,12 +133,13 @@ labelled prompt when it needs a path/description. Typing the argument inline sti
 | Agent | Does | Key tools |
 |---|---|---|
 | **research_agent** | Web research, news, image downloads | `web_search`, `web_fetch`, `download_file` |
-| **code_agent** | Write, edit, refactor, test, debug | `edit_tool`, `shell_tool`, `grep_tool`, `lsp_tool`, `diagnose_tool` |
-| **file_agent** | File ops on non-code files | `file_tool`, `conflict_tool` |
+| **code_agent** | Write, edit, refactor, test, debug — incl. all file ops | `file_tool`, `edit_tool`, `shell_tool`, `code_execution`, `grep_tool`, `lsp_tool`, `diagnose_tool` |
 | **computer_agent** | Windows desktop automation | `open_app` *(Windows only)* |
 | **checker_agent** | Validates other agents' results | `checker` |
 
-These five agents and ~20 built-in tools (files & code, web, desktop, coordination — `todo_tool`, `memory_tool`, `spawn_tool`, `ask_user`, …) are **core** — always present. Run `/tools` to see them all.
+These four agents and ~21 built-in tools (files & code, web, desktop, coordination — `todo_tool`, `memory_tool`, `spawn_tool`, `ask_user`, `web_fetch`, `code_execution`, …) are **core** — always present. Run `/tools` to see them all.
+
+Agents are **tool-complete by domain**: each owns every tool it needs to finish its work end-to-end, and every agent shares a common baseline (`grep`, `glob`, `web_fetch`, `memory`, `todo`, `ask_user`, `spawn`). Agents declare capability **toolsets** (e.g. `filesystem`, `shell`, `web`) rather than hand-listing tools — see [`toolsets.py`](anet/AnetTools/toolsets.py).
 
 Everything else is per-**pack**: your own tools/agents and any MCP servers you wire in (no core changes). The default pack ships small examples (a `wordcount` tool, a Telegram agent, a playwright MCP config) to learn from — see [Packs](#-packs--share-your-whole-setup).
 

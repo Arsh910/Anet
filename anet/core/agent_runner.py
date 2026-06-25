@@ -243,6 +243,8 @@ async def _run_anthropic(
     for attempt in range(1, _RETRY_ATTEMPTS + 1):
         try:
             response = await client.messages.create(**call_kwargs)
+            from anet.core import tokens as _tok
+            _tok.record(response, stage=agent.get("name"))
             return _anthropic_response_to_message(response)
         except Exception as exc:
             is_retryable = isinstance(exc, AnthropicRateLimitError) or getattr(exc, "status_code", 0) in (429, 500, 503)
@@ -328,6 +330,8 @@ async def run(
         for attempt in range(1, _RETRY_ATTEMPTS + 1):
             try:
                 response = await client.chat.completions.create(**call_kwargs)
+                from anet.core import tokens as _tok
+                _tok.record(response, stage=agent.get("name"))
                 return _message_from_response(response, call_kwargs["model"])
             except _RETRYABLE as exc:
                 if attempt < _RETRY_ATTEMPTS:
@@ -363,6 +367,8 @@ async def run(
     for attempt in range(1, _RETRY_ATTEMPTS + 1):
         try:
             response = await client.chat.completions.create(**call_kwargs)
+            from anet.core import tokens as _tok
+            _tok.record(response, stage=agent.get("name"))
             return _message_from_response(response, call_kwargs["model"])
         except _RETRYABLE as exc:
             if attempt < _RETRY_ATTEMPTS:

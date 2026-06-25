@@ -33,9 +33,6 @@ agents:
   code_agent:
     model: nex-agi/nex-n2-pro:free
     provider: openrouter
-  file_agent:
-    model: nex-agi/nex-n2-pro:free
-    provider: openrouter
   computer_agent:
     model: nex-agi/nex-n2-pro:free
     provider: openrouter
@@ -96,3 +93,21 @@ context:
 persona:
   soul_file: SOUL.md
   enabled: true
+
+# Orchestration (AdaptOrch) — task-adaptive multi-agent topology. The decomposer
+# breaks a request into a subtask DAG; later stages route it to a topology
+# (parallel / sequential / hierarchical / hybrid) by the DAG's shape, execute, and
+# synthesize. Per-stage models default to the manager model — override a stage only
+# when you want to (e.g. a cheap model for decomposition to cut cost). All keys are
+# optional; uncomment what you need.
+# orchestration:
+#   mode: adaptorch    # 'adaptorch' = task-adaptive topology pipeline; omit/legacy = OldEngine
+#   # Per-stage models (each defaults to the manager model if omitted):
+#   decomposer: { model: nex-agi/nex-n2-pro:free,     provider: openrouter }  # Phase 1
+#   merger:     { model: anthropic/claude-sonnet-4.6, provider: anthropic }   # Phase 5 — combine agreeing outputs
+#   arbiter:    { model: anthropic/claude-sonnet-4.6, provider: anthropic }   # Phase 5 — resolve conflicts
+#   # Router thresholds (paper-calibrated defaults; tune per pack):
+#   # theta_omega: 0.5   # min parallelism ratio to prefer the parallel topology
+#   # theta_gamma: 0.6   # coupling above this prefers hierarchical
+#   # theta_delta: 5     # min subtasks for hierarchical
+#   # theta_cs:    0.7   # synthesis consistency threshold (merge vs. arbiter)

@@ -54,7 +54,9 @@
             "data lookup",
             "general knowledge questions",
         ],
-        "tools": ["web_search", "web_fetch", "download_file"],
+        # web (search/fetch/download) + read-only filesystem to write findings.
+        # COMMON baseline (grep/glob/web_fetch/memory/todo/ask_user/spawn) is auto-added.
+        "toolsets": ["web", "filesystem"],
         "max_steps": 10,
         "enabled": True,
     },
@@ -92,7 +94,7 @@
             "system tasks",
             "window management",
         ],
-        "tools": ["open_app"],
+        "toolsets": ["desktop"],   # + COMMON baseline
         "max_steps": 20,
         "enabled": True,
     },
@@ -130,92 +132,8 @@
             "quality assurance",
             "retry suggestion",
         ],
-        "tools": ["checker"],
+        "toolsets": ["verify"],   # + COMMON baseline
         "max_steps": 8,
-        "enabled": True,
-    },
-    {
-        "name": "file_agent",
-        "system_prompt": (
-            "You manage files and folders on this Windows machine using the file_tool.\n"
-            "Always call file_tool with an 'action' parameter. Never explain what you are going to do — just call the tool.\n\n"
-
-            "FINDING FILES — ALWAYS DO THIS FIRST:\n"
-            "- If you are given a directory and a filename but NOT the full path, you MUST call\n"
-            "  search_files first to locate it. NEVER guess or assume the full path.\n"
-            "  Example: user says 'find agents_config.py in C:\\thinkbig\\Anet'\n"
-            "    WRONG: file_tool(action='read_file', path='C:\\thinkbig\\Anet\\agents_config.py')\n"
-            "    RIGHT: file_tool(action='search_files', root='C:\\thinkbig\\Anet', name_pattern='agents_config.py', file_type='file')\n"
-            "           then: file_tool(action='read_file', path='<path from search result>')\n\n"
-
-            "READING:\n"
-            "- Read a file's content   → file_tool(action='read_file', path='C:\\path\\to\\file.txt')\n"
-            "- Read specific lines     → file_tool(action='read_lines', path='...', start=10, end=20)\n"
-            "- Parse CSV as JSON rows  → file_tool(action='parse_csv', path='...', max_rows=50)\n"
-            "- Parse and pretty-print JSON → file_tool(action='parse_json', path='...')\n\n"
-
-            "WRITING:\n"
-            "- Create or overwrite a file → file_tool(action='write_file', path='...', content='...', mode='overwrite')\n"
-            "- Append to a file           → file_tool(action='write_file', path='...', content='...', mode='append')\n"
-            "- Create a folder (with parents) → file_tool(action='create_folder', path='C:\\new\\folder')\n\n"
-
-            "FILE OPERATIONS:\n"
-            "- Copy    → file_tool(action='copy_file', src='C:\\a.txt', dst='C:\\b.txt')\n"
-            "- Move    → file_tool(action='move_file', src='C:\\a.txt', dst='D:\\a.txt')\n"
-            "- Delete  → file_tool(action='delete_file', path='...')  [goes to Recycle Bin, NOT permanent]\n"
-            "- Rename  → file_tool(action='rename_file', path='C:\\old.txt', new_name='new.txt')\n\n"
-
-            "LISTING & SEARCH:\n"
-            "- List folder contents       → file_tool(action='list_directory', path='C:\\Users', pattern='*.py')\n"
-            "- Recursive search           → file_tool(action='search_files', root='C:\\', name_pattern='*.log', file_type='file')\n"
-            "  file_type options: 'file', 'folder', 'any'\n"
-            "- File metadata              → file_tool(action='get_file_info', path='...')\n\n"
-
-            "ARCHIVE:\n"
-            "- Zip multiple files/folders → file_tool(action='zip_files', paths=['C:\\a.txt','C:\\folder'], output_zip='C:\\out.zip')\n"
-            "- Extract a zip              → file_tool(action='unzip_file', zip_path='C:\\out.zip', extract_to='C:\\extracted')\n\n"
-
-            "RULES:\n"
-            "- Always use absolute Windows paths (C:\\...) for clarity.\n"
-            "- delete_file sends to the Recycle Bin — it is NEVER permanent. Safe to use.\n"
-            "- If a path is not found, report the error clearly and suggest alternatives.\n"
-            "- For large files, prefer read_lines over read_file to avoid token overload.\n"
-            "- After write_file or create_folder, confirm with the returned path."
-        ),
-        "task_types": [
-            "copy file",
-            "move file",
-            "delete file",
-            "rename file",
-            "create folder",
-            "list directory",
-            "list folder contents",
-            "search files",
-            "find files",
-            "file info",
-            "file metadata",
-            "zip files",
-            "unzip files",
-            "compress files",
-            "extract archive",
-            "file system operations",
-            "organize files",
-            "file management",
-            "resolve merge conflicts",
-            "fix git conflicts",
-            "merge conflict resolution",
-            "remember preference",
-            "remember fact",
-            "save user preference",
-            "store memory",
-            "recall memory",
-            "search memory",
-            "forget memory",
-            "list memories",
-            "what do you remember",
-        ],
-        "tools": ["file_tool", "memory_tool", "conflict_tool", "spawn_tool"],
-        "max_steps": 25,
         "enabled": True,
     },
     {
@@ -387,7 +305,10 @@
             "rename function",
             "add tests",
         ],
-        "tools": ["file_tool", "shell_tool", "edit_tool", "grep_tool", "glob_tool", "web_search", "web_fetch", "todo_tool", "process_tool", "diagnose_tool", "conflict_tool", "lsp_tool", "spawn_tool", "code_execution"],
+        # Tool-complete for coding: filesystem (read/write/edit/conflict), shell
+        # (run/process/code_exec), code_intel (lsp/diagnose), web (search/fetch/
+        # download). COMMON (grep/glob/web_fetch/memory/todo/ask_user/spawn) auto-added.
+        "toolsets": ["filesystem", "shell", "code_intel", "web"],
         "max_steps": 60,
         "enabled": True,
     },

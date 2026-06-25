@@ -46,7 +46,7 @@ _ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "Anet")
 
 from anet.AnetAgents.agents_config import AGENTS
 from anet.core.tool_loader import load_tools
-from anet.core.engine import Engine, _manager_client as _engine_manager_client
+from anet.core.OldEngine.engine import Engine, _manager_client as _engine_manager_client
 from anet.core.store import ConversationStore
 from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var, on_ask as _ask_var, on_cancel as _cancel_var, on_notice as _notice_var
 from anet.core.config_loader import agent_overrides as _agent_overrides, manager_config as _manager_config
@@ -58,10 +58,8 @@ from anet.core.mcp_loader import load_mcp_tools_for_agents
 def _ex_config_file() -> Path:
     return _anet_paths.exanet_path()
 
-# Tools auto-added to EVERY agent (built-in or externally added) at startup,
-# so they never need to be listed per-agent in config. Only injected if the
-# tool actually loaded.
-_ALWAYS_TOOLS = ["ask_user"]
+# The universal baseline auto-added to every agent now lives in
+# anet.AnetTools.toolsets.COMMON (expanded via expand_tools at load time).
 
 from anet.core import paths as _anet_paths
 
@@ -226,6 +224,7 @@ class _LiveStatus:
     def __init__(self) -> None:
         self._current = "Thinking..."
         self.log: list[str] = []
+        self.reply = ""              # streamed synthesis tokens (live preview)
         self._start = time.monotonic()
         # Persisted across renders so the animation actually advances.
         self._anim = _Anim(_ANIM_FRAMES, _ANIM_INTERVAL, _ANIM_STYLE)
@@ -233,6 +232,9 @@ class _LiveStatus:
     def update(self, msg: str) -> None:
         self._current = msg
         self.log.append(msg)
+
+    def add_token(self, delta: str) -> None:
+        self.reply += delta
 
     def __rich__(self):
         elapsed = time.monotonic() - self._start
@@ -278,8 +280,21 @@ class _LiveStatus:
         # brackets — e.g. "2 steps [parallel]" — never breaks rendering.
         payload = Text(self._current or "")
         payload.append(f"   {elapsed_str}", style="dim")
+        try:
+            from anet.core import tokens as _tok
+            _u = _tok.current()
+            if _u and _u.total:
+                payload.append(f"  ↑ {_tok.fmt(_u.total)} tok", style="dim")
+        except Exception:
+            pass
         self._anim.payload = payload
         parts.append(self._anim)
+
+        # ── Streaming reply (synthesis tokens arriving live) ──────────────────
+        if self.reply:
+            parts.append(Text(""))
+            tail = self.reply[-600:]   # show the growing tail; full reply lands in the panel after
+            parts.append(Text(tail, style="assistant"))
 
         return Group(*parts)
 
@@ -1493,12 +1508,74 @@ async def _cmd_theme(arg: str) -> None:
         console.print("  [dim]cancelled.[/dim]\n")
 
 
+def _current_engine_mode() -> str:
+    try:
+        from anet.core.config_loader import load as _cfgload
+        return ((_cfgload().get("orchestration") or {}).get("mode") or "legacy").lower()
+    except Exception:
+        return "legacy"
+
+
+def _set_engine_mode(mode: str) -> bool:
+    """Persist orchestration.mode into the active pack's anet.config.yaml,
+    preserving comments (ruamel). Returns False if the config can't be written."""
+    if mode not in ("adaptorch", "legacy"):
+        return False
+    p = _anet_paths.config_path()
+    if p is None or not p.exists():
+        return False
+    try:
+        import io
+        from ruamel.yaml import YAML
+        y = YAML()
+        y.preserve_quotes = True
+        data = y.load(p.read_text(encoding="utf-8")) or {}
+        orch = data.get("orchestration")
+        if not isinstance(orch, dict):
+            orch = {}
+            data["orchestration"] = orch
+        orch["mode"] = mode
+        buf = io.StringIO()
+        y.dump(data, buf)
+        p.write_text(buf.getvalue(), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+async def _cmd_engine(arg: str) -> None:
+    """Pick the orchestration engine — AdaptOrch (task-adaptive topology) or the
+    legacy planner pipeline — and persist it to the pack's anet.config.yaml."""
+    current = _current_engine_mode()
+    options = [
+        ("adaptorch", f"AdaptOrch — task-adaptive topology (decompose → route → execute → synthesize)"
+                      f"{'   ← current' if current == 'adaptorch' else ''}"),
+        ("legacy",    f"Legacy — single planner → executor → checker → synthesizer"
+                      f"{'   ← current' if current == 'legacy' else ''}"),
+    ]
+    name = (arg or "").strip().lower()
+    if name not in ("adaptorch", "legacy"):
+        name = await _select_menu("Orchestration engine", options, current=current,
+                                  subtitle="Which orchestration engine should Anet use?")
+    if not name:
+        console.print("  [dim]cancelled.[/dim]\n"); return
+    if name == current:
+        console.print(f"\n  [dim]Already using[/dim] [bold accent]{name}[/bold accent].\n"); return
+    if _set_engine_mode(name):
+        _apply_config_change()
+        console.print(f"\n  [accent]●[/accent] engine set to [bold accent]{name}[/bold accent] "
+                      f"[dim]— rebuilds on your next message.[/dim]\n")
+    else:
+        console.print("  [yellow]Couldn't write the pack config.[/yellow]\n")
+
+
 async def _cmd_settings(arg: str) -> None:
     """One entry point for configuration — an arrow-key menu. Folds in the old /keys,
     /editpack, /editagent commands plus theme selection."""
     options = [
         ("keys",   "API keys              (~/.anet/.env)"),
         ("models", "Models & providers    (anet.config.yaml)"),
+        ("engine", "Orchestration engine  (AdaptOrch / legacy)"),
         ("exanet", "Tools & agents        (exanet.config.yaml)"),
         ("agent",  "An agent's prompt     (ExAgents/<name>/prompt.md)"),
         ("soul",   "Persona               (SOUL.md)"),
@@ -1516,6 +1593,8 @@ async def _cmd_settings(arg: str) -> None:
         await _open_keys()
     elif choice == "models":
         _edit_yaml(_anet_paths.config_path(), "anet.config.yaml (models/providers)")
+    elif choice == "engine":
+        await _cmd_engine("")
     elif choice == "exanet":
         _edit_yaml(_anet_paths.exanet_path(), "exanet.config.yaml (tools/agents)")
     elif choice == "agent":
@@ -1931,14 +2010,13 @@ async def _run_standalone_agent(agent_def: dict, user_message: str, tool_map: di
     """Run a standalone (non-manager) agent in a direct loop — shared by /newtool
     and /addmcp. Bypasses the planner entirely.
     """
-    from anet.core import orchestrator
+    from anet.core.OldEngine import orchestrator
 
     agent = dict(agent_def)
     name  = agent.get("name", "agent")
-    agent["tools"] = list(agent.get("tools") or [])
-    for t in _ALWAYS_TOOLS:                       # ask_user — needed for the confirm step
-        if t in tool_map and t not in agent["tools"]:
-            agent["tools"].append(t)
+    # COMMON baseline + toolset bundles + explicit tools, filtered to what loaded.
+    from anet.AnetTools.toolsets import expand_tools as _expand_tools
+    agent["tools"] = [t for t in _expand_tools(agent) if t in tool_map]
 
     # Resolve model/provider: explicit agents.<name> override > manager model.
     try:
@@ -2223,10 +2301,12 @@ async def _chat_turn(
 
     cancel_event = asyncio.Event()
     stopped = False
+    from anet.core import tokens as _tokens
+    _usage = _tokens.begin()          # fresh token accounting for this turn
     try:
         with Live(live_status, console=console, refresh_per_second=12, transient=True) as live:
             status_tk  = _status_var.set(on_status)
-            token_tk   = _token_var.set(lambda _: None)
+            token_tk   = _token_var.set(live_status.add_token)   # stream synthesis live
             confirm_tk = _confirm_var.set(_make_confirm_fn(live))
             output_tk  = _output_var.set(_render_diff)
             ask_tk     = _ask_var.set(_make_ask_fn(live))
@@ -2267,6 +2347,13 @@ async def _chat_turn(
         border_style="assistant",
         padding=(1, 2),
     ))
+    # Per-turn token usage footer.
+    if _usage and _usage.total:
+        console.print(
+            f"  [dim]Tokens: {_tokens.fmt(_usage.total)} "
+            f"(in {_tokens.fmt(_usage.prompt)} · out {_tokens.fmt(_usage.completion)} · "
+            f"{_usage.calls} calls)[/dim]"
+        )
     console.print()
     return False
 
@@ -2666,19 +2753,15 @@ async def main() -> None:
             mcp_tools = await load_mcp_tools_for_agents(all_agents)
             combined_tools.update(mcp_tools)
 
-            # ── 7.5 Auto-inject always-on tools into every agent ──────────────
-            # ask_user (and anything in _ALWAYS_TOOLS) is useful to every agent,
-            # so it's added here rather than listed in each agent's config —
-            # newly added agents pick it up automatically.
+            # ── 7.5 Resolve each agent's tools: COMMON baseline + toolset
+            # bundles + explicit tools (see anet.AnetTools.toolsets). Every agent —
+            # built-in or user-added — gets the common baseline so none is helpless;
+            # co-used tools travel together via bundles. Filtered to what actually
+            # loaded so a bundle naming an unavailable tool is harmless.
+            from anet.AnetTools.toolsets import expand_tools as _expand_tools
             for agent in all_agents:
-                tools = list(agent.get("tools") or [])
-                for t in _ALWAYS_TOOLS:
-                    if t in combined_tools and t not in tools:
-                        tools.append(t)
-                agent["tools"] = tools
-
-            # spawn_tool is not auto-injected — agents that need it declare it
-            # explicitly in their tools list, same as any other tool.
+                resolved = _expand_tools(agent)
+                agent["tools"] = [t for t in resolved if t in combined_tools]
 
             # ── Configure spawn_tool with live agents + tools ─────────────────
             try:
@@ -2696,9 +2779,22 @@ async def main() -> None:
             manager_tools: dict = {}
             return all_agents, combined_tools, manager_tools, len(ex_agents)
 
+        def _make_engine(agents, tools, manager_tools):
+            """Pick the orchestration engine by `orchestration.mode` (default legacy).
+            'adaptorch' → the task-adaptive AdaptOrch coordinator; else the OldEngine."""
+            try:
+                from anet.core.config_loader import load as _cfgload
+                mode = ((_cfgload().get("orchestration") or {}).get("mode") or "legacy").lower()
+            except Exception:
+                mode = "legacy"
+            if mode == "adaptorch":
+                from anet.core.orchestration.coordinator import AdaptOrchEngine
+                return AdaptOrchEngine(agents, tools, manager_tools=manager_tools)
+            return Engine(agents, tools, manager_tools=manager_tools)
+
         # Initial build
         all_agents, all_tools, manager_tools, n_external = await _merge_all()
-        engine = Engine(all_agents, all_tools, manager_tools=manager_tools)
+        engine = _make_engine(all_agents, all_tools, manager_tools)
         # Reprint summary now that MCP tools have been injected into agent tool lists
         _print_startup_summary(all_agents, all_tools)
         if n_external:
@@ -2749,7 +2845,7 @@ async def main() -> None:
                         mtime = new_mtime
                         _force_reload = False
                         cur_agents, cur_tools, mgr_tools2, n2 = await _merge_all()
-                        engine_box[0] = Engine(cur_agents, cur_tools, manager_tools=mgr_tools2)
+                        engine_box[0] = _make_engine(cur_agents, cur_tools, mgr_tools2)
                         console.print(f"[dim]  ✓ pack loaded — {n2} external agent(s) active[/dim]")
 
                     # Run one chat turn

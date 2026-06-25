@@ -37,9 +37,11 @@ reviewing or tweaking what it produces, or building one entirely by hand.
 
 ANet's **planner** routes each user request to an agent by matching the request
 against that agent's `task_types`. So `task_types` is the most important field —
-it's how the planner "discovers" your agent. `ask_user` is added to every agent
-automatically; to let an agent delegate a sub-task to another agent at runtime,
-add `spawn_tool` to its `tools:` list explicitly.
+it's how the planner "discovers" your agent. Every agent automatically gets the
+**common baseline** toolset — `grep`, `glob`, `web_fetch`, `memory`, `todo`,
+`ask_user`, and `spawn_tool` (delegate a sub-task to another agent) — so you only
+list the tools specific to *this* agent's job in `tools:` (or pull in a capability
+bundle via `toolsets:`, e.g. `toolsets: [web]`).
 
 ## Define an agent
 
