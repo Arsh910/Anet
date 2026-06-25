@@ -18,6 +18,7 @@ Use any model, per agent. Claude for code, Gemini for research, GPT for planning
 
 <table>
 <tr><td><b>Multi-agent, multi-model</b></td><td>Four built-in agents (research, code, computer, checker) plus your own. Each picks its own model + provider in <code>anet.config.yaml</code>. The manager plans a DAG and runs independent steps in parallel.</td></tr>
+<tr><td><b>Task-adaptive orchestration <em>(AdaptOrch)</em></b></td><td>An optional engine that decomposes each request into a dependency graph, measures its shape (parallelism ω, depth δ, coupling γ), and routes it to the right topology — <b>parallel</b>, <b>sequential</b>, <b>hierarchical</b>, or <b>hybrid</b> — then runs it and synthesizes the outputs (with a consistency check + re-route loop). The thinking panel shows each phase live and streams the answer; the footer shows tokens used. Turn it on in <code>/settings → Orchestration engine</code> (default: legacy). Based on the <a href="references/adaptorch.pdf">AdaptOrch</a> framework.</td></tr>
 <tr><td><b>Builds its own integrations</b></td><td>The <b>ToolSmith</b> (<code>/newtool</code>), <b>MCPSmith</b> (<code>/addmcp</code>), and <b>AgentSmith</b> (<code>/newagent</code>) scaffold a new tool, MCP server, or agent from your code/description, validate it, then wire it into the agents you pick — editing only <code>exanet.config.yaml</code>, never the core.</td></tr>
 <tr><td><b>Shareable packs</b></td><td>Your whole setup — tools, agents, skills, MCP wiring, persona, <b>and its color theme</b> — is one folder. <b>PackSmith</b> (<code>/packsmith share</code>) bundles it into a zip (secrets stripped, README written); anyone runs <code>/packsmith add</code> + <code>/changepack</code> to get your exact setup. Switch between packs anytime.</td></tr>
 <tr><td><b>Themed, per pack</b></td><td>Pick a color theme with <code>/theme</code> (cyan · emerald · amber · violet · crimson · matrix · mono). The theme is stored <em>in the pack</em>, so different packs wear different colors — you can tell which workspace you're in at a glance, and the theme ships when you share the pack.</td></tr>
@@ -107,7 +108,7 @@ labelled prompt when it needs a path/description. Typing the argument inline sti
 | Command | What it does |
 |---|---|
 | `/agents` · `/tools` · `/mcps` | Show loaded agents / tools / MCP servers |
-| `/settings` | Config menu → keys · models/providers · tools/agents · an agent's prompt · persona · theme |
+| `/settings` | Config menu → keys · models/providers · orchestration engine · tools/agents · an agent's prompt · persona · theme |
 | `/theme` | Pick a color theme (per-pack — see below); `/theme <name>` to set directly |
 | `/keys` | Shortcut straight to your API keys |
 | `/skills` | List saved skills with usage counts |

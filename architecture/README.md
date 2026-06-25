@@ -69,7 +69,9 @@ flowchart LR
 | `anet/core/OldEngine/engine.py` | **Active** orchestration coordinator: planner → executor → checker → synthesizer (pure Python, no LangChain) |
 | `anet/core/OldEngine/orchestrator.py` | The agentic loop for one agent: model ↔ tool-call iterations, cycle detection, confirmation gate, skill tracking. Shared — also used by `spawn_tool` and the AdaptOrch executors |
 | `anet/core/agent_runner.py` | One model call; provider dispatch (OpenAI-compatible, Anthropic, Vertex) |
-| `anet/core/{dag,decomposer,router,executors,synthesizer}/` | **AdaptOrch** — task-adaptive orchestration (decompose → DAG metrics ω/δ/γ → topology router → parallel/sequential/hierarchical/hybrid executors → adaptive synthesis). Built and unit-tested; replaces the OldEngine coordinator behind `orchestration.mode` once integrated |
+| `anet/core/orchestration/coordinator.py` | **AdaptOrch coordinator** — `run_turn` that drives the five phases; a drop-in `Engine` swap selected by `orchestration.mode: adaptorch` (default `legacy`). Set it in `/settings → Orchestration engine`. Emits per-phase status + streams the answer; falls back to the OldEngine on any error |
+| `anet/core/{dag,decomposer,router,executors,synthesizer}/` | **AdaptOrch** phases — decompose → DAG metrics ω/δ/γ → topology router (Algorithm 1) → parallel/sequential/hierarchical/hybrid executors → adaptive synthesis (Algorithm 2). Each `run_subtask` runs an agent via the shared orchestrator loop |
+| `anet/core/tokens.py` | Per-turn token accounting — running total in the spinner, per-stage breakdown in the routing log |
 | `anet/AnetTools/toolsets.py` | Capability bundles + the COMMON baseline every agent inherits |
 | `anet/core/store.py` | `aiosqlite` conversation store — one shared DB keyed by `thread` |
 | `anet/core/memory_store.py` | Long-term memory backend — wraps mem0 (local Chroma + fastembed + your LLM) |
@@ -249,7 +251,7 @@ Anet/
 │   ├── AnetAgents/          # Built-in agent definitions
 │   ├── AnetTools/           # Built-in tool implementations (+ registrar)
 │   ├── cli/banner.py        # Animated startup banner + README image export
-│   └── core/                # OldEngine/ (engine+orchestrator), AdaptOrch phases (dag, decomposer, router, executors, synthesizer), agent_runner, store, memory, skills, loaders, paths, workspace
+│   └── core/                # OldEngine/ (engine+orchestrator), orchestration/ (AdaptOrch coordinator) + phases (dag, decomposer, router, executors, synthesizer), tokens, agent_runner, store, memory, skills, loaders, paths, workspace
 │
 ├── anet_pack/               # the DEFAULT PACK (ships with ANet; the dev workspace)
 │   ├── __init__.py          # makes it an importable package (so it ships in the wheel)

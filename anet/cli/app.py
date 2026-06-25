@@ -649,7 +649,7 @@ _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/addmcp",   "MCPSmith — draft + register an MCP server <path>"),
     ("/mcptest",  "Connect-test an MCP server <name>"),
     ("/changepack", "Switch the active pack (workspace) <name?>"),
-    ("/settings", "Edit config — keys, models, tools/agents, a prompt, persona, or theme"),
+    ("/settings", "Edit config — keys, models, engine, tools/agents, a prompt, persona, or theme"),
     ("/theme",    "Pick a color theme"),
     ("/keys",     "Shortcut to set your API keys (also under /settings)"),
     ("/packsmith", "Packs: new <name> | share <path?> | add <zip>"),
@@ -1143,7 +1143,7 @@ _HELP_TEXT = """
   [bold accent]/addmcp[/bold accent] [dim]<path>[/dim]        MCPSmith: draft + register an MCP server from its docs
   [bold accent]/mcptest[/bold accent] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
   [bold accent]/changepack[/bold accent] [dim]<name>[/dim]    Switch the active pack (workspace) — lists packs if no name
-  [bold accent]/settings[/bold accent]             Edit config — keys · models · tools/agents · a prompt · persona · theme (arrow-key menu)
+  [bold accent]/settings[/bold accent]             Edit config — keys · models · engine · tools/agents · a prompt · persona · theme (arrow-key menu)
   [bold accent]/theme[/bold accent]                Pick a color theme (arrow-key menu)
   [bold accent]/keys[/bold accent]                 Shortcut straight to your API keys (also under /settings)
   [bold accent]/packsmith new[/bold accent] [dim]<name>[/dim]     Create a blank pack in yourpacks/ and switch to it
