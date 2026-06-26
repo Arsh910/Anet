@@ -1,5 +1,5 @@
 """
-anet.core.router — Phase 3 of AdaptOrch: Topology Routing (Algorithm 1).
+anet.core.AdaptOrch.router — Phase 3 of AdaptOrch: Topology Routing (Algorithm 1).
 
 Pure, deterministic, O(1) given a built TaskDAG: reads the structural metrics the
 DAG already computed (ω, γ, |V|, |E|, r = ω/|V|) and returns one of four canonical
@@ -28,7 +28,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from anet.core.dag import TaskDAG
+from anet.core.AdaptOrch.dag import TaskDAG
 
 # Paper §4.3 calibrated defaults.
 _DEFAULT_THRESHOLDS = {"theta_omega": 0.5, "theta_gamma": 0.6, "theta_delta": 5.0}

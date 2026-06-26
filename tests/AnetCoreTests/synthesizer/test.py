@@ -1,122 +1,124 @@
-"""Unit tests for anet.core.synthesizer (AdaptOrch Phase 5, Algorithm 2). Offline."""
+"""Unit tests for the synthesis dispatcher (AdaptOrch Phase 5, operator model). Offline."""
 import asyncio
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from anet.core.router import Topology
-from anet.core.executors import StepResult
-from anet.core import synthesizer as syn
-from anet.core.synthesizer import synthesize, SynthesisResult
-from anet.core.synthesizer.consistency import consistency_score, alignment, lexical_vectors
+from anet.core.AdaptOrch.router import Topology
+from anet.core.AdaptOrch.executors import StepResult
+from anet.core.AdaptOrch import synthesizer as syn
+from anet.core.AdaptOrch import stage_models
+from anet.core.AdaptOrch.synthesizer import synthesize, select_operator
+from anet.core.AdaptOrch.synthesizer.consistency import lexical_vectors, consistency_score
 
-# Deterministic embedder for all tests (no fastembed model download).
 LEX = lexical_vectors
-
-
-def _approx(a, b=1.0, tol=1e-9):
-    return abs(a - b) < tol
 
 
 def _res(*outs):
     return [StepResult(id=f"s{i}", agent="a", description="d", output=o) for i, o in enumerate(outs)]
 
 
+# Canned LLM: combine/resolve calls return a tagged echo so we can see which fired.
+async def _fake_stream(stage, messages, on_token, **kw):
+    sys_prompt = messages[0]["content"]
+    tag = "COMPOSE" if "DIFFERENT part" in sys_prompt else \
+          "AGGREGATE" if "unified summary" in sys_prompt else \
+          "RANK" if "Rank them" in sys_prompt else \
+          "RESOLVE" if "CONTRADICTORY" in sys_prompt else "LLM"
+    return f"{tag}_OUT"
+
+
+def _install_fake():
+    stage_models.stage_call_stream = _fake_stream
+    async def _call(stage, messages, **kw): return await _fake_stream(stage, messages, None, **kw)
+    stage_models.stage_call = _call
+
+
 def _run(**kw):
     kw.setdefault("embed", LEX)
+    _install_fake()
     return asyncio.run(synthesize(**kw))
 
 
-async def _merge(outputs, task=""):
-    return "MERGED:" + " | ".join(outputs)
+# ── select_operator (pure) ───────────────────────────────────────────────────────
+
+def test_select_single_and_sequential():
+    assert select_operator(topology=Topology.PARALLEL, request_class="general", n_outputs=1) == "single"
+    assert select_operator(topology=Topology.SEQUENTIAL, request_class="general", n_outputs=3) == "sequential_last"
 
 
-async def _arbiter(outputs, task=""):
-    return "ARBITER"
+def test_select_default_by_class():
+    assert select_operator(topology=Topology.PARALLEL, request_class="coding", n_outputs=3) == "compose"
+    assert select_operator(topology=Topology.PARALLEL, request_class="general", n_outputs=3) == "compose"
+    assert select_operator(topology=Topology.PARALLEL, request_class="rag", n_outputs=3) == "aggregate"
 
 
-# ── Consistency score ───────────────────────────────────────────────────────────
-
-def test_cs_identical_is_one():
-    assert _approx(consistency_score(["the cat sat", "the cat sat"], LEX))
-
-
-def test_cs_disjoint_is_zero():
-    assert consistency_score(["alpha beta", "gamma delta"], LEX) == 0.0
+def test_select_hint_wins():
+    assert select_operator(topology=Topology.PARALLEL, request_class="coding", n_outputs=3, hint="vote") == "vote"
+    # but passthrough still wins over hint when there's nothing to combine
+    assert select_operator(topology=Topology.SEQUENTIAL, request_class="coding", n_outputs=3, hint="vote") == "sequential_last"
 
 
-def test_cs_single_output_is_one():
-    assert consistency_score(["only one"], LEX) == 1.0
-    assert consistency_score([], LEX) == 1.0
+# ── The T2 fix: distinct parallel outputs → compose, NOT arbiter ────────────────
+
+def test_distinct_parallel_outputs_compose_not_resolve():
+    # three unrelated facts → low CS, but must compose (no spurious arbiter)
+    outs = ["Python 3.14 is the latest", "Argentina won the 2022 World Cup", "Water boils at 100C"]
+    assert consistency_score(outs, LEX) < 0.7          # low CS, like the real T2
+    r = _run(results=_res(*outs), topology=Topology.PARALLEL, request_class="general")
+    assert r.operator == "compose" and r.output == "COMPOSE_OUT"   # combined, never resolved
 
 
-def test_alignment():
-    assert _approx(alignment("alpha beta", ["alpha beta", "alpha beta"], LEX))
-    assert alignment("xyz", ["alpha beta"], LEX) == 0.0
+def test_rag_aggregates():
+    r = _run(results=_res("finding A", "finding B"), topology=Topology.PARALLEL, request_class="rag")
+    assert r.operator == "aggregate" and r.output == "AGGREGATE_OUT"
 
 
-# ── Algorithm 2 branches ────────────────────────────────────────────────────────
+# ── Passthrough ──────────────────────────────────────────────────────────────────
 
-def test_sequential_returns_last_output():
-    r = _run(results=_res("first", "second", "FINAL"), topology=Topology.SEQUENTIAL,
-             merge_fn=_merge, arbiter_fn=_arbiter)
-    assert r.method == "sequential_last" and r.output == "FINAL"
-
-
-def test_single_output_passthrough():
-    r = _run(results=_res("only"), topology=Topology.PARALLEL, merge_fn=_merge, arbiter_fn=_arbiter)
-    assert r.method == "single" and r.output == "only"
+def test_sequential_returns_last():
+    r = _run(results=_res("first", "FINAL"), topology=Topology.SEQUENTIAL, request_class="coding")
+    assert r.operator == "sequential_last" and r.output == "FINAL"
 
 
-def test_consistent_outputs_merge():
-    r = _run(results=_res("the cat sat", "the cat sat"), topology=Topology.PARALLEL,
-             merge_fn=_merge, arbiter_fn=_arbiter)
-    assert r.method == "merge" and r.output.startswith("MERGED:") and _approx(r.consistency)
+def test_single_passthrough():
+    r = _run(results=_res("only"), topology=Topology.PARALLEL, request_class="general")
+    assert r.operator == "single" and r.output == "only"
 
 
-def test_inconsistent_no_reroute_goes_to_arbiter():
-    r = _run(results=_res("alpha beta", "gamma delta"), topology=Topology.PARALLEL,
-             merge_fn=_merge, arbiter_fn=_arbiter)   # no reroute_fn / dag
-    assert r.method == "arbiter" and r.output == "ARBITER" and r.iterations == 1
+# ── Vote (hint) ──────────────────────────────────────────────────────────────────
+
+def test_vote_majority_picks_consensus_no_llm():
+    # two agree, one dissents → consensus wins, no LLM call
+    r = _run(results=_res("the answer is 42", "the answer is 42", "the answer is 7"),
+             topology=Topology.PARALLEL, request_class="reasoning", synthesis="vote")
+    assert r.operator == "vote" and "42" in r.output
 
 
-def test_hierarchical_arbiter_does_not_reroute():
-    called = {"reroute": False}
+def test_vote_no_majority_escalates_to_resolve():
+    # all three disjoint → no majority → resolve (arbiter)
+    r = _run(results=_res("alpha", "beta", "gamma"), topology=Topology.PARALLEL,
+             request_class="reasoning", synthesis="vote")
+    assert r.operator == "resolve" and r.output == "RESOLVE_OUT"
+
+
+# ── Resolve (hint) + reroute ─────────────────────────────────────────────────────
+
+def test_resolve_hint_arbitrates():
+    r = _run(results=_res("3.12 added X", "3.12 removed X"), topology=Topology.PARALLEL,
+             request_class="general", synthesis="resolve")
+    assert r.operator == "resolve" and r.output == "RESOLVE_OUT"
+
+
+def test_resolve_reroute_terminates_at_max_iters():
     async def reroute(g):
-        called["reroute"] = True
-        return Topology.PARALLEL, _res("alpha beta", "gamma delta")
-    r = _run(results=_res("alpha beta", "gamma delta"), topology=Topology.HIERARCHICAL,
-             dag=type("D", (), {"gamma": 0.8})(), reroute_fn=reroute,
-             merge_fn=_merge, arbiter_fn=_arbiter)
-    assert r.method == "arbiter" and called["reroute"] is False and r.iterations == 1
+        return Topology.PARALLEL, _res("3.12 added X", "3.12 removed X")
+    r = _run(results=_res("3.12 added X", "3.12 removed X"), topology=Topology.PARALLEL,
+             request_class="general", synthesis="resolve",
+             dag=type("D", (), {"gamma": 0.0})(), reroute_fn=reroute, max_iters=4)
+    assert r.operator == "resolve" and r.iterations == 4 and r.rerouted is True
 
-
-# ── Reroute loop ────────────────────────────────────────────────────────────────
-
-def test_reroute_then_converges_to_merge():
-    # First pass inconsistent → arbiter (post low) → reroute → consistent → merge.
-    calls = {"n": 0}
-    async def reroute(gamma_override):
-        calls["n"] += 1
-        assert gamma_override > 0.5            # base 0.5 + 0.2 bump
-        return Topology.PARALLEL, _res("same answer", "same answer")
-    r = _run(results=_res("alpha beta", "gamma delta"), topology=Topology.PARALLEL,
-             dag=type("D", (), {"gamma": 0.5})(), reroute_fn=reroute,
-             merge_fn=_merge, arbiter_fn=_arbiter)
-    assert r.method == "merge" and r.rerouted is True and r.iterations == 2 and calls["n"] == 1
-
-
-def test_reroute_terminates_at_max_iters():
-    async def reroute(g):
-        return Topology.PARALLEL, _res("alpha beta", "gamma delta")   # never reconciles
-    r = _run(results=_res("alpha beta", "gamma delta"), topology=Topology.PARALLEL,
-             dag=type("D", (), {"gamma": 0.0})(), reroute_fn=reroute,
-             merge_fn=_merge, arbiter_fn=_arbiter, max_iters=5)
-    assert r.method == "arbiter" and r.iterations == 5 and r.rerouted is True
-
-
-# ── Threshold config ────────────────────────────────────────────────────────────
 
 def test_theta_cs_from_config():
     import anet.core.config_loader as cl

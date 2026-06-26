@@ -1,13 +1,13 @@
-"""Unit tests for anet.core.decomposer (AdaptOrch Phase 1). Offline, deterministic."""
+"""Unit tests for anet.core.AdaptOrch.decomposer (AdaptOrch Phase 1). Offline, deterministic."""
 import asyncio
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from anet.core import decomposer as dec
-from anet.core import stage_models
-from anet.core.dag import COMPLEXITY_WEIGHT, COUPLING, DEFAULT_COUPLING, TaskDAG
+from anet.core.AdaptOrch import decomposer as dec
+from anet.core.AdaptOrch import stage_models
+from anet.core.AdaptOrch.dag import COMPLEXITY_WEIGHT, COUPLING, DEFAULT_COUPLING, TaskDAG
 
 AGENTS = [
     {"name": "code_agent", "task_types": ["write code", "tests"]},

@@ -2316,6 +2316,12 @@ async def _chat_turn(
                 result, stopped = await _run_turn_with_esc(
                     engine, thread_id, store, effective_input, cancel_event, live
                 )
+                # Drop the raw streamed preview and repaint before the (transient)
+                # Live region tears down. Otherwise Rich's final refresh-then-clear
+                # paints one last unformatted frame of `reply`, which flashes for a
+                # beat right before the formatted Markdown panel prints below.
+                live_status.reply = ""
+                live.refresh()
             finally:
                 _status_var.reset(status_tk)
                 _token_var.reset(token_tk)
@@ -2788,7 +2794,7 @@ async def main() -> None:
             except Exception:
                 mode = "legacy"
             if mode == "adaptorch":
-                from anet.core.orchestration.coordinator import AdaptOrchEngine
+                from anet.core.AdaptOrch.coordinator import AdaptOrchEngine
                 return AdaptOrchEngine(agents, tools, manager_tools=manager_tools)
             return Engine(agents, tools, manager_tools=manager_tools)
 

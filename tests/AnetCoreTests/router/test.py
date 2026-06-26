@@ -1,4 +1,4 @@
-"""Unit tests for anet.core.router (AdaptOrch Phase 3, Algorithm 1). Pure, offline."""
+"""Unit tests for anet.core.AdaptOrch.router (AdaptOrch Phase 3, Algorithm 1). Pure, offline."""
 import json
 import sys
 import tempfile
@@ -6,9 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from anet.core.dag import Subtask, build, COUPLING
-from anet.core import router
-from anet.core.router import Topology, route, thresholds, log_route
+from anet.core.AdaptOrch.dag import Subtask, build, COUPLING
+from anet.core.AdaptOrch import router
+from anet.core.AdaptOrch.router import Topology, route, thresholds, log_route
 
 
 def _st(id, deps=None, w=1.0, coupling=None):

@@ -1,9 +1,9 @@
 """
-anet.core.decomposer — Phase 1 of AdaptOrch: Task Decomposition.
+anet.core.AdaptOrch.decomposer — Phase 1 of AdaptOrch: Task Decomposition.
 
 Given a user task T, an LLM decomposer extracts a set of subtasks annotated with
 dependencies, estimated complexity, and context coupling. Those annotations are
-mapped through the canonical tables in anet.core.dag (COMPLEXITY_WEIGHT → w_i,
+mapped through the canonical tables in anet.core.AdaptOrch.dag (COMPLEXITY_WEIGHT → w_i,
 COUPLING → c(u,v)) into Subtask objects, which dag.build() then turns into the
 formal DAG (Phase 2).
 
@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from anet.core.dag import (
+from anet.core.AdaptOrch.dag import (
     Subtask, TaskDAG, build as build_dag,
     COUPLING, COMPLEXITY_WEIGHT, DEFAULT_COUPLING,
 )
@@ -229,6 +229,6 @@ async def decompose(task: str, agents: list[dict] | None = None, *, memory_ctx: 
     if not task or not task.strip():
         raise ValueError("task is required")
 
-    from anet.core.stage_models import stage_call, extract_json
+    from anet.core.AdaptOrch.stage_models import stage_call, extract_json
     text = await stage_call("decomposer", build_prompt(task, agents, memory_ctx), max_tokens=1800)
     return parse_decomposition(extract_json(text))

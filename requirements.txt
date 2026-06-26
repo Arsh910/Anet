@@ -35,6 +35,14 @@ mem0ai
 chromadb
 fastembed
 
+# ── RecMem memory backend (memory.backend: recmem) ──────────────────────────────
+# Vendored under anet/memory/recmem/ (MIT). A 3-tier recurrence-based memory that
+# only invokes the LLM to consolidate when an interaction recurs — far cheaper to
+# build than mem0's per-interaction extraction. Reuses the chromadb + fastembed
+# already above (no qdrant, no openai-embeddings). Needs only these two extras:
+jinja2          # RecMem prompt templating
+json-repair     # tolerant JSON parsing of LLM consolidation output
+
 # ── Short-term memory token budgeting (optional) ────────────────────────────────
 # The rolling context window budgets by tokens. Without tiktoken it uses a chars/4
 # heuristic (fine in practice); install it for exact counts.

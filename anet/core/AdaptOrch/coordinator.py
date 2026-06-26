@@ -41,8 +41,9 @@ class AdaptOrchEngine(Engine):
     # ── The AdaptOrch pipeline ──────────────────────────────────────────────────
 
     async def _adaptorch_turn(self, thread_id: str, store, user_input: str) -> EngineResult:
-        from anet.core import decomposer, router as routermod, synthesizer, tokens
-        from anet.core.executors import ExecContext, StepResult, execute
+        from anet.core import tokens
+        from anet.core.AdaptOrch import decomposer, router as routermod, synthesizer
+        from anet.core.AdaptOrch.executors import ExecContext, StepResult, execute
 
         on_status = _status_var.get()
         messages = await store.load(thread_id)
@@ -93,12 +94,12 @@ class AdaptOrchEngine(Engine):
         on_status("manager: synthesizing...")
         synth = await synthesizer.synthesize(
             results, topology=decision.topology, task=user_input,
-            dag=task_dag, reroute_fn=reroute_fn,
+            dag=task_dag, request_class=decomp.request_class, reroute_fn=reroute_fn,
         )
         note = f"CS={synth.consistency:.2f}"
         if synth.rerouted:
             note += f", rerouted ×{synth.iterations - 1}"
-        on_status(f"manager: {synth.method} ({note})")
+        on_status(f"manager: {synth.operator} ({note})")
 
         reply = synth.output or "I worked through the task but produced no final answer."
 

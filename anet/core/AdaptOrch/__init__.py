@@ -1,5 +1,5 @@
 """
-anet.core.orchestration — the AdaptOrch coordinator.
+anet.core.AdaptOrch — the AdaptOrch coordinator.
 
 Wires the five phases (decompose → DAG → route → execute → synthesize) into a
 run_turn that's a drop-in replacement for the OldEngine. Selected at startup by

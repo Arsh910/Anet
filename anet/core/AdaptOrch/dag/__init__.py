@@ -1,5 +1,5 @@
 """
-anet.core.dag — Phase 2 of AdaptOrch: DAG construction + structural metrics.
+anet.core.AdaptOrch.dag — Phase 2 of AdaptOrch: DAG construction + structural metrics.
 
 Pure Python, no LLM calls, no external deps. Turns a list of decomposed subtasks
 into a formal task dependency DAG G_T = (V, E, w, c) and computes the structural

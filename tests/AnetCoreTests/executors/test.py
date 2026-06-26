@@ -1,14 +1,14 @@
-"""Unit tests for anet.core.executors (AdaptOrch Phase 4). Offline — fake run_subtask."""
+"""Unit tests for anet.core.AdaptOrch.executors (AdaptOrch Phase 4). Offline — fake run_subtask."""
 import asyncio
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from anet.core.dag import Subtask, build, COUPLING
-from anet.core.router import Topology
-from anet.core import executors as ex
-from anet.core.executors import ExecContext, StepResult, compose, accumulate_predecessors
+from anet.core.AdaptOrch.dag import Subtask, build, COUPLING
+from anet.core.AdaptOrch.router import Topology
+from anet.core.AdaptOrch import executors as ex
+from anet.core.AdaptOrch.executors import ExecContext, StepResult, compose, accumulate_predecessors
 
 
 def _st(id, deps=None, coupling=None, agent="code_agent"):

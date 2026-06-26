@@ -1,10 +1,10 @@
-"""Unit tests for anet.core.dag (AdaptOrch Phase 2). Pure, offline, deterministic."""
+"""Unit tests for anet.core.AdaptOrch.dag (AdaptOrch Phase 2). Pure, offline, deterministic."""
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from anet.core.dag import (
+from anet.core.AdaptOrch.dag import (
     Subtask, TaskDAG, build, CycleError, COUPLING, COMPLEXITY_WEIGHT, DEFAULT_COUPLING,
 )
 

@@ -1,5 +1,5 @@
 """
-anet.core.executors — Phase 4 of AdaptOrch: topology-specific execution.
+anet.core.AdaptOrch.executors — Phase 4 of AdaptOrch: topology-specific execution.
 
 Four executors, one per canonical topology, behind a common interface:
 
@@ -21,8 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
-from anet.core.dag import TaskDAG, Subtask, DEFAULT_COUPLING
-from anet.core.router import Topology
+from anet.core.AdaptOrch.dag import TaskDAG, Subtask, DEFAULT_COUPLING
+from anet.core.AdaptOrch.router import Topology
 
 
 @dataclass
@@ -103,7 +103,7 @@ def topo_order(dag: TaskDAG) -> list[str]:
 
 def get_executor(topology: Topology):
     """Return the executor coroutine for a topology."""
-    from anet.core.executors import parallel, sequential, hierarchical, hybrid
+    from anet.core.AdaptOrch.executors import parallel, sequential, hierarchical, hybrid
     table = {
         Topology.PARALLEL:     parallel.run,
         Topology.SEQUENTIAL:   sequential.run,
