@@ -3,18 +3,24 @@ shell_session.py — the bridge that makes a running shell command viewable and
 interactive from the TUI (the Ctrl+O "shell view").
 
 `shell_tool` streams a command's output into a `ShellSession` and registers it as
-the active session while it runs. The CLI, on Ctrl+O, looks up the active session,
-shows its live output, and lets the user type a line that is piped to the command's
-stdin — so an installer that pauses on a prompt (e.g. Playwright asking to proceed)
-can be answered instead of hanging until the timeout.
+an active session while it runs. The CLI, on Ctrl+O, looks up the sessions
+started this turn, shows their live (or final) output, and lets the user type a
+line that is piped to the command's stdin — so an installer that pauses on a
+prompt (e.g. Playwright asking to proceed) can be answered instead of hanging
+until the timeout.
 
-Only ONE session is "active" at a time (the foreground command). This module is the
-single shared point of contact, so the tool (which owns the process) and the CLI
-(which owns the screen) stay decoupled.
+The registry tracks **every** session started since the most recent `reset()` —
+running ones and already-finished ones alike. That way the Ctrl+O picker can
+surface a shell whose output was useful even after the command exited, instead
+of dropping it the moment the foreground command moves on.
+
+`reset()` is called at the start of each turn so stale shells from the previous
+turn don't pollute the menu.
 """
 from __future__ import annotations
 
 import asyncio
+import time
 
 
 class ShellSession:
@@ -32,6 +38,8 @@ class ShellSession:
         # the timeout. A truly stuck, unwatched command still dies at the deadline.
         self.deadline: float | None = None
         self.viewing   = False
+        self.started_at: float = time.time()
+        self.ended_at:   float | None = None
 
     # ── output (written by shell_tool, read by the view) ──────────────────────
     def append(self, text: str) -> None:
@@ -61,23 +69,51 @@ class ShellSession:
             return False
 
 
-# ── Active-session registry (single foreground command) ────────────────────────
+# ── Session registry (every shell started this turn, in start order) ───────────
 
-_active: ShellSession | None = None
+_sessions: list[ShellSession] = []
 
 
 def set_active(session: ShellSession) -> None:
-    global _active
-    _active = session
-
-
-def get_active() -> ShellSession | None:
-    return _active
+    """Register a newly-started session. Multiple sessions may be tracked at once
+    (parallel shells, or a finished shell still kept around for the Ctrl+O picker)."""
+    _sessions.append(session)
 
 
 def clear_active(session: ShellSession | None = None) -> None:
-    """Clear the active session. If `session` is given, only clear when it's the
-    one still registered (so a finished command doesn't clear a newer one)."""
-    global _active
-    if session is None or _active is session:
-        _active = None
+    """Mark a session as finished — keeps it in the registry so the Ctrl+O picker
+    can still surface its output; `reset()` is what actually drops it.
+    `session is None` is a legacy no-arg path that just stamps any unfinished entry."""
+    if session is not None:
+        if session.ended_at is None:
+            session.ended_at = time.time()
+        return
+    for s in _sessions:
+        if s.ended_at is None:
+            s.ended_at = time.time()
+
+
+def get_active() -> ShellSession | None:
+    """The most-recently-started session that is still running (None if nothing is).
+    Kept for callers that only care about a single foreground session — e.g. the
+    'Ctrl+O availability' hint emitted by shell_tool."""
+    for s in reversed(_sessions):
+        if not s.done:
+            return s
+    return None
+
+
+def list_sessions() -> list[ShellSession]:
+    """All sessions started since the last reset(), in start order. Includes
+    finished ones (the Ctrl+O picker can still show their final output)."""
+    return list(_sessions)
+
+
+def list_running() -> list[ShellSession]:
+    return [s for s in _sessions if not s.done]
+
+
+def reset() -> None:
+    """Drop the registry. Called at the start of each turn so stale entries
+    from the previous turn don't pollute the Ctrl+O picker."""
+    _sessions.clear()

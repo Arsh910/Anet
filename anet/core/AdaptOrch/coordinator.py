@@ -1,10 +1,9 @@
 """
 coordinator.py — the AdaptOrch turn coordinator.
 
-AdaptOrchEngine subclasses the OldEngine `Engine` to reuse its persistence,
-short-term-summary maintenance, and async-state accessors (so the background
-notifier keeps working unchanged), and overrides `run_turn` to run the AdaptOrch
-pipeline instead of the legacy planner→executor→checker→synthesizer:
+AdaptOrchEngine subclasses BaseEngine for the shared infra (per-thread state,
+rolling summary, persistence) and implements `run_turn` as the five-phase
+AdaptOrch pipeline:
 
     Phase 1  decompose  — LLM → subtasks (trivial requests fast-path out here)
     Phase 2  DAG        — build G_T, compute ω / δ / γ / layers
@@ -16,27 +15,29 @@ Each phase emits an on_status line (shown live in the thinking panel) and the
 routing decision + outcome is logged for the learned-routing dataset. Per-phase
 token usage is captured automatically (stage tags flow through tokens.py).
 
-Anything the pipeline can't handle (cycle in the DAG, async-resume, hard error)
-falls back to the legacy engine, so a turn is never lost.
+Hard pipeline errors (cycle in the DAG, an unexpected exception inside a
+phase) surface as a clean error EngineResult — the turn isn't silently lost,
+but there is no longer a legacy fallback path.
 """
 from __future__ import annotations
 
-from anet.core.OldEngine.engine import Engine, EngineResult
-from anet.core.OldEngine import orchestrator
+from anet.core import orchestrator
+from anet.core.engine_base import BaseEngine, EngineResult
 from anet.core.context import on_status as _status_var
 
 
-class AdaptOrchEngine(Engine):
+class AdaptOrchEngine(BaseEngine):
     async def run_turn(self, thread_id: str, store, user_input: str) -> EngineResult:
-        # Async-resume (blocked offloaded tasks) is an OldEngine concern — defer to it.
-        if user_input.startswith("__anet_async_resume__"):
-            return await super().run_turn(thread_id, store, user_input)
-
         try:
             return await self._adaptorch_turn(thread_id, store, user_input)
         except Exception as exc:
-            self._notify(f"manager: AdaptOrch error ({exc}) — falling back to legacy")
-            return await super().run_turn(thread_id, store, user_input)
+            self._notify(f"manager: AdaptOrch error ({exc})")
+            reply = f"Sorry — something went wrong while handling that turn: {exc}"
+            try:
+                await self._persist(store, thread_id, user_input, reply, False)
+            except Exception:
+                pass
+            return EngineResult(reply=reply)
 
     # ── The AdaptOrch pipeline ──────────────────────────────────────────────────
 
@@ -44,16 +45,21 @@ class AdaptOrchEngine(Engine):
         from anet.core import tokens
         from anet.core.AdaptOrch import decomposer, router as routermod, synthesizer
         from anet.core.AdaptOrch.executors import ExecContext, StepResult, execute
+        from anet.core import context_window as cw
 
         on_status = _status_var.get()
         messages = await store.load(thread_id)
-        summary, _keep = await self._maintain_summary(
-            store, thread_id, messages + [{"role": "user", "content": user_input}]
-        )
+        convo = messages + [{"role": "user", "content": user_input}]
+        summary, keep_from = await self._maintain_summary(store, thread_id, convo)
+        # Working context the decomposer (and downstream executors) reason over:
+        # rolling summary + verbatim recent turns, minus the current user_input
+        # itself (passed separately as `task` / appears in the executor prompt's
+        # "## Your task" section). Without this, AdaptOrch was blind to prior turns.
+        working_ctx = cw.render_for_prompt(convo, summary, keep_from, exclude_last=True)
 
         # ── Phase 1 — Decomposition (+ trivial fast-path) ─────────────────────
         on_status("manager: decomposing task...")
-        decomp = await decomposer.decompose(user_input, self._agents, memory_ctx=summary)
+        decomp = await decomposer.decompose(user_input, self._agents, memory_ctx=working_ctx)
 
         if decomp.trivial:
             reply = decomp.reply or "Done."
@@ -78,7 +84,7 @@ class AdaptOrchEngine(Engine):
                 return StepResult(id=st.id, agent=agent["name"], description=st.description,
                                   output=f"[subtask failed: {exc}]", success=False, error=str(exc))
 
-        ctx = ExecContext(run_subtask=run_subtask, global_context=summary, on_status=on_status)
+        ctx = ExecContext(run_subtask=run_subtask, global_context=working_ctx, on_status=on_status)
 
         async def reroute_fn(gamma_override: float):
             d2 = routermod.route(task_dag, gamma_override=gamma_override)

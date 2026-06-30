@@ -376,24 +376,44 @@ async def create_skill_background(
         if had_retry else ""
     )
 
-    prompt = (
-        "You are reviewing a COMPLETED agent task to decide whether it is worth\n"
-        "saving as a reusable skill. Judge honestly — most tasks are NOT.\n\n"
-        f"{_SKILL_JUDGE_RULES}\n"
-        f"{retry_note}"
-        "If it is NOT worth saving, reply with exactly one line and nothing else:\n"
-        "SKIP: <short reason>\n\n"
-        "If it IS worth saving, reply with ONLY the skill markdown in EXACTLY this format:\n"
-        "## <skill_name>\n"
-        "**Applies to:** <one line: when to use this skill>\n"
-        "**Steps:**\n1. ...\n2. ...\n"
-        "**Notes:** ...\n"
-        f"**Created:** {today}\n"
-        "**Used:** 0\n"
-        f"**Last improved:** {today}\n\n"
-        "Be specific and actionable. Return either the SKIP line or the markdown — nothing else.\n\n"
-        f"Task history:\n{task_history[-3000:]}"
-    )
+    # Diagnostic bypass: ANET_FORCE_SKILL_SAVE=1 makes the judge always save —
+    # the prompt drops the SKIP option entirely. Useful to verify the write
+    # pipeline end-to-end without arguing with the judge's strict rules.
+    force_save = os.getenv("ANET_FORCE_SKILL_SAVE", "").strip() in ("1", "true", "yes")
+
+    if force_save:
+        prompt = (
+            "Summarize this completed agent task as a reusable skill. Save it no "
+            "matter what — this is a diagnostic run. Return ONLY the skill markdown "
+            "in EXACTLY this format:\n"
+            "## <skill_name>\n"
+            "**Applies to:** <one line: when to use this skill>\n"
+            "**Steps:**\n1. ...\n2. ...\n"
+            "**Notes:** ...\n"
+            f"**Created:** {today}\n"
+            "**Used:** 0\n"
+            f"**Last improved:** {today}\n\n"
+            f"Task history:\n{task_history[-3000:]}"
+        )
+    else:
+        prompt = (
+            "You are reviewing a COMPLETED agent task to decide whether it is worth\n"
+            "saving as a reusable skill. Judge honestly — most tasks are NOT.\n\n"
+            f"{_SKILL_JUDGE_RULES}\n"
+            f"{retry_note}"
+            "If it is NOT worth saving, reply with exactly one line and nothing else:\n"
+            "SKIP: <short reason>\n\n"
+            "If it IS worth saving, reply with ONLY the skill markdown in EXACTLY this format:\n"
+            "## <skill_name>\n"
+            "**Applies to:** <one line: when to use this skill>\n"
+            "**Steps:**\n1. ...\n2. ...\n"
+            "**Notes:** ...\n"
+            f"**Created:** {today}\n"
+            "**Used:** 0\n"
+            f"**Last improved:** {today}\n\n"
+            "Be specific and actionable. Return either the SKIP line or the markdown — nothing else.\n\n"
+            f"Task history:\n{task_history[-3000:]}"
+        )
 
     content = await _model_call([
         {"role": "system", "content": "You decide whether an agent task is worth saving as a reusable skill, and write the skill only if it clears the bar."},

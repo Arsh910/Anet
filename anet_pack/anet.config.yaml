@@ -101,7 +101,6 @@ persona:
 # when you want to (e.g. a cheap model for decomposition to cut cost). All keys are
 # optional; uncomment what you need.
 # orchestration:
-#   mode: adaptorch    # 'adaptorch' = task-adaptive topology pipeline; omit/legacy = OldEngine
 #   # Per-stage models (each defaults to the manager model if omitted):
 #   decomposer: { model: nex-agi/nex-n2-pro:free,     provider: openrouter }  # Phase 1
 #   merger:     { model: anthropic/claude-sonnet-4.6, provider: anthropic }   # Phase 5 — combine agreeing outputs

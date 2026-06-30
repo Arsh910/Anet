@@ -58,7 +58,14 @@ Exit cleanly (`exit`) — triggers the session-end mem0 extraction pass. Restart
 
 ### M7 — Provoke a skill creation
 Give a task that takes **≥6 tool calls and a self-correction** (Tier 02 A4, or:
-`Search the web for the top 5 most starred Python repositories on GitHub right now. Write a Python script that fetches their README (first 500 chars) via the GitHub API and saves a report.json with name, stars, and readme snippet for each. Write a test that validates the JSON structure and that all 5 entries exist. Run it, fix any failures, re-run until clean. Then send the final report.json contents as a formatted message to a Telegram bot.`).
+`Create a Python FastAPI starter at /tmp/fastapi-starter:
+    1. Make the project folder
+    2. Write main.py with a FastAPI app exposing GET /health that returns {"status": "ok"}
+    3. Write requirements.txt with fastapi and uvicorn
+    4. Run pip install -r requirements.txt
+    5. Use process_tool to start "uvicorn main:app" and confirm "Uvicorn running on" appears
+    6. Use web_fetch to GET http://127.0.0.1:8000/health and confirm the JSON
+    7. Save a memory note with the project path`).
 **Exercises:** background `skill_manager` writing a `skills/*.md` procedure
 **Then:** `/skills`
 **Pass if:** a new skill file appears describing the procedure, with a usage count.

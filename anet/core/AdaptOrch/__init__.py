@@ -2,6 +2,7 @@
 anet.core.AdaptOrch — the AdaptOrch coordinator.
 
 Wires the five phases (decompose → DAG → route → execute → synthesize) into a
-run_turn that's a drop-in replacement for the OldEngine. Selected at startup by
-`orchestration.mode: adaptorch` in anet.config.yaml; otherwise the OldEngine runs.
+run_turn. AdaptOrchEngine is currently the sole orchestration engine; it
+inherits from anet.core.engine_base.BaseEngine for the shared infra (per-thread
+state, rolling-summary maintenance, persistence).
 """

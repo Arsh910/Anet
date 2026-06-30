@@ -41,79 +41,49 @@ class Decomposition:
 # ── Prompt (AdaptOrch §B.1 template, extended with agent routing) ──────────────
 
 _SYSTEM = (
-    "You are the task-decomposition planner of a multi-agent system. You break a "
-    "user request into a directed acyclic graph of subtasks and route each one to "
-    "the best-suited agent. You never execute the task yourself — you only plan it.\n\n"
-    "COST FAST-PATH: if the request is trivial or atomic — a greeting, a single "
-    "fact, a one-line question, or anything a single agent does in one step with no "
-    "sub-structure — DO NOT decompose. Return exactly:\n"
-    '  {"trivial": true, "reply": "<short direct answer>"}\n\n'
-    "Otherwise return a decomposition (schema below). Prefer the FEWEST subtasks "
-    "that capture the real structure: only split work that genuinely has distinct "
-    "steps or can run in parallel. Over-decomposition wastes tokens.\n\n"
-    "DECOMPOSITION RULES (decomposition quality is the single biggest driver of "
-    "system performance — follow these precisely):\n"
-    "- MAXIMIZE PARALLELISM: add a dependency ONLY when one subtask's output is "
-    "genuinely required as another subtask's input. Anything not semantically "
-    "required to wait should have depends_on: [] so it can run concurrently.\n"
-    "- COUPLING is the relationship to a dependency: 'strong' = the output of one "
-    "subtask is a direct input to another; 'weak' = subtasks share domain knowledge "
-    "but not data; 'critical' = semantic coherence across them is required; 'none' = "
-    "fully independent.\n"
-    "- A typical CODING decomposition is a chain: localize files → understand context "
-    "→ generate patch → verify patch. A typical RESEARCH/RAG task fans out (gather "
-    "sources in parallel) then fans in (synthesize). Adapt to the actual task.\n"
+    "You decompose a user request into a DAG of subtasks and route each to an agent. "
+    "You never execute — only plan.\n\n"
+    "FAST-PATH: for trivial requests (greeting, single fact, one-liner) return "
+    '`{"trivial": true, "reply": "<answer>"}` and stop.\n\n'
+    "Otherwise emit the fewest subtasks that capture real structure. "
+    "Over-decomposition wastes tokens.\n\n"
+    "RULES:\n"
+    "- MAXIMIZE PARALLELISM: add a depends_on entry ONLY when one subtask's output "
+    "is genuinely an input to another. Anything else stays `[]` so it can run concurrently.\n"
+    "- COUPLING vs a dependency: strong=its output is your direct input; weak=shared "
+    "domain only; critical=semantic coherence required across both; none=independent.\n"
     "- TOOL-COMPLETE ROUTING: route each subtask to the SINGLE agent that can finish "
-    "it end-to-end with its own tools. Never split a subtask across agents just to "
-    "reach a tool — agents are tool-complete within their domain (the coding agent "
-    "reads, edits, runs, and verifies code by itself; the research agent searches, "
-    "fetches, and writes its findings). Splitting to borrow a tool creates needless "
-    "coupling and hurts parallelism."
+    "it end-to-end with its own tools. Don't split across agents to borrow a tool.\n"
+    "- Typical shapes: coding chains (localize files → patch → verify); research fans "
+    "out then in. Adapt to the actual task."
 )
 
-# The AdaptOrch decomposition prompt template, verbatim, with point 5 added so each
-# subtask routes to one of Anet's specialized agents.
 _TEMPLATE = (
     "Analyze the following task and decompose it into independent subtasks.\n"
-    "For each subtask, specify:\n"
-    "1. A unique identifier and description\n"
-    "2. Required inputs from other subtasks (dependencies)\n"
-    "3. Estimated complexity (tokens: low/medium/high)\n"
-    "4. Context coupling with dependencies (none/weak/strong/critical)\n"
-    "5. The agent best suited to perform it (from AVAILABLE AGENTS)\n"
+    "For each: id+description, dependencies, "
+    "Estimated complexity (tokens: low/medium/high) or estimated_tokens, "
+    "Context coupling with dependencies (none/weak/strong/critical), agent.\n"
     "Task: {T}"
 )
 
 _OUTPUT_SPEC = (
-    "AVAILABLE AGENTS (assign each subtask's \"agent\" to the best match):\n"
-    "{agents}\n\n"
-    "Coupling meaning: none=outputs independent, weak=shared context helps, "
-    "strong=output is a direct input, critical=semantic coherence required.\n\n"
-    "Respond with ONLY a JSON object, no prose:\n"
+    "Available agents:\n{agents}\n\n"
+    "Return ONLY this JSON (no prose):\n"
     "{{\n"
     '  "trivial": false,\n'
     '  "request_class": "coding" | "reasoning" | "rag" | "general",\n'
-    '  "subtasks": [\n'
-    "    {{\n"
-    '      "id": "s1",\n'
-    '      "description": "<what to do>",\n'
-    '      "agent": "<one of the available agents>",\n'
-    '      "depends_on": [],\n'
-    '      "complexity": "low" | "medium" | "high",\n'
-    '      "estimated_tokens": 500,\n'
-    '      "coupling": "none" | "weak" | "strong" | "critical"\n'
-    "    }}\n"
-    "  ]\n"
+    '  "subtasks": [{{\n'
+    '    "id": "s1",\n'
+    '    "description": "<what to do>",\n'
+    '    "agent": "<from list above>",\n'
+    '    "depends_on": [],\n'
+    '    "complexity": "low" | "medium" | "high",\n'
+    '    "estimated_tokens": 500,\n'
+    '    "coupling": "none" | "weak" | "strong" | "critical"\n'
+    "  }}]\n"
     "}}\n\n"
-    "Notes:\n"
-    "- ids are short strings, unique, and referenced by depends_on.\n"
-    "- depends_on lists the ids whose output this subtask needs (its inputs).\n"
-    "- cost: give EITHER complexity (low/medium/high) OR estimated_tokens (a number). "
-    "estimated_tokens is preferred when you can estimate it; complexity is the coarse "
-    "fallback.\n"
-    "- coupling describes this subtask's relationship to its dependencies; you may "
-    "give a single label (applied to all deps) or an object {{\"<dep_id>\": \"strong\"}}.\n"
-    "- subtasks with depends_on: [] can run in parallel."
+    "- Use estimated_tokens (preferred) OR complexity.\n"
+    '- coupling: one label applies to all deps; or `{{"<dep_id>": "strong"}}` for per-dep.'
 )
 
 

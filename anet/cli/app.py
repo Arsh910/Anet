@@ -7,9 +7,8 @@ Startup sequence:
   3. Filter enabled agents from agents_config
   4. Load enabled tools via tool_loader
   5. Open ConversationStore (SQLite — persists conversation across restarts)
-  6. Build Engine (pure-Python planner/executor/checker/synthesizer)
-  7. Start background VIGA notifier task (polls registry.json every 30 s)
-  8. Async readline loop → Live spinner while working → thinking panel + response
+  6. Build the AdaptOrch engine (task-adaptive 5-phase pipeline)
+  7. Async readline loop → Live spinner while working → thinking panel + response
 """
 
 import argparse
@@ -46,7 +45,7 @@ _ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "Anet")
 
 from anet.AnetAgents.agents_config import AGENTS
 from anet.core.tool_loader import load_tools
-from anet.core.OldEngine.engine import Engine, _manager_client as _engine_manager_client
+from anet.core.engine_base import _manager_client as _engine_manager_client
 from anet.core.store import ConversationStore
 from anet.core.context import on_status as _status_var, on_token as _token_var, on_confirm as _confirm_var, on_output as _output_var, on_ask as _ask_var, on_cancel as _cancel_var, on_notice as _notice_var
 from anet.core.config_loader import agent_overrides as _agent_overrides, manager_config as _manager_config
@@ -567,70 +566,6 @@ def _print_startup_summary(enabled_agents: list[dict], tool_map: dict) -> None:
     console.print()
 
 
-# ── Background async task notifier ───────────────────────────────────────────
-
-async def _async_notifier(
-    engine_box: list, thread_id: str, store: ConversationStore, interval: int = 30
-) -> None:
-    """
-    Background async-task notifier.
-
-    Polls each task's poll_path (a JSON registry file) every `interval` seconds.
-    When a task transitions to "done", stores the result via engine.set_async_result
-    and calls engine.run_turn with __anet_async_resume__ so blocked pending_steps run.
-    """
-    last_state: dict[str, str] = {}
-
-    while True:
-        await asyncio.sleep(interval)
-        engine = engine_box[0]
-
-        offloaded_tasks = engine.get_offloaded_tasks(thread_id)
-        if not offloaded_tasks:
-            continue
-
-        for task_id, task_info in offloaded_tasks.items():
-            poll_path  = task_info.get("poll_path", "")
-            result_key = task_info.get("result_key", "")
-            agent_name = task_info.get("agent", "task")
-            short      = task_id[:8]
-
-            if not poll_path:
-                continue
-
-            poll_file = Path(poll_path)
-            if not poll_file.exists():
-                continue
-
-            try:
-                registry = json.loads(poll_file.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-
-            info   = registry.get(task_id, {})
-            status = info.get("status", "")
-            prev   = last_state.get(task_id)
-            last_state[task_id] = status
-
-            if status == prev or prev not in (None, "running"):
-                continue
-
-            if status == "done":
-                out = info.get("output_file") or info.get("result") or "no output"
-                console.print(
-                    f"\n[bold green]{agent_name}[/bold green]: task {short}… complete → {out}"
-                )
-                engine.set_async_result(thread_id, result_key or task_id, out)
-
-                if engine.get_pending_steps(thread_id):
-                    await engine.run_turn(thread_id, store, "__anet_async_resume__")
-
-            elif status in ("failed", "stopped"):
-                console.print(
-                    f"\n[bold red]{agent_name}[/bold red]: task {short}… {status}"
-                )
-
-
 # ── Input helper ──────────────────────────────────────────────────────────────
 
 # Slash commands offered as autocomplete suggestions (command, description).
@@ -649,7 +584,7 @@ _SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/addmcp",   "MCPSmith — draft + register an MCP server <path>"),
     ("/mcptest",  "Connect-test an MCP server <name>"),
     ("/changepack", "Switch the active pack (workspace) <name?>"),
-    ("/settings", "Edit config — keys, models, engine, tools/agents, a prompt, persona, or theme"),
+    ("/settings", "Edit config — keys, models, tools/agents, a prompt, persona, or theme"),
     ("/theme",    "Pick a color theme"),
     ("/keys",     "Shortcut to set your API keys (also under /settings)"),
     ("/packsmith", "Packs: new <name> | share <path?> | add <zip>"),
@@ -948,10 +883,10 @@ class _EscWatcher:
             if kp.key == self._Keys.Escape:
                 self._cancel.set()
             elif kp.key == self._Keys.ControlO and self._open_shell is not None:
-                # Ctrl+O opens the live shell view — only meaningful while a shell
-                # command is actually running, else it's a harmless no-op.
+                # Ctrl+O opens the shell picker — any session this turn (running
+                # or already finished) is enough to make the menu meaningful.
                 from anet.core import shell_session
-                if shell_session.get_active() is not None:
+                if shell_session.list_sessions():
                     self._open_shell.set()
 
     def start(self) -> None:
@@ -1050,16 +985,69 @@ async def _show_shell_view(live: "Live", session) -> None:
         live.start()
 
 
+async def _pick_shell_session(live: "Live", sessions: list) -> object | None:
+    """Inline arrow-key picker over the turn's shell sessions (same UI shape as
+    /settings). Returns the chosen session, or None on cancel.
+
+    Entry: `live` is RUNNING. Exit:
+      • returning a session   → `live` is STOPPED (caller's _show_shell_view
+                                takes over the screen and restarts it).
+      • returning None        → `live` is RUNNING again (we restart the spinner)."""
+    import time as _t
+    live.stop()
+    _pause_esc_watcher()
+
+    now = _t.time()
+    options: list[tuple[str, str]] = []
+    for i, s in enumerate(sessions):
+        if not s.done:
+            status = "● running       "
+        elif s.exit_code == 0:
+            status = "✓ done · exit 0 "
+        else:
+            status = f"✗ done · exit {s.exit_code} "
+        age = max(0, int(now - s.started_at))
+        cmd = s.command if len(s.command) <= 80 else s.command[:77] + "…"
+        options.append((str(i), f"{status}  ({age}s ago)  {cmd}"))
+
+    target = None
+    try:
+        choice = await _select_menu(
+            "Shells this turn", options,
+            subtitle="select one to view its output (Esc to cancel)",
+        )
+        if choice is not None:
+            try:
+                target = sessions[int(choice)]
+            except (ValueError, IndexError):
+                target = None
+    except Exception as exc:
+        console.print(f"  [red]picker error: {exc}[/red]")
+    finally:
+        _resume_esc_watcher()
+        if target is None:
+            live.start()
+    return target
+
+
 async def _shell_view_loop(live: "Live", open_shell: "asyncio.Event") -> None:
-    """While a turn runs, open the shell view each time Ctrl+O is pressed."""
+    """While a turn runs, open the shell view each time Ctrl+O is pressed.
+    Zero sessions → no-op. One → open directly. Two+ → show the picker."""
     while True:
         await open_shell.wait()
         open_shell.clear()
         from anet.core import shell_session
-        session = shell_session.get_active()
-        if session is not None:
-            with contextlib.suppress(Exception):
-                await _show_shell_view(live, session)
+        sessions = shell_session.list_sessions()
+        if not sessions:
+            continue
+        if len(sessions) == 1:
+            target = sessions[0]
+        else:
+            target = await _pick_shell_session(live, sessions)
+            if target is None:
+                continue
+        with contextlib.suppress(Exception):
+            await _show_shell_view(live, target)
 
 
 async def _run_turn_with_esc(engine, thread_id, store, user_input, cancel_event, live=None):
@@ -1143,7 +1131,7 @@ _HELP_TEXT = """
   [bold accent]/addmcp[/bold accent] [dim]<path>[/dim]        MCPSmith: draft + register an MCP server from its docs
   [bold accent]/mcptest[/bold accent] [dim]<name>[/dim]       Connect-test an MCP server and list its tools
   [bold accent]/changepack[/bold accent] [dim]<name>[/dim]    Switch the active pack (workspace) — lists packs if no name
-  [bold accent]/settings[/bold accent]             Edit config — keys · models · engine · tools/agents · a prompt · persona · theme (arrow-key menu)
+  [bold accent]/settings[/bold accent]             Edit config — keys · models · tools/agents · a prompt · persona · theme (arrow-key menu)
   [bold accent]/theme[/bold accent]                Pick a color theme (arrow-key menu)
   [bold accent]/keys[/bold accent]                 Shortcut straight to your API keys (also under /settings)
   [bold accent]/packsmith new[/bold accent] [dim]<name>[/dim]     Create a blank pack in yourpacks/ and switch to it
@@ -1508,74 +1496,12 @@ async def _cmd_theme(arg: str) -> None:
         console.print("  [dim]cancelled.[/dim]\n")
 
 
-def _current_engine_mode() -> str:
-    try:
-        from anet.core.config_loader import load as _cfgload
-        return ((_cfgload().get("orchestration") or {}).get("mode") or "legacy").lower()
-    except Exception:
-        return "legacy"
-
-
-def _set_engine_mode(mode: str) -> bool:
-    """Persist orchestration.mode into the active pack's anet.config.yaml,
-    preserving comments (ruamel). Returns False if the config can't be written."""
-    if mode not in ("adaptorch", "legacy"):
-        return False
-    p = _anet_paths.config_path()
-    if p is None or not p.exists():
-        return False
-    try:
-        import io
-        from ruamel.yaml import YAML
-        y = YAML()
-        y.preserve_quotes = True
-        data = y.load(p.read_text(encoding="utf-8")) or {}
-        orch = data.get("orchestration")
-        if not isinstance(orch, dict):
-            orch = {}
-            data["orchestration"] = orch
-        orch["mode"] = mode
-        buf = io.StringIO()
-        y.dump(data, buf)
-        p.write_text(buf.getvalue(), encoding="utf-8")
-        return True
-    except Exception:
-        return False
-
-
-async def _cmd_engine(arg: str) -> None:
-    """Pick the orchestration engine — AdaptOrch (task-adaptive topology) or the
-    legacy planner pipeline — and persist it to the pack's anet.config.yaml."""
-    current = _current_engine_mode()
-    options = [
-        ("adaptorch", f"AdaptOrch — task-adaptive topology (decompose → route → execute → synthesize)"
-                      f"{'   ← current' if current == 'adaptorch' else ''}"),
-        ("legacy",    f"Legacy — single planner → executor → checker → synthesizer"
-                      f"{'   ← current' if current == 'legacy' else ''}"),
-    ]
-    name = (arg or "").strip().lower()
-    if name not in ("adaptorch", "legacy"):
-        name = await _select_menu("Orchestration engine", options, current=current,
-                                  subtitle="Which orchestration engine should Anet use?")
-    if not name:
-        console.print("  [dim]cancelled.[/dim]\n"); return
-    if name == current:
-        console.print(f"\n  [dim]Already using[/dim] [bold accent]{name}[/bold accent].\n"); return
-    if _set_engine_mode(name):
-        _apply_config_change()
-        console.print(f"\n  [accent]●[/accent] engine set to [bold accent]{name}[/bold accent] "
-                      f"[dim]— rebuilds on your next message.[/dim]\n")
-    else:
-        console.print("  [yellow]Couldn't write the pack config.[/yellow]\n")
-
-
 async def _cmd_settings(arg: str) -> None:
     """One entry point for configuration — an arrow-key menu. Folds in the old /keys,
     /editpack, /editagent commands plus theme selection."""
     options = [
         ("keys",   "API keys              (~/.anet/.env)"),
         ("models", "Models & providers    (anet.config.yaml)"),
-        ("engine", "Orchestration engine  (AdaptOrch / legacy)"),
         ("exanet", "Tools & agents        (exanet.config.yaml)"),
         ("agent",  "An agent's prompt     (ExAgents/<name>/prompt.md)"),
         ("soul",   "Persona               (SOUL.md)"),
@@ -1593,8 +1519,6 @@ async def _cmd_settings(arg: str) -> None:
         await _open_keys()
     elif choice == "models":
         _edit_yaml(_anet_paths.config_path(), "anet.config.yaml (models/providers)")
-    elif choice == "engine":
-        await _cmd_engine("")
     elif choice == "exanet":
         _edit_yaml(_anet_paths.exanet_path(), "exanet.config.yaml (tools/agents)")
     elif choice == "agent":
@@ -2010,7 +1934,7 @@ async def _run_standalone_agent(agent_def: dict, user_message: str, tool_map: di
     """Run a standalone (non-manager) agent in a direct loop — shared by /newtool
     and /addmcp. Bypasses the planner entirely.
     """
-    from anet.core.OldEngine import orchestrator
+    from anet.core import orchestrator
 
     agent = dict(agent_def)
     name  = agent.get("name", "agent")
@@ -2048,6 +1972,8 @@ async def _run_standalone_agent(agent_def: dict, user_message: str, tool_map: di
     global _active_esc_watcher
     cancel_event = asyncio.Event()
     open_shell   = asyncio.Event()
+    from anet.core import shell_session as _shell_session
+    _shell_session.reset()            # clear stale shells from the previous turn
     try:
         with Live(live_status, console=console, refresh_per_second=12, transient=True) as live:
             s_tk = _status_var.set(on_status)
@@ -2302,6 +2228,8 @@ async def _chat_turn(
     cancel_event = asyncio.Event()
     stopped = False
     from anet.core import tokens as _tokens
+    from anet.core import shell_session as _shell_session
+    _shell_session.reset()            # clear stale shells from the previous turn
     _usage = _tokens.begin()          # fresh token accounting for this turn
     try:
         with Live(live_status, console=console, refresh_per_second=12, transient=True) as live:
@@ -2353,13 +2281,21 @@ async def _chat_turn(
         border_style="assistant",
         padding=(1, 2),
     ))
-    # Per-turn token usage footer.
+    # Per-turn token usage footer. When prompt caching is active, also surface
+    # cache_read (cheap input replayed from the cache) and cache_creation (new
+    # cache writes — billed at ~1.25× input) so the savings are visible.
     if _usage and _usage.total:
-        console.print(
+        line = (
             f"  [dim]Tokens: {_tokens.fmt(_usage.total)} "
             f"(in {_tokens.fmt(_usage.prompt)} · out {_tokens.fmt(_usage.completion)} · "
-            f"{_usage.calls} calls)[/dim]"
+            f"{_usage.calls} calls"
         )
+        if _usage.cache_read or _usage.cache_creation:
+            line += f" · cache: {_tokens.fmt(_usage.cache_read)} hit"
+            if _usage.cache_creation:
+                line += f", {_tokens.fmt(_usage.cache_creation)} write"
+        line += ")[/dim]"
+        console.print(line)
     console.print()
     return False
 
@@ -2786,17 +2722,10 @@ async def main() -> None:
             return all_agents, combined_tools, manager_tools, len(ex_agents)
 
         def _make_engine(agents, tools, manager_tools):
-            """Pick the orchestration engine by `orchestration.mode` (default legacy).
-            'adaptorch' → the task-adaptive AdaptOrch coordinator; else the OldEngine."""
-            try:
-                from anet.core.config_loader import load as _cfgload
-                mode = ((_cfgload().get("orchestration") or {}).get("mode") or "legacy").lower()
-            except Exception:
-                mode = "legacy"
-            if mode == "adaptorch":
-                from anet.core.AdaptOrch.coordinator import AdaptOrchEngine
-                return AdaptOrchEngine(agents, tools, manager_tools=manager_tools)
-            return Engine(agents, tools, manager_tools=manager_tools)
+            """Build the orchestration engine (currently AdaptOrch — the task-adaptive
+            5-phase pipeline)."""
+            from anet.core.AdaptOrch.coordinator import AdaptOrchEngine
+            return AdaptOrchEngine(agents, tools, manager_tools=manager_tools)
 
         # Initial build
         all_agents, all_tools, manager_tools, n_external = await _merge_all()
@@ -2829,11 +2758,8 @@ async def main() -> None:
         except OSError:
             mtime = 0.0
 
-        # Mutable box so notifier and hot-reload always reference the current Engine
+        # Mutable box so the hot-reload path always references the current Engine.
         engine_box = [engine]
-        notifier = asyncio.create_task(
-            _async_notifier(engine_box, thread_id, store)
-        )
         try:
             async def _loop_with_hotreload() -> None:
                 nonlocal mtime
@@ -2874,11 +2800,6 @@ async def main() -> None:
                 except (asyncio.TimeoutError, Exception):
                     pass
         finally:
-            notifier.cancel()
-            try:
-                await notifier
-            except asyncio.CancelledError:
-                pass
             # Tear down MCP subprocesses cleanly BEFORE the loop closes, so their
             # stdio pipes don't get GC'd post-close (proactor errors on Windows).
             try:

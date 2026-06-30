@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 class TokenUsage:
     prompt: int = 0
     completion: int = 0
+    cache_read: int = 0       # input tokens served from the prompt cache (cheap)
+    cache_creation: int = 0   # input tokens written to the cache (slight premium)
     calls: int = 0
     by_stage: dict[str, int] = field(default_factory=dict)
 
@@ -31,9 +33,13 @@ class TokenUsage:
     def total(self) -> int:
         return self.prompt + self.completion
 
-    def add(self, prompt: int = 0, completion: int = 0, stage: str | None = None) -> None:
+    def add(self, prompt: int = 0, completion: int = 0,
+            cache_read: int = 0, cache_creation: int = 0,
+            stage: str | None = None) -> None:
         self.prompt += prompt
         self.completion += completion
+        self.cache_read += cache_read
+        self.cache_creation += cache_creation
         self.calls += 1
         if stage:
             self.by_stage[stage] = self.by_stage.get(stage, 0) + prompt + completion
@@ -56,8 +62,10 @@ def current() -> TokenUsage | None:
 def record(resp, stage: str | None = None) -> None:
     """Pull token usage off a completion response and add it to the active counter.
 
-    Handles OpenAI-style (prompt_tokens/completion_tokens) and Anthropic-style
-    (input_tokens/output_tokens). Best-effort — never raises."""
+    Handles OpenAI-style (prompt_tokens/completion_tokens, optionally with
+    prompt_tokens_details.cached_tokens) and Anthropic-style (input_tokens/
+    output_tokens with cache_read_input_tokens / cache_creation_input_tokens).
+    Best-effort — never raises."""
     u = _usage_var.get()
     if u is None or resp is None:
         return
@@ -71,7 +79,23 @@ def record(resp, stage: str | None = None) -> None:
             prompt = getattr(usage, "input_tokens", 0)
         if completion is None:
             completion = getattr(usage, "output_tokens", 0)
-        u.add(prompt=int(prompt or 0), completion=int(completion or 0), stage=stage)
+
+        # Cache-hit accounting. Anthropic exposes cache_{read,creation}_input_tokens
+        # directly; OpenAI-compat returns cached_tokens nested under prompt_tokens_details.
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        if not cache_read:
+            details = getattr(usage, "prompt_tokens_details", None)
+            if details is not None:
+                cache_read = getattr(details, "cached_tokens", 0) or 0
+
+        u.add(
+            prompt=int(prompt or 0),
+            completion=int(completion or 0),
+            cache_read=int(cache_read or 0),
+            cache_creation=int(cache_creation or 0),
+            stage=stage,
+        )
     except Exception:
         pass
 

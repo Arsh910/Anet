@@ -55,6 +55,17 @@ def build_stage_client(stage: str):
     return _build_openai_client(_DEFAULT_PROVIDER), model
 
 
+def _cache_system_if_supported(stage: str, messages: list[dict]) -> list[dict]:
+    """Mark the stage's long fixed system prompt as cacheable when the upstream
+    supports Anthropic-style prompt caching. Decomposer/synthesizer system blocks
+    are identical every turn — exactly what caching is for."""
+    model, provider = stage_model(stage)
+    from anet.core.agent_runner import _supports_anthropic_cache, _cache_system_message
+    if _supports_anthropic_cache(provider, model):
+        return _cache_system_message(messages)
+    return messages
+
+
 async def stage_call(
     stage: str,
     messages: list[dict],
@@ -64,6 +75,7 @@ async def stage_call(
 ) -> str:
     """Run a chat completion for the stage and return the text content."""
     client, model = build_stage_client(stage)
+    messages = _cache_system_if_supported(stage, messages)
     resp = await client.chat.completions.create(
         model=model, messages=messages, max_tokens=max_tokens, temperature=temperature,
     )
@@ -85,6 +97,7 @@ async def stage_call_stream(
     chunk (falls back to a plain stream on providers that reject stream_options)."""
     from anet.core import tokens as _tok
     client, model = build_stage_client(stage)
+    messages = _cache_system_if_supported(stage, messages)
     base = dict(model=model, messages=messages, max_tokens=max_tokens,
                 temperature=temperature, stream=True)
     try:

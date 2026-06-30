@@ -83,26 +83,23 @@ def _numbered(outputs: list[str]) -> str:
 
 
 _COMPOSE_SYS = (
-    "You assemble the outputs of several agents that each did a DIFFERENT part of "
-    "one task (e.g. backend, frontend, tests) into a single coherent deliverable. "
-    "These are complementary pieces, NOT competing answers — integrate them all, "
-    "keep every part, do not compare or pick between them. Return the final result.")
+    "Each output below is a DIFFERENT part of one task (e.g. backend, frontend, tests). "
+    "Integrate every part into one coherent deliverable — keep every part, don't compare "
+    "or pick. Return the final result.")
 
 _AGGREGATE_SYS = (
-    "You synthesize findings gathered by several agents into one unified summary. "
-    "Different findings are complementary evidence about different things — preserve "
-    "all distinct information. If two sources genuinely disagree on the SAME fact, "
-    "note the disagreement rather than silently dropping one. Return the summary.")
+    "Synthesize the findings below into one unified summary. Preserve every distinct piece "
+    "of information. If two outputs disagree on the SAME fact, note both rather than picking. "
+    "Return the summary.")
 
 _RANK_SYS = (
-    "You are given several candidate solutions to the same goal. Rank them by quality "
-    "and return the single best one (you may briefly note why it wins). Do not merge "
-    "them — choose.")
+    "These are competing candidates for the same goal. Rank them by quality and return "
+    "the single best one (briefly say why). Don't merge — choose.")
 
 _RESOLVE_SYS = (
-    "The outputs below make CONTRADICTORY claims about the same thing. Determine which "
-    "is correct (prefer freshly-retrieved evidence over prior assumptions), reconcile "
-    "the conflict, and return the single correct answer.")
+    "The outputs make CONTRADICTORY claims on the same point. Decide which is right "
+    "(prefer freshly-retrieved evidence over prior knowledge), reconcile, and return "
+    "the correct answer.")
 
 
 async def _combine(stage: str, system: str, outputs: list[str], task: str) -> str:

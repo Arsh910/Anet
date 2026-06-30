@@ -102,6 +102,31 @@ def assemble(messages: list[dict], summary: str, keep_from: int) -> list[dict]:
     return out
 
 
+def render_for_prompt(messages: list[dict], summary: str, keep_from: int,
+                      *, exclude_last: bool = False) -> str:
+    """Same context as `assemble()`, but flattened to a single string — for stages
+    whose context slot is a string (e.g. the AdaptOrch decomposer's `memory_ctx`
+    and the executors' `global_context`) rather than a chat message list.
+
+    `exclude_last=True` drops the trailing message — use when the caller is going
+    to pass that message separately (e.g. the decomposer receives the current
+    user_input as its `task` argument, so including it here would duplicate it)."""
+    end = len(messages) - 1 if exclude_last else len(messages)
+    tail = messages[keep_from:end]
+    rendered: list[str] = []
+    for m in tail:
+        role = (m.get("role") or "").upper()
+        content = (m.get("content") or "").strip()
+        if content:
+            rendered.append(f"{role}: {content}")
+    parts: list[str] = []
+    if summary:
+        parts.append(f"Summary of earlier conversation:\n{summary}")
+    if rendered:
+        parts.append("Recent turns:\n" + "\n".join(rendered))
+    return "\n\n".join(parts)
+
+
 # ── Summarisation prompt (the LLM call itself lives in the engine) ───────────────
 
 _SUMMARY_SYSTEM = (

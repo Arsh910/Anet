@@ -121,6 +121,105 @@ def _build_openai_client(provider: str) -> AsyncOpenAI:
     return AsyncOpenAI(api_key=api_key or "missing", base_url=cfg["base_url"], timeout=_MODEL_TIMEOUT)
 
 
+# ── Prompt caching (Anthropic-compatible providers) ───────────────────────────
+#
+# Marks the long, fixed prefix of an agent's prompt as cacheable so the next
+# iteration of the same agent's loop pays ~10% of the original input cost on
+# that prefix instead of full price. Three breakpoints per request:
+#
+#   1. System prompt  — identical every iteration of an agent run.
+#   2. Last tool def  — caches the entire tool-definitions block.
+#   3. Last message   — caches the growing message history; each new iteration
+#                       replays everything up to the previous turn from cache
+#                       and only pays full price on the most recent additions.
+#
+# Three is under Anthropic's max of 4. The "last message" breakpoint moves
+# forward each iteration (a new write each turn), but every subsequent iteration
+# then reads everything up to that point from cache — net savings grow with
+# loop length.
+#
+# Anthropic native: cache_control goes on content blocks / the last tool.
+# OpenRouter passes the same markers through for Claude models.
+# Other providers (OpenAI/Gemini) handle caching automatically or not at all — we
+# skip the markers for them so the request stays clean.
+
+def _supports_anthropic_cache(provider: str, model: str) -> bool:
+    """True if the (provider, model) pair accepts Anthropic-style cache_control
+    markers — native Anthropic, or Claude routed through OpenRouter/Vertex."""
+    if provider in ("anthropic", "claude", "vertex_anthropic", "vertex_claude"):
+        return True
+    if provider == "openrouter":
+        m = (model or "").lower()
+        return "claude" in m or m.startswith("anthropic/")
+    return False
+
+
+_CACHE_CONTROL = {"type": "ephemeral"}
+
+
+def _cache_system_message(messages: list[dict]) -> list[dict]:
+    """Return a new messages list where the first system message's content is a
+    content-block list with cache_control on the final block — the breakpoint that
+    caches everything up to and including the system prompt."""
+    out = list(messages)
+    for i, m in enumerate(out):
+        if m.get("role") != "system":
+            continue
+        content = m.get("content")
+        if isinstance(content, str) and content:
+            out[i] = {
+                **m,
+                "content": [{
+                    "type": "text",
+                    "text": content,
+                    "cache_control": _CACHE_CONTROL,
+                }],
+            }
+        break
+    return out
+
+
+def _cache_last_tool(tool_schemas: list[dict]) -> list[dict]:
+    """Return a new tool list with cache_control on the LAST tool — the breakpoint
+    that caches the entire tool-definition block. No-op on empty input."""
+    if not tool_schemas:
+        return tool_schemas
+    out = list(tool_schemas)
+    out[-1] = {**out[-1], "cache_control": _CACHE_CONTROL}
+    return out
+
+
+def _cache_last_message(messages: list[dict]) -> list[dict]:
+    """Return a new messages list with cache_control on the LAST message's final
+    content block — the rolling breakpoint that caches the entire prior history
+    so the NEXT agent-loop iteration replays it from cache.
+
+    Handles three content shapes the orchestrator can produce on the last turn:
+      • str — typical tool result or user message → wrap in a text block.
+      • list[dict] — multimodal or Anthropic-converted blocks → mark the last block.
+      • None / empty (assistant with only tool_calls and no text) → skip; falls back
+        to the system+tools breakpoints, which is still a meaningful prefix.
+    """
+    if not messages:
+        return messages
+    out = list(messages)
+    last = dict(out[-1])
+    content = last.get("content")
+    if isinstance(content, str) and content:
+        last["content"] = [{
+            "type": "text",
+            "text": content,
+            "cache_control": _CACHE_CONTROL,
+        }]
+        out[-1] = last
+    elif isinstance(content, list) and content:
+        blocks = [dict(b) for b in content]
+        blocks[-1] = {**blocks[-1], "cache_control": _CACHE_CONTROL}
+        last["content"] = blocks
+        out[-1] = last
+    return out
+
+
 # ── Anthropic adapter ─────────────────────────────────────────────────────────
 
 def _convert_to_anthropic_messages(messages: list[dict]) -> tuple[str, list[dict]]:
@@ -230,13 +329,23 @@ async def _run_anthropic(
     system, anthropic_msgs = _convert_to_anthropic_messages(messages)
     tools   = _convert_tools_to_anthropic(tool_schemas) if tool_schemas else []
 
+    # Prompt caching: wrap the system prompt in a cache_control-tagged block,
+    # mark the last tool, and mark the last message's final content block so the
+    # growing message history also caches forward across loop iterations.
+    system_param: str | list[dict] = system
+    if system:
+        system_param = [{"type": "text", "text": system, "cache_control": _CACHE_CONTROL}]
+    if tools:
+        tools = _cache_last_tool(tools)
+    anthropic_msgs = _cache_last_message(anthropic_msgs)
+
     call_kwargs: dict = {
         "model":      agent.get("model") or _DEFAULT_MODEL,
         "max_tokens": 8192,
         "messages":   anthropic_msgs,
     }
     if system:
-        call_kwargs["system"] = system
+        call_kwargs["system"] = system_param
     if tools:
         call_kwargs["tools"] = tools
 
@@ -323,7 +432,12 @@ async def run(
     # "vertex_claude" kept as a legacy alias for "vertex_anthropic".
     if provider in ("vertex_google", "vertex_anthropic", "vertex_claude"):
         client = build_vertex_client()
-        call_kwargs: dict = {"model": agent.get("model") or _DEFAULT_MODEL, "messages": messages}
+        model  = agent.get("model") or _DEFAULT_MODEL
+        if _supports_anthropic_cache(provider, model):
+            messages     = _cache_system_message(messages)
+            messages     = _cache_last_message(messages)
+            tool_schemas = _cache_last_tool(tool_schemas)
+        call_kwargs: dict = {"model": model, "messages": messages}
         if tool_schemas:
             call_kwargs["tools"]       = tool_schemas
             call_kwargs["tool_choice"] = "auto"
@@ -355,9 +469,17 @@ async def run(
         provider = _DEFAULT_PROVIDER
 
     client = _build_openai_client(provider)
+    model  = agent.get("model") or _DEFAULT_MODEL
+
+    # Prompt caching for Anthropic models served via OpenAI-compatible endpoints
+    # (OpenRouter, Vertex). Adds cache_control markers the upstream propagates.
+    if _supports_anthropic_cache(provider, model):
+        messages     = _cache_system_message(messages)
+        messages     = _cache_last_message(messages)
+        tool_schemas = _cache_last_tool(tool_schemas)
 
     call_kwargs: dict = {
-        "model":    agent.get("model") or _DEFAULT_MODEL,
+        "model":    model,
         "messages": messages,
     }
     if tool_schemas:
