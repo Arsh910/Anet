@@ -39,9 +39,9 @@
     <h2>How to read Level 3</h2>
     <p class="section-intro">
       Files are ordered <strong>top-down by dependency</strong>: we start with
-      the entry point (<code>engine.py</code>, the file that orchestrates
-      everything else), and each time it imports something we haven't seen,
-      that file becomes the next chapter. By the time you reach
+      the entry point — the <code>AdaptOrch</code> engine, the 5-phase pipeline
+      that orchestrates everything else — and each time it imports something we
+      haven't seen, that file becomes the next chapter. By the time you reach
       <code>paths.py</code> at the bottom, every line in the core makes
       sense in context.
     </p>
@@ -59,16 +59,16 @@
     <div class="grid grid-2" style="margin-top: 20px;">
 
       <a class="file-card current" href="1engine/1_engine.html">
-        <span class="num">01 · 1141 lines · 6 pages</span>
-        <h3>engine.py</h3>
-        <p>The conductor. Owns the run_turn pipeline: planner → executor → checker → synthesizer. Everything else gets called from here.</p>
-        <div class="lines">overview · setup · helpers · prompts · class · phases</div>
+        <span class="num">01 · AdaptOrch/ + engine_base.py · 4 pages</span>
+        <h3>the AdaptOrch engine</h3>
+        <p>The conductor. <code>AdaptOrchEngine(BaseEngine)</code> owns <code>run_turn</code>: a 5-phase pipeline — decompose → DAG → route → execute → synthesize — on the shared <code>engine_base.py</code>. Everything else gets called from here.</p>
+        <div class="lines">overview · setup · helpers · prompts</div>
       </a>
 
       <a class="file-card todo" href="#">
         <span class="num">02 · 498 lines · planned</span>
         <h3>orchestrator.py</h3>
-        <p>The agentic loop for one step. Tool dispatch, confirmation gate, cycle detection, memory injection. Called by engine._execute.</p>
+        <p>The agentic loop for one subtask. Tool dispatch, confirmation gate, cycle detection, memory injection. Called once per subtask via the executors' <code>run_subtask</code>.</p>
         <div class="lines">coming next</div>
       </a>
 
@@ -80,9 +80,9 @@
       </a>
 
       <a class="file-card todo" href="#">
-        <span class="num">04 · 594 lines · planned</span>
-        <h3>memory_store.py</h3>
-        <p>Long-term memory: mem0 + Chroma + fastembed. Classification, standing memories, search, add, delete.</p>
+        <span class="num">04 · planned</span>
+        <h3>memory (RecMem)</h3>
+        <p>Long-term memory. Default backend is <strong>RecMem</strong> — a 3-tier recurrence store (subconscious → episodic → semantic) on Chroma + fastembed, LLM only on recurrence. <code>memory.backend: recmem | mem0</code>.</p>
         <div class="lines">coming next</div>
       </a>
 
@@ -138,7 +138,7 @@
       <a class="file-card todo" href="#">
         <span class="num">12 · 133 lines · planned</span>
         <h3>context_window.py</h3>
-        <p>Token-budgeted window planning + summary message builder. Owned by engine._maintain_summary.</p>
+        <p>Token-budgeted window planning + <code>render_for_prompt</code> + summary message builder. Driven by <code>BaseEngine._maintain_summary</code>.</p>
         <div class="lines">coming next</div>
       </a>
 
@@ -200,9 +200,9 @@
     </table>
 
     <div class="note">
-      <strong>Currently complete:</strong> the engine.py walkthrough (pages
-      1, 1a, 1b, 1c). The Engine class itself (1d, 1e) and all subsequent
-      files are queued. Open <a href="1engine/1_engine.html" style="color:#86efac;">01 · engine.py overview →</a>
+      <strong>Currently complete:</strong> the AdaptOrch engine walkthrough (pages
+      1, 1a, 1b, 1c). All subsequent files are queued. Open
+      <a href="1engine/1_engine.html" style="color:#86efac;">01 · AdaptOrch engine overview →</a>
     </div>
   </div>
 </section>
@@ -216,7 +216,7 @@
       </a>
       <a class="next" href="1engine/1_engine.html">
         <span class="dir">Next →</span>
-        <span class="title">01 · engine.py overview</span>
+        <span class="title">01 · AdaptOrch engine overview</span>
       </a>
     </div>
     <p class="meta">ANet · architecture/docs/l3/index.html</p>

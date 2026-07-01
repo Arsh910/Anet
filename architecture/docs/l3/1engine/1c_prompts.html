@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>1c · engine.py — Prompts · ANet L3</title>
+<title>1c · AdaptOrch engine — Prompts · ANet L3</title>
 <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -16,13 +16,13 @@
       <div class="crumbs">
         <a href="../index.html">L3 index</a>
         <span class="sep">/</span>
-        <a href="1_engine.html">01 · engine.py</a>
+        <a href="1_engine.html">01 · AdaptOrch engine</a>
         <span class="sep">/</span>
         <span style="color: #86efac;">1c · prompts</span>
       </div>
       <div class="nav-links">
         <a href="1b_helpers.html">← prev</a>
-        <a href="1d_class.html">next →</a>
+        <a href="../index.html">index →</a>
       </div>
     </div>
   </div>
@@ -30,261 +30,171 @@
 
 <section>
   <div class="container">
-    <span class="eyebrow">engine.py · section 3 of 5</span>
-    <h1>The two system prompts.</h1>
+    <span class="eyebrow">the engine · section 3 of 3</span>
+    <h1>The real prompts.</h1>
     <p class="lede">
-      Lines 240–453. Two functions that build the only two prompts engine.py
-      ever sends — the planner's instructions and the synthesizer's
-      instructions. Most of the bytes are static text, but the dynamic
-      pieces (agent list, profile, memory) are what make ANet adapt to
-      <em>your</em> setup.
+      The pipeline makes exactly two kinds of LLM call that need a
+      carefully-written prompt: the <strong>decomposer</strong> (Phase 1) that
+      turns your request into a subtask DAG, and the <strong>synthesizer</strong>
+      (Phase 5) that merges the results. The decomposer has one system prompt; the
+      synthesizer has one per operator. These prompts <em>are</em> the behaviour
+      spec for how ANet plans and reports — change a rule and the whole assistant
+      changes.
     </p>
 
     <div class="note info">
-      <strong>Why prompts deserve their own chapter:</strong> these two
-      functions are <em>the</em> behaviour specification for ANet's
-      planning and reporting. Change a rule here and the whole assistant
-      changes. Changing them carelessly is the fastest way to regress the
-      system. Read them carefully.
+      <strong>Why prompts deserve their own chapter:</strong> everything else in
+      the pipeline is deterministic Python (the DAG metrics, Algorithm 1's
+      routing, the executors' scheduling). The only places a model gets free rein
+      are these two, so this is where the actual "intelligence" of the plan and the
+      final answer is shaped. Read them carefully.
     </div>
 
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_plan_system_prompt</code> — the planner's brain <span class="lineno">lines 242–412</span></h2>
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <h2><code>decomposer._SYSTEM</code> — the decomposer's brain <span class="lineno">decomposer/__init__.py:43–59</span></h2>
     <p>
-      170 lines. Most of it is a single Python <code>f"""…"""</code> string
-      with the rules. The first 12 lines assemble dynamic context, then the
-      rest is the static rulebook.
+      Based on the AdaptOrch paper's §B.1 decomposition template, extended with
+      agent routing. It never executes — it only plans.
     </p>
 
-    <h3>Dynamic-context assembly <span class="lineno">lines 242–256</span></h3>
-
-<pre class="code"><span class="lbl">engine.py:242–256</span><span class="ln"><span class="k">def</span> <span class="b">_plan_system_prompt</span>(agents: <span class="b">list</span>[<span class="b">dict</span>], has_direct_tools: <span class="b">bool</span> = <span class="b">False</span>, memory_ctx: <span class="b">str</span> = <span class="s">""</span>) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    plannable = [a <span class="k">for</span> a <span class="k">in</span> agents <span class="k">if</span> a[<span class="s">"name"</span>] != <span class="s">"checker_agent"</span>]</span><span class="ln">    agent_lines = <span class="s">"\n"</span>.join(</span><span class="ln">        <span class="s">f"  - {a['name']}: {', '.join(a['task_types'])}"</span> <span class="k">for</span> a <span class="k">in</span> plannable</span><span class="ln">    )</span><span class="ln">    agent_names = [a[<span class="s">"name"</span>] <span class="k">for</span> a <span class="k">in</span> plannable]</span><span class="ln"></span><span class="ln">    now = datetime.now().strftime(<span class="s">"%A, %B %d, %Y  %H:%M"</span>)</span><span class="ln">    memory_section  = <span class="s">f"\n\n{memory_ctx}"</span> <span class="k">if</span> memory_ctx <span class="k">else</span> <span class="s">""</span></span><span class="ln">    soul_section    = <span class="s">f"\n\n{_SOUL}"</span> <span class="k">if</span> _SOUL <span class="k">else</span> <span class="s">""</span></span><span class="ln">    _profile        = _profile_context()</span><span class="ln">    profile_section = <span class="s">f"\n\n## What I know about you\n{_profile}"</span> <span class="k">if</span> _profile <span class="k">else</span> <span class="s">""</span></span></pre>
+<pre class="code"><span class="lbl">decomposer/__init__.py:43–59 · the system prompt</span><span class="ln"><span class="s">You decompose a user request into a DAG of subtasks and route each to an agent.</span></span><span class="ln"><span class="s">You never execute — only plan.</span></span><span class="ln"></span><span class="ln"><span class="s">FAST-PATH: for trivial requests (greeting, single fact, one-liner) return</span></span><span class="ln"><span class="s">`{"trivial": true, "reply": "&lt;answer&gt;"}` and stop.</span></span><span class="ln"></span><span class="ln"><span class="s">Otherwise emit the fewest subtasks that capture real structure.</span></span><span class="ln"><span class="s">Over-decomposition wastes tokens.</span></span><span class="ln"></span><span class="ln"><span class="s">RULES:</span></span><span class="ln"><span class="s">- MAXIMIZE PARALLELISM: add a depends_on entry ONLY when one subtask's output</span></span><span class="ln"><span class="s">  is genuinely an input to another. Anything else stays `[]` so it can run concurrently.</span></span><span class="ln"><span class="s">- COUPLING vs a dependency: strong=its output is your direct input; weak=shared</span></span><span class="ln"><span class="s">  domain only; critical=semantic coherence required across both; none=independent.</span></span><span class="ln"><span class="s">- TOOL-COMPLETE ROUTING: route each subtask to the SINGLE agent that can finish</span></span><span class="ln"><span class="s">  it end-to-end with its own tools. Don't split across agents to borrow a tool.</span></span><span class="ln"><span class="s">- Typical shapes: coding chains (localize files → patch → verify); research fans</span></span><span class="ln"><span class="s">  out then in. Adapt to the actual task.</span></span></pre>
 
     <div class="note">
-      <strong>What's assembled, and from where:</strong>
+      <strong>Four load-bearing rules, each shaping the DAG the router later reads:</strong>
       <ul>
-        <li><code>plannable</code> — every agent except the checker. The checker is a worker the engine uses internally; routing the user's request <em>to</em> it would be a category error.</li>
-        <li><code>agent_lines</code> — the visible directory: <em>"- research_agent: web research, news, image downloads"</em>. The Planner reads this verbatim and routes by matching task_types.</li>
-        <li><code>agent_names</code> — the allowed values for the <code>"agent"</code> field in the planner's output JSON. Listed in the prompt so the model can't invent an agent that doesn't exist.</li>
-        <li><code>now</code> — the current date and time, formatted for a human ("Sunday, June 21, 2026  16:43"). Letting the model know what "today" means is what unlocks "find the latest X" queries.</li>
-        <li><code>memory_section</code> — the task-relevant memories from <code>_memory_context</code> (chapter 1b), passed in from <code>_plan</code>.</li>
-        <li><code>soul_section</code> — the pack's persona, loaded once at import.</li>
-        <li><code>profile_section</code> — the standing user facts from <code>_profile_context</code>.</li>
+        <li><strong>FAST-PATH</strong> — the trivial short-circuit. A greeting or one-liner returns <code>{"trivial": true, "reply": ...}</code> and the whole pipeline stops here (chapter 1a). No agents, no synthesis.</li>
+        <li><strong>MAXIMIZE PARALLELISM</strong> — dependencies are added <em>only</em> when one output truly feeds another. This directly controls ω (width) and δ (depth): sparse dependencies → wide DAG → the router picks a parallel topology.</li>
+        <li><strong>COUPLING</strong> — the four labels (<code>none / weak / strong / critical</code>) map to the numeric <code>c(u,v)</code> ∈ [0,1] the DAG uses to compute γ. This is how the model's judgement about "how tied together are these steps" flows into Algorithm 1.</li>
+        <li><strong>TOOL-COMPLETE ROUTING</strong> — each subtask goes to the single agent that can finish it end-to-end, so the executor never has to hand a half-done task between agents to borrow a tool.</li>
       </ul>
     </div>
 
     <div class="note info">
-      <strong>Each section is conditional</strong> — the empty string
-      collapses to nothing in the f-string interpolation. A pack without
-      SOUL.md, with no memories yet, just yields a shorter prompt. Nothing
-      breaks; the planner is just less personalised.
+      <strong>The DAG vocabulary is the paper's, made concrete.</strong> The prompt
+      teaches the model the exact annotations the pipeline consumes —
+      <code>depends_on</code>, <code>coupling</code>, complexity/token estimates —
+      because those are what <code>dag.build()</code> turns into ω / δ / γ. The
+      prompt and the pure DAG code are two halves of the same contract.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h3>The prompt header <span class="lineno">lines 254–256</span></h3>
+    <h2>The output schema <span class="lineno">decomposer/__init__.py:61–87</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:254–256 · the literal f-string starts here</span><span class="ln"><span class="k">return</span> <span class="s">f"""You are {_ASSISTANT_NAME}, an AI assistant. Analyse the user request and decide how to fulfil it.</span></span><span class="ln"><span class="s">Current date and time: {now} (local).</span></span><span class="ln"><span class="s">If asked about your identity, name, or who you are, answer as {_ASSISTANT_NAME} — never mention the underlying model or "Google".{soul_section}{profile_section}{memory_section}</span></span></pre>
-
-    <div class="note">
-      <strong>The identity line is load-bearing.</strong> Without it, a
-      Gemini-backed planner will sometimes answer "I'm Gemini, a Google
-      model" when asked who it is. The hard rule ("never mention the
-      underlying model or 'Google'") prevents that. <code>{soul_section}</code>
-      follows immediately so the pack's persona arrives before any rules,
-      letting it set the tone first.
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h3>The agent directory + output schema <span class="lineno">lines 259–276</span></h3>
-
-<pre class="code"><span class="lbl">engine.py:259–276</span><span class="ln"><span class="s">AVAILABLE AGENTS:</span></span><span class="ln"><span class="s">{agent_lines}</span></span><span class="ln"></span><span class="ln"><span class="s">{("You also have direct tools you can call yourself for simple one-step tasks — use them instead of delegating to an agent when appropriate." if has_direct_tools else "")}</span></span><span class="ln"><span class="s">OUTPUT — ONLY a JSON object, no prose (unless calling a direct tool):</span></span><span class="ln"></span><span class="ln"><span class="s">Simple (greetings, trivial facts):</span></span><span class="ln"><span class="s">  {{"type": "simple", "reply": "&lt;answer&gt;"}}</span></span><span class="ln"></span><span class="ln"><span class="s">One or more agents needed:</span></span><span class="ln"><span class="s">  {{"type": "plan", "steps": [</span></span><span class="ln"><span class="s">    {{"id": 1, "agent": "&lt;name&gt;", "task": "&lt;instruction&gt;",</span></span><span class="ln"><span class="s">      "success_criteria": "&lt;verifiable outcome&gt;",</span></span><span class="ln"><span class="s">      "check": {{"action": "check_window"|"check_process"|"check_path", "&lt;param&gt;": "&lt;value&gt;"}} | null,</span></span><span class="ln"><span class="s">      "depends_on": [],</span></span><span class="ln"><span class="s">      "wait_for_async": false</span></span><span class="ln"><span class="s">    }}</span></span><span class="ln"><span class="s">  ]}}</span></span></pre>
+<pre class="code"><span class="lbl">decomposer/__init__.py:61–87 · the template + output spec (excerpt)</span><span class="ln"><span class="s">Analyze the following task and decompose it into independent subtasks.</span></span><span class="ln"><span class="s">For each: id+description, dependencies, Estimated complexity</span></span><span class="ln"><span class="s">(tokens: low/medium/high) or estimated_tokens, Context coupling with</span></span><span class="ln"><span class="s">dependencies (none/weak/strong/critical), agent.</span></span><span class="ln"><span class="s">Task: {T}</span></span><span class="ln"></span><span class="ln"><span class="s">Available agents:</span></span><span class="ln"><span class="s">{agents}</span></span><span class="ln"></span><span class="ln"><span class="s">Return ONLY this JSON (no prose):</span></span><span class="ln"><span class="s">{</span></span><span class="ln"><span class="s">  "trivial": false,</span></span><span class="ln"><span class="s">  "request_class": "coding" | "reasoning" | "rag" | "general",</span></span><span class="ln"><span class="s">  "subtasks": [{</span></span><span class="ln"><span class="s">    "id": "s1", "description": "&lt;what to do&gt;", "agent": "&lt;from list above&gt;",</span></span><span class="ln"><span class="s">    "depends_on": [], "complexity": "low" | "medium" | "high",</span></span><span class="ln"><span class="s">    "estimated_tokens": 500, "coupling": "none" | "weak" | "strong" | "critical"</span></span><span class="ln"><span class="s">  }]</span></span><span class="ln"><span class="s">}</span></span></pre>
 
     <div class="note">
-      <strong>The schema we documented in Level 2 lives here.</strong> Every
-      field name, every allowed value, every example shape — this block is
-      the source of truth. Notice the double-braces: in an f-string,
-      <code>{{</code> is a literal <code>{</code>, so what you see here is
-      what the model sees.
-    </div>
-
-    <div class="note info">
-      <strong>The <code>has_direct_tools</code> branch</strong> only fires
-      when the manager has been given tools it can call <em>itself</em>
-      (rare — mostly <code>memory_tool</code> for save/forget commands).
-      For most turns the line is empty and the planner doesn't think about
-      direct tools at all.
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h3>The rules block <span class="lineno">lines 278–324</span></h3>
-    <p>
-      A long bullet list, but each bullet earns its place. Skipping the
-      least-interesting ones, here are the load-bearing ones:
-    </p>
-
-<pre class="code"><span class="lbl">engine.py:279–284 · the JSON-always rule</span><span class="ln"><span class="s">- You MUST ALWAYS respond with a valid JSON object. Never return plain prose. Even for follow-up</span></span><span class="ln"><span class="s">  questions like "explain it" or "what does it say", output {{"type":"simple","reply":"..."}} — never raw text.</span></span><span class="ln"><span class="s">- agent must be one of: {agent_names}</span></span><span class="ln"><span class="s">- Each step MUST have a unique integer "id" field starting from 1.</span></span><span class="ln"><span class="s">- depends_on: [] means run immediately in parallel with other free steps. Steps sharing no deps run concurrently.</span></span><span class="ln"><span class="s">- depends_on: [1, 2] means wait for steps with id 1 and 2 to complete first.</span></span></pre>
-
-    <div class="note">
-      <strong>"Always JSON" is the single most important rule.</strong> The
-      Engine's <code>_extract_json</code> can recover from a fenced reply,
-      but the model returning <em>"Sure, I'll do that!"</em> in plain prose
-      crashes the entire turn. The rule is restated several times in this
-      prompt for that reason.
-    </div>
-
-<pre class="code"><span class="lbl">engine.py:319–324 · the correction rule</span><span class="ln"><span class="s">- CORRECTION RULE (HIGHEST PRIORITY — overrides everything else): If the user indicates the</span></span><span class="ln"><span class="s">  previous result was wrong, incomplete, or not what they wanted — ANY phrasing like "you didn't</span></span><span class="ln"><span class="s">  do X", "you didn't make X", "that's not what I asked", "you only did Y not Z", "you missed X",</span></span><span class="ln"><span class="s">  "do it properly", "complete it", "try again", "still not working", "I asked for X" — you MUST</span></span><span class="ln"><span class="s">  generate a new plan and dispatch to the appropriate agent. NEVER respond with type:"simple" for</span></span><span class="ln"><span class="s">  corrections. The user is demanding action, not an explanation.</span></span></pre>
-
-    <div class="note warn">
-      <strong>The correction rule fixes a specific failure mode.</strong>
-      Without it, a Gemini-class model would respond to "that's not what I
-      asked" with a <code>type:"simple"</code> apology — and the user is
-      left exactly where they were. The rule forces a re-plan instead.
-      Every "phrasing like" example came from real conversations where
-      the previous prompt drifted into apologise-and-stop behaviour.
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h3>The memory rules <span class="lineno">lines 306–318</span></h3>
-
-<pre class="code"><span class="lbl">engine.py:306–318</span><span class="ln"><span class="s">- MEMORY (do NOT delegate memory to a worker agent — it is YOUR job):</span></span><span class="ln"><span class="s">  * When the user just SHARES a fact or preference about themselves in conversation</span></span><span class="ln"><span class="s">    ("I like X", "my name is Y", "I work at Z", "I love the Beatles"), that is type:"simple".</span></span><span class="ln"><span class="s">    Reply naturally and briefly. ANet already remembers such facts automatically in the</span></span><span class="ln"><span class="s">    background — you do NOT need to call any tool or route to an agent for this.</span></span><span class="ln"><span class="s">  * RECALL is ALREADY handled for you: the user profile and relevant memories are injected</span></span><span class="ln"><span class="s">    into THIS prompt above (under "What I know about you" / "RELEVANT MEMORIES"). Any "tell me</span></span><span class="ln"><span class="s">    about me", "what do you know about me", "what's my name" → type:"simple", answered straight</span></span><span class="ln"><span class="s">    from that injected context. NEVER call memory_tool to search/list for these — just read</span></span><span class="ln"><span class="s">    what's above and reply.</span></span><span class="ln"><span class="s">  * ONLY call the memory_tool yourself (it is a direct tool you have) when the user EXPLICITLY</span></span><span class="ln"><span class="s">    asks to SAVE/REMEMBER a specific thing, or to FORGET/DELETE/CLEAR memories. Never send a</span></span><span class="ln"><span class="s">    memory task to file_agent or any other agent.</span></span></pre>
-
-    <div class="note">
-      <strong>The memory rules exist because of a real bug:</strong>
-      previous prompts let the model route memory questions to
-      <code>file_agent</code> ("read my memory file"), which made up a path
-      and failed. The fix is encoded here: memory is the manager's job, not
-      a worker agent's, and the manager already has everything injected.
-      Stop. Reply.
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h3>Agent-routing rules <span class="lineno">lines 326–358</span></h3>
-
-<pre class="code"><span class="lbl">engine.py:326–358 · routing rules · excerpt</span><span class="ln"><span class="s">ROUTING — match each sub-task to the most specific agent ...</span></span><span class="ln"><span class="s">- Each agent advertises what it handles via its task_types (listed above). Break the request into</span></span><span class="ln"><span class="s">  sub-tasks and route EACH sub-task to the agent whose task_types most specifically match it.</span></span><span class="ln"><span class="s">- A general-purpose agent (code_agent) must NOT absorb a sub-task that clearly matches a more</span></span><span class="ln"><span class="s">  specialized agent's task_types. Delivering / sending / notifying / posting via an external service</span></span><span class="ln"><span class="s">  MUST be its OWN separate step routed to that agent ...</span></span><span class="ln"><span class="s"></span></span><span class="ln"><span class="s">CRITICAL — agent routing for code vs desktop:</span></span><span class="ln"><span class="s">- code_agent handles ALL programming and command-line work ...</span></span><span class="ln"><span class="s">- computer_agent handles ONLY GUI desktop actions ...</span></span><span class="ln"><span class="s">- NEVER route to computer_agent to run shell/terminal commands ...</span></span><span class="ln"><span class="s"></span></span><span class="ln"><span class="s">CRITICAL — agent routing for file management vs code editing:</span></span><span class="ln"><span class="s">- file_agent handles ONLY raw file-system operations on NON-CODE files ...</span></span><span class="ln"><span class="s">- code_agent handles ALL tasks that involve source code or project files ...</span></span><span class="ln"><span class="s">- When in doubt between file_agent and code_agent → ALWAYS choose code_agent.</span></span></pre>
-
-    <div class="note">
-      <strong>The "code_agent must not absorb" rule</strong> is what makes
-      the Telegram step in our running example get its <em>own</em> step,
-      routed to <code>tele_agent</code>, instead of letting
-      <code>code_agent</code> use <code>requests</code> to call the
-      Telegram API itself. Specialised agents hold credentials and
-      conventions that a general agent shouldn't have to know about.
-    </div>
-
-    <div class="note info">
-      <strong>The CRITICAL blocks address specific historical confusions:</strong>
+      <strong>Every field maps to something the pipeline uses:</strong>
       <ul>
-        <li>computer_agent vs code_agent — early planners would open a Terminal window via computer_agent and try to type into it. Wasteful and unreliable; code_agent has shell_tool already.</li>
-        <li>file_agent vs code_agent — file_agent has no edit_tool, so routing "fix this file" to it always failed. The fallback ("ALWAYS choose code_agent in doubt") is the safe answer.</li>
+        <li><strong><code>request_class</code></strong> (coding / reasoning / rag / general) — feeds the synthesizer's operator selection. A <code>rag</code> class defaults synthesis to <em>aggregate</em>; everything else to <em>compose</em>.</li>
+        <li><strong><code>depends_on</code></strong> — the DAG edges. <code>[]</code> means "run me concurrently."</li>
+        <li><strong><code>estimated_tokens</code> or <code>complexity</code></strong> — the cost weight <code>w_i</code>. A concrete token count is preferred; otherwise the coarse bucket <code>{low:1, medium:3, high:9}</code> is used. These weights drive δ (the weighted critical path).</li>
+        <li><strong><code>coupling</code></strong> — one label for all deps, or a per-dep object <code>{"&lt;dep_id&gt;": "strong"}</code>. Missing labels fall back to the "strong" default (an edge exists <em>because</em> u feeds v).</li>
+        <li><strong><code>agent</code></strong> — chosen from the injected <code>{agents}</code> list, which is formatted from each agent's <code>task_types</code>. A bad name falls back safely (chapter 1a's <code>_resolve_agent</code>).</li>
       </ul>
     </div>
 
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h3>Domain-specific rules <span class="lineno">lines 360–389</span></h3>
+    <div class="note info">
+      <strong>The context is prepended, not embedded.</strong> When the coordinator
+      passes <code>memory_ctx</code> (the rolling summary + recent turns from
+      chapter 1a), <code>build_prompt</code> prepends it as a
+      <em>"Relevant context from memory:"</em> block before the task. That's what
+      lets the decomposer resolve follow-ups against prior turns.
+    </div>
+
+    <div class="note warn">
+      <strong>Output is parsed tolerantly.</strong> The decomposer's reply goes
+      through <code>extract_json</code> (in <code>stage_models.py</code>): strict
+      parse, then a fenced-code parse, then a greedy <code>{...}</code> slice. Only
+      if all three fail does it raise — caught by the coordinator's outer guard as
+      a clean error. There's no separate keyword-fallback planner any more.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <h2><code>synthesizer</code> — the four operator prompts <span class="lineno">synthesizer/__init__.py:85–102</span></h2>
     <p>
-      Three blocks for behaviours that aren't general planning — they're
-      domain knowledge the planner needs to do its job correctly:
+      Phase 5 is a <em>dispatcher</em> over five operators (compose / aggregate /
+      vote / rank / resolve). Four of them are terminal LLM calls, each with its
+      own tight system prompt; <code>vote</code> is embedding-based and needs no
+      prompt. The operator is chosen by <code>select_operator</code> from the
+      topology and request class — vote / rank / resolve are never chosen by
+      default, only via an explicit hint or a declared-redundant decomposition.
     </p>
 
-    <table class="tbl">
-      <thead><tr><th>Block</th><th>What it forces</th><th>Why it's here</th></tr></thead>
-      <tbody>
-        <tr>
-          <td><strong>APPROVAL GATE — 3D rendering</strong></td>
-          <td>If user asks for a 3D model without an image, plan ONLY the image download. Stop. Don't chain the render in the same plan.</td>
-          <td>3D rendering takes minutes and uses GPU. Approving the image first prevents a wrong-image render.</td>
-        </tr>
-        <tr>
-          <td><strong>PATH INJECTION — viga_agent</strong></td>
-          <td>Scan assistant messages for "Downloaded: …" lines and put that path verbatim into the viga task.</td>
-          <td>So viga_agent doesn't have to ask the user "which image?" — it gets the path injected.</td>
-        </tr>
-        <tr>
-          <td><strong>IMAGE DOWNLOAD TASKS</strong></td>
-          <td>Tell research_agent to find a DIRECT image URL ending in .jpg / .png / .webp. Use Wikimedia Commons first.</td>
-          <td>Without this, the research agent would return article links that aren't downloadable.</td>
-        </tr>
-        <tr>
-          <td><strong>TELEGRAM TASKS</strong></td>
-          <td>Always set <code>success_criteria</code> to "Result must contain 'message_id' confirming Telegram delivery"</td>
-          <td>So the checker has a verifiable token to grep for, not just the agent's claim "I sent it".</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="note warn">
-      <strong>These blocks accrete.</strong> The planner prompt grows by
-      bullet every time a recurring failure mode is identified. They're
-      kept in this one prompt (rather than scattered across agents)
-      because the <em>planner</em> is the only thing that can prevent a
-      wrong delegation in the first place.
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h3>Few-shot examples <span class="lineno">lines 391–410</span></h3>
-
-<pre class="code"><span class="lbl">engine.py:391–410 · examples · excerpt</span><span class="ln"><span class="s">EXAMPLES:</span></span><span class="ln"><span class="s">"open notepad"</span></span><span class="ln"><span class="s">→ {{"type":"plan","steps":[{{"id":1,"agent":"computer_agent","task":"Open Notepad",...}}]}}</span></span><span class="ln"></span><span class="ln"><span class="s">"find latest AI news and type in notepad"</span></span><span class="ln"><span class="s">→ {{"type":"plan","steps":[</span></span><span class="ln"><span class="s">  {{"id":1,"agent":"research_agent","task":"Find latest AI news headlines and summaries","success_criteria":"3+ news items returned","check":null,"depends_on":[],"wait_for_async":false}},</span></span><span class="ln"><span class="s">  {{"id":2,"agent":"computer_agent","task":"Open Notepad and type the AI news",...,"depends_on":[1],"wait_for_async":false}}</span></span><span class="ln"><span class="s">]}}</span></span><span class="ln"></span><span class="ln"><span class="s">"create a react vite app in c:\\projects\\myapp"</span></span><span class="ln"><span class="s">→ {{"type":"plan","steps":[</span></span><span class="ln"><span class="s">  {{"id":1,"agent":"code_agent","task":"Scaffold a new Vite React app...",...}}</span></span><span class="ln"><span class="s">]}}</span></span><span class="ln"></span><span class="ln"><span class="s">"you didn't make the travel website, you just made the vite project"</span></span><span class="ln"><span class="s">→ {{"type":"plan","steps":[{{"id":1,"agent":"code_agent","task":"Build the full travel website UI...",...}}]}}</span></span><span class="ln"></span><span class="ln"><span class="s">"that's not what I asked, do it again"</span></span><span class="ln"><span class="s">→ Replan with the correct agent based on what the original request was.</span></span><span class="ln"></span><span class="ln"><span class="s">OUTPUT ONLY JSON."""</span></span></pre>
+<pre class="code"><span class="lbl">synthesizer/__init__.py:85–102 · the operator system prompts</span><span class="ln">_COMPOSE_SYS = (</span><span class="ln">    <span class="s">"Each output below is a DIFFERENT part of one task (e.g. backend, frontend, tests). "</span></span><span class="ln">    <span class="s">"Integrate every part into one coherent deliverable — keep every part, don't compare "</span></span><span class="ln">    <span class="s">"or pick. Return the final result."</span>)</span><span class="ln"></span><span class="ln">_AGGREGATE_SYS = (</span><span class="ln">    <span class="s">"Synthesize the findings below into one unified summary. Preserve every distinct piece "</span></span><span class="ln">    <span class="s">"of information. If two outputs disagree on the SAME fact, note both rather than picking. "</span></span><span class="ln">    <span class="s">"Return the summary."</span>)</span><span class="ln"></span><span class="ln">_RANK_SYS = (</span><span class="ln">    <span class="s">"These are competing candidates for the same goal. Rank them by quality and return "</span></span><span class="ln">    <span class="s">"the single best one (briefly say why). Don't merge — choose."</span>)</span><span class="ln"></span><span class="ln">_RESOLVE_SYS = (</span><span class="ln">    <span class="s">"The outputs make CONTRADICTORY claims on the same point. Decide which is right "</span></span><span class="ln">    <span class="s">"(prefer freshly-retrieved evidence over prior knowledge), reconcile, and return "</span></span><span class="ln">    <span class="s">"the correct answer."</span>)</span></pre>
 
     <div class="note">
-      <strong>Four examples, each demonstrating one rule:</strong>
+      <strong>Each prompt asks the right question for its situation:</strong>
       <ul>
-        <li>"open notepad" — minimal single-step computer_agent plan with a <code>check_window</code>.</li>
-        <li>"find latest AI news and type in notepad" — multi-step with a <code>depends_on</code> chain.</li>
-        <li>"create a react vite app" — code_agent with a full absolute path (the TASK SPECIFICATION rule in action).</li>
-        <li>"you didn't make the travel website" — the correction rule producing a fuller re-plan.</li>
+        <li><strong>compose</strong> — the default for distinct, complementary parts (backend / frontend / tests). "Keep every part, don't compare or pick." This is what runs for a normal multi-agent task like our running example.</li>
+        <li><strong>aggregate</strong> — the default for research / RAG. Unify findings, preserve every distinct fact, note disagreements rather than silently picking.</li>
+        <li><strong>rank</strong> — for candidate generation (N options for one goal). Choose the best, don't merge. Opt-in only.</li>
+        <li><strong>resolve</strong> — for a genuine contradiction. Prefer freshly-retrieved evidence over prior knowledge. This is the only operator that can trigger a re-route (below).</li>
       </ul>
-      The final "OUTPUT ONLY JSON." reaffirms the very first rule. Models
-      forget what they read at the top of a long prompt; rephrasing at the
-      bottom is the standard mitigation.
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_synthesis_system_prompt</code> — the reply rules <span class="lineno">lines 415–453</span></h2>
-
-<pre class="code"><span class="lbl">engine.py:415–453</span><span class="ln"><span class="k">def</span> <span class="b">_synthesis_system_prompt</span>(interim: <span class="b">bool</span> = <span class="b">False</span>) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    soul_prefix = <span class="s">f"{_SOUL}\n\n"</span> <span class="k">if</span> _SOUL <span class="k">else</span> <span class="s">""</span></span><span class="ln">    base = (</span><span class="ln">        <span class="s">f"{soul_prefix}You are {_ASSISTANT_NAME}, an AI assistant. One or more agents just completed the user's request. "</span></span><span class="ln">        <span class="s">"Your job is to present the results to the user.\n\n"</span></span><span class="ln">        <span class="s">"Rules:\n"</span></span><span class="ln">        <span class="s">"- If the agent returned information, facts, lists, quotes, code, or any content the user asked for: "</span></span><span class="ln">        <span class="s">"present it fully and clearly. Do NOT summarise it away — include the actual content.\n"</span></span><span class="ln">        <span class="s">"- If the agent performed an action (opened an app, downloaded a file, wrote a file, ran code): "</span></span><span class="ln">        <span class="s">"give a brief 1-2 sentence confirmation.\n"</span></span><span class="ln">        <span class="s">"- Never say 'I found some results' or 'Here are the results' and then skip the results. "</span></span><span class="ln">        <span class="s">"Always include the actual content.\n"</span></span><span class="ln">        <span class="s">"- If a step failed after retries, mention it briefly.\n"</span></span><span class="ln">        <span class="s">"- IMPORTANT: if any agent output contains a line starting with 'Downloaded:', "</span></span><span class="ln">        <span class="s">"copy that exact line verbatim into your reply.\n"</span></span><span class="ln">        <span class="s">"- If any agent output starts with '[INCOMPLETE', the agent ran out of steps mid-task. "</span></span><span class="ln">        <span class="s">"Tell the user clearly what was completed so far and that they can ask you to continue.\n"</span></span><span class="ln">        <span class="s">"- NEVER invent capability limitations. If a task failed, say WHAT failed (e.g. "</span></span><span class="ln">        <span class="s">"'research_agent could not find a direct downloadable image URL') — do NOT claim "</span></span><span class="ln">        <span class="s">"the system 'cannot' do something (like 'cannot send images to Telegram') unless "</span></span><span class="ln">        <span class="s">"the agent explicitly returned that error. Stick to what the agent results actually say.\n\n"</span></span><span class="ln">        <span class="s">"TRUTHFULNESS — the agent outputs below are your ONLY source of truth:\n"</span></span><span class="ln">        <span class="s">"- Report ONLY what the agent outputs actually contain. The 'Original request' tells you "</span></span><span class="ln">        <span class="s">"what was ASKED, NOT what was done — never treat the request as evidence of completion.\n"</span></span><span class="ln">        <span class="s">"- If the request asked for an action that has NO matching agent output (a file written, a "</span></span><span class="ln">        <span class="s">"test run, code executed, a message sent), you MUST NOT claim it happened. Say plainly that "</span></span><span class="ln">        <span class="s">"that part was not completed, and which agent would have done it.\n"</span></span><span class="ln">        <span class="s">"- NEVER fabricate file paths, code, test results, numbers/statistics, or delivery "</span></span><span class="ln">        <span class="s">"confirmations (e.g. 'sent to Telegram', 'tests passed') that are not present in the agent "</span></span><span class="ln">        <span class="s">"outputs below.\n"</span></span><span class="ln">        <span class="s">"- If only some steps ran, report exactly those and clearly list which parts of the request "</span></span><span class="ln">        <span class="s">"were NOT done."</span></span><span class="ln">    )</span><span class="ln">    <span class="k">if</span> interim:</span><span class="ln">        base += (</span><span class="ln">            <span class="s">"\n- NOTE: Some tasks are running in the background. "</span></span><span class="ln">            <span class="s">"Tell the user what started and that they'll be notified when complete."</span></span><span class="ln">        )</span><span class="ln">    <span class="k">return</span> base</span></pre>
-
-    <div class="note">
-      <strong>The synthesizer prompt has one job:</strong> turn the
-      <code>step_results</code> list into one coherent reply that reflects
-      what <em>actually</em> happened — no more, no less. The rules can be
-      grouped into two themes:
-      <ol>
-        <li><strong>"Show the content"</strong> — early rules. If an agent returned a list of news items, the reply must include those items, not "Here are the news items:" followed by silence.</li>
-        <li><strong>"Don't lie"</strong> — the entire TRUTHFULNESS block. Three years of LLM development have shown that synthesizers will happily fabricate a "sent to Telegram" confirmation when no Telegram step ran. The rules explicitly forbid it and tell the model what to say instead.</li>
-      </ol>
-    </div>
-
-    <div class="note warn">
-      <strong>The "Downloaded: line" rule</strong> exists because the
-      synthesizer used to summarise file paths into descriptive prose
-      (<em>"I downloaded the image"</em>) — losing the actual path. Now it
-      must <em>copy the line verbatim</em>, so the user (and any
-      <code>viga_agent</code> step that comes next) can read the path.
     </div>
 
     <div class="note info">
-      <strong>The <code>interim</code> flag</strong> is set when one or more
-      steps got offloaded to the background (e.g. a 3D render that takes
-      minutes). The interim mode tells the synthesizer to acknowledge the
-      background work explicitly so the user isn't left wondering.
+      <strong>Two operators aren't LLM prompts at all.</strong> <code>single</code>
+      and <code>sequential_last</code> are pure passthroughs — a one-output result,
+      or the last link of a sequential chain, is already a coherent answer, so
+      it's emitted directly. <code>vote</code> is embedding-based: it picks the
+      output most similar to the rest as the consensus. All four terminal prompts
+      stream token-by-token via <code>stage_call_stream</code> (chapter 1b), which
+      is why you see the final answer typing out live.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2>What this 215-line section leaves you with</h2>
+    <h2>The resolve loop — Algorithm 2's re-route <span class="lineno">synthesizer/__init__.py:197–211</span></h2>
+
+<pre class="code"><span class="lbl">synthesizer/__init__.py:197–211 · excerpt</span><span class="ln"><span class="c"># Resolve — true contradiction; arbitrate, with the reroute loop (Algorithm 2).</span></span><span class="ln">iters, bump = <span class="n">0</span>, <span class="n">0.0</span></span><span class="ln"><span class="k">while</span> <span class="b">True</span>:</span><span class="ln">    iters += <span class="n">1</span></span><span class="ln">    out = <span class="k">await</span> _combine(<span class="s">"arbiter"</span>, _RESOLVE_SYS, outs, task)</span><span class="ln">    post = alignment(out, outs, embed)</span><span class="ln">    <span class="k">if</span> (topology == Topology.HIERARCHICAL <span class="k">or</span> post >= theta</span><span class="ln">            <span class="k">or</span> reroute_fn <span class="k">is</span> <span class="b">None</span> <span class="k">or</span> iters >= max_iters):</span><span class="ln">        <span class="k">return</span> SynthesisResult(out, <span class="s">"resolve"</span>, topology, cs, iters, iters > <span class="n">1</span>, history)</span><span class="ln">    bump += <span class="n">0.2</span></span><span class="ln">    topology, cur_results = <span class="k">await</span> reroute_fn(base_gamma + bump)</span></pre>
+
+    <div class="note">
+      <strong>The one place the pipeline loops back.</strong> If <code>resolve</code>
+      arbitrates a contradiction and the result still doesn't align, it calls the
+      <code>reroute_fn</code> the coordinator handed it (chapter 1a) with an
+      inflated coupling estimate (γ' += 0.2), which re-routes and re-executes. It's
+      bounded by <code>max_iters</code> and short-circuits for hierarchical
+      topologies. Crucially, this is the <em>only</em> feedback loop — there's no
+      planner/executor/checker retry loop, no success/partial/fail bounce-back.
+    </div>
+
+    <div class="note warn">
+      <strong>Consistency score is a signal, not a gate.</strong> The paper's
+      Algorithm 2 gated merge-vs-arbitrate on a global consistency score, which
+      misfired on parallel subtasks that are <em>distinct by design</em> (three
+      different facts look dissimilar → spurious arbiter). Here CS is demoted: it's
+      only consulted inside <code>vote</code> and <code>resolve</code>. The normal
+      distinct-subtask case defaults to compose/aggregate and never spuriously
+      arbitrates.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <h2>The summariser prompt — a shared aside <span class="lineno">context_window.py:132–140</span></h2>
+
+<pre class="code"><span class="lbl">context_window.py:132–140 · _SUMMARY_SYSTEM</span><span class="ln"><span class="s">You maintain a running summary of a conversation between a user and an AI</span></span><span class="ln"><span class="s">assistant. Given the summary so far and the new messages that are about to</span></span><span class="ln"><span class="s">scroll out of the live window, return an updated summary that PRESERVES every</span></span><span class="ln"><span class="s">durable fact: decisions made, file paths, names, numbers, the user's goals and</span></span><span class="ln"><span class="s">constraints, and unresolved threads. Drop pleasantries and superseded details.</span></span><span class="ln"><span class="s">Keep it tight and factual — bullet points or short sentences. Return ONLY the</span></span><span class="ln"><span class="s">updated summary text.</span></span></pre>
+
+    <div class="note">
+      <strong>The third prompt in the engine's orbit.</strong> Not a phase, but the
+      manager call that <code>_maintain_summary</code> (chapter 1b) fires when the
+      recent-token window overflows. It's shared across engines because it belongs
+      to short-term memory, not to any one pipeline. It preserves durable facts
+      (paths, names, decisions, unresolved threads) and drops pleasantries.
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>What this section leaves you with</h2>
     <p class="section-intro">
-      Two prompt-builder functions. Their job descriptions in one
-      sentence each:
+      Every prompt the engine sends, in one place:
     </p>
     <ul>
-      <li><strong><code>_plan_system_prompt(agents, has_direct_tools, memory_ctx)</code></strong> → the full planner prompt: identity, persona, profile, memories, agent directory, output schema, ~30 rules, 4 few-shot examples.</li>
-      <li><strong><code>_synthesis_system_prompt(interim)</code></strong> → the synthesizer prompt: present content fully, don't lie, copy "Downloaded:" lines verbatim, acknowledge background tasks when relevant.</li>
+      <li><strong>Decomposer</strong> (<code>_SYSTEM</code> + template + output spec) → your request becomes a DAG of subtasks with dependencies, coupling, cost weights, and per-subtask agent routing.</li>
+      <li><strong>Synthesizer operators</strong> (<code>_COMPOSE_SYS</code> / <code>_AGGREGATE_SYS</code> / <code>_RANK_SYS</code> / <code>_RESOLVE_SYS</code>) → the results become one streamed answer, via the operator that fits; <code>vote</code> and the passthroughs use no prompt.</li>
+      <li><strong>Summariser</strong> (<code>_SUMMARY_SYSTEM</code>) → the shared short-term-memory rolling summary.</li>
     </ul>
 
     <p>
-      Next up: <a href="1d_class.html" style="color:#86efac;">1d — the
-      Engine class itself</a>. Constructor, state, public API, and the
-      <code>run_turn</code> method that wires everything we've seen so far
-      into one coherent turn.
+      That completes the AdaptOrch engine walkthrough. Head back to the
+      <a href="../index.html" style="color:#86efac;">L3 index</a> for the next file
+      in reading order — the orchestrator, the agentic loop each subtask runs.
     </p>
   </div>
 </section>
@@ -294,11 +204,11 @@
     <div class="page-nav">
       <a href="1b_helpers.html">
         <span class="dir">← Previous</span>
-        <span class="title">1b · Module-level helpers</span>
+        <span class="title">1b · Shared + phase helpers</span>
       </a>
-      <a class="next" href="1d_class.html">
+      <a class="next" href="../index.html">
         <span class="dir">Next →</span>
-        <span class="title">1d · Engine class — __init__ + run_turn</span>
+        <span class="title">L3 index — next file in reading order</span>
       </a>
     </div>
     <p class="meta">ANet · architecture/docs/l3/1engine/1c_prompts.html</p>

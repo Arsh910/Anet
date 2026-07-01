@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>01 · engine.py — Overview · ANet L3</title>
+<title>01 · AdaptOrch engine — Overview · ANet L3</title>
 <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -16,7 +16,7 @@
       <div class="crumbs">
         <a href="../index.html">L3 index</a>
         <span class="sep">/</span>
-        <span style="color: #86efac;">01 · engine.py</span>
+        <span style="color: #86efac;">01 · AdaptOrch engine</span>
         <span class="sep">/</span>
         <span style="color: #6b7280;">overview</span>
       </div>
@@ -30,48 +30,53 @@
 
 <section>
   <div class="container">
-    <span class="pill"><span class="dot"></span>File 01 / 18 · engine.py</span>
-    <h1>engine.py — the conductor.</h1>
+    <span class="pill"><span class="dot"></span>File 01 · AdaptOrch/ + engine_base.py</span>
+    <h1>The AdaptOrch engine — the conductor.</h1>
     <p class="lede">
-      <code>anet/core/engine.py</code> is the file that owns one turn of the
-      conversation. Every <code>You: ...</code> in your terminal hits
-      <code>Engine.run_turn()</code> here and doesn't return until the
-      synthesizer has streamed the answer back. 1141 lines, broken into 5
-      sub-pages so each section gets room to breathe.
+      The engine is <code>AdaptOrchEngine(BaseEngine)</code>, split across
+      <code>anet/core/AdaptOrch/coordinator.py</code> (the pipeline) and
+      <code>anet/core/engine_base.py</code> (the shared infra). Every
+      <code>You: ...</code> in your terminal hits
+      <code>engine.run_turn(thread_id, store, user_input)</code> here and doesn't
+      return until the synthesizer has streamed the answer back. It's a
+      <strong>five-phase pipeline</strong> — decompose → DAG → route → execute →
+      synthesize — one module per phase, plus a shared base. There is no longer a
+      planner / executor / checker / synthesizer <em>stage</em> engine.
     </p>
 
     <h2>Where it sits</h2>
     <p class="section-intro">
-      Engine is the <strong>top</strong> of the dependency tree — almost
-      every other core module is something <em>it</em> calls. The arrows
-      below point in the direction of "uses": engine uses orchestrator,
-      orchestrator uses agent_runner, and so on.
+      The engine is the <strong>top</strong> of the dependency tree — almost
+      every other core module is something <em>it</em> calls. It uses the
+      orchestrator (the agentic loop, one call per subtask), the orchestrator
+      uses agent_runner, and so on.
     </p>
 
     <div class="note info">
-      <strong>Reading order recap:</strong> we explain engine.py first
-      because it's where execution starts. Each time engine references
-      another file (orchestrator, memory_store, context_window, …) we'll
+      <strong>Reading order recap:</strong> we explain the engine first
+      because it's where execution starts. Each time it references
+      another file (orchestrator, the memory backend, context_window, …) we'll
       cover that file in its own chapter — see the
       <a href="../index.html" style="color:#bfdbfe;">L3 index</a>.
     </div>
 
-<pre class="code"><span class="lbl">dependency map · what engine.py imports</span><span class="ln"><span class="c"># Standard library — no commentary needed</span></span><span class="ln"><span class="k">import</span> asyncio, hashlib, json, os, re, sys</span><span class="ln"><span class="k">from</span> dataclasses <span class="k">import</span> dataclass, field</span><span class="ln"><span class="k">from</span> datetime <span class="k">import</span> datetime</span><span class="ln"><span class="k">from</span> pathlib <span class="k">import</span> Path</span><span class="ln"></span><span class="ln"><span class="c"># Third-party — the OpenAI-compatible async client used for the manager call</span></span><span class="ln"><span class="k">from</span> openai <span class="k">import</span> AsyncOpenAI</span><span class="ln"></span><span class="ln"><span class="c"># Core — covered in their own L3 chapters</span></span><span class="ln"><span class="k">from</span> anet.core <span class="k">import</span> orchestrator                          <span class="c"># → chapter 02</span></span><span class="ln"><span class="k">from</span> anet.core.context <span class="k">import</span> on_status <span class="k">as</span> _status_var,    <span class="c"># → chapter 16</span></span><span class="ln">                              on_token  <span class="k">as</span> _token_var,</span><span class="ln">                              is_cancelled <span class="k">as</span> _is_cancelled</span><span class="ln"></span><span class="ln"><span class="c"># Lazy imports inside functions (avoid circular imports + speed up startup):</span></span><span class="ln"><span class="c">#   from anet.core.config_loader import load, manager_config, load_soul → chapter 13</span></span><span class="ln"><span class="c">#   from anet.core import memory_store                                  → chapter 04</span></span><span class="ln"><span class="c">#   from anet.core import context_window as cw                          → chapter 12</span></span><span class="ln"><span class="c">#   from anet.core.agent_runner import build_vertex_client, …           → chapter 03</span></span><span class="ln"><span class="c">#   from anet.AnetTools.memory_tool import search_memories              → an AnetTool</span></span></pre>
+<pre class="code"><span class="lbl">the AdaptOrch package · one module per phase, on the shared base</span><span class="ln"><span class="c"># anet/core/engine_base.py — shared infra (per-thread state, summary, persist)</span></span><span class="ln"><span class="k">class</span> <span class="p">BaseEngine</span>:  <span class="c"># __init__, _maintain_summary, _persist, _manager_client, EngineResult</span></span><span class="ln"></span><span class="ln"><span class="c"># anet/core/AdaptOrch/ — the five phases</span></span><span class="ln">coordinator.py   <span class="c"># AdaptOrchEngine(BaseEngine).run_turn — wires the 5 phases → chapter 1a</span></span><span class="ln">decomposer/      <span class="c"># Phase 1: LLM → subtasks (+ trivial fast-path)  → prompt in chapter 1c</span></span><span class="ln">dag/             <span class="c"># Phase 2: build G_T, compute ω / δ / γ / layers  (pure, no LLM)</span></span><span class="ln">router/          <span class="c"># Phase 3: Algorithm 1 — DAG shape → topology     (pure, no LLM)</span></span><span class="ln">executors/       <span class="c"># Phase 4: τ_P / τ_S / τ_H / τ_X run each subtask via orchestrator.run</span></span><span class="ln">synthesizer/     <span class="c"># Phase 5: Algorithm 2 — 5 operators merge/arbitrate  → prompts in 1c</span></span><span class="ln">stage_models.py  <span class="c"># per-stage model resolution (decomposer/merger/arbiter)</span></span><span class="ln"></span><span class="ln"><span class="c"># The one external call each subtask makes:</span></span><span class="ln"><span class="k">from</span> anet.core <span class="k">import</span> orchestrator   <span class="c"># the agentic loop — one run per subtask → chapter 02</span></span></pre>
 
     <div class="note">
-      <strong>Why the lazy imports?</strong> Two reasons. (1) Several of these
-      modules — especially <code>memory_store</code> and
-      <code>config_loader</code> — touch the filesystem on import (loading
-      YAML, opening Chroma). Lazy-importing them inside the functions that
-      need them keeps engine importable even when the workspace isn't fully
-      set up yet. (2) Circular-import avoidance: orchestrator imports things
-      that ultimately reach back to engine-adjacent helpers.
+      <strong>Why split into a package?</strong> Each phase is a distinct
+      concern with a clean seam: the decomposer and synthesizer make LLM calls,
+      the DAG and router are <em>pure</em> Python (no LLM, no I/O — easy to
+      unit-test), and the executors are pure scheduling that call an injected
+      <code>run_subtask</code>. <code>coordinator.py</code> is the thin file that
+      threads them together; <code>engine_base.py</code> holds the state and
+      helpers that any future engine would share. Plain Python throughout — no
+      LangChain, no graph framework.
     </div>
 
-    <h2>The structure of this file</h2>
+    <h2>The structure of this walkthrough</h2>
     <p class="section-intro">
-      Read engine.py in five passes. The split into sub-pages matches the
-      five logical sections of the source.
+      Read the engine in four passes. The split into sub-pages follows the
+      layering: shared base + wiring, then the shared helpers, then the prompts.
     </p>
 
     <div class="grid grid-2">
@@ -79,68 +84,54 @@
       <a class="file-card current" href="1_engine.html">
         <span class="num">1 · overview</span>
         <h3>You are here</h3>
-        <p>Where engine sits in the dependency tree, what each sub-page covers, how to navigate.</p>
+        <p>Where the engine sits, the package layout, what each sub-page covers, how to navigate.</p>
         <div class="lines">this page</div>
       </a>
 
       <a class="file-card done" href="1a_setup.html">
         <span class="num">1a · setup</span>
-        <h3>Imports + constants + SOUL loader</h3>
-        <p>Lines 1–36. The top-of-file boilerplate: imports, <code>_MAX_RETRIES = 3</code>, <code>_ASSISTANT_NAME</code>, and how <code>SOUL.md</code> is loaded once at import time.</p>
-        <div class="lines">~36 lines</div>
+        <h3>BaseEngine.__init__ + run_turn wiring</h3>
+        <p><code>engine_base.py</code>'s constructor (agents, agent_map, tools, per-thread turn counters + summaries) and how <code>coordinator.run_turn</code> wires the five phases and callbacks together.</p>
+        <div class="lines">engine_base.py + coordinator.py</div>
       </a>
 
       <a class="file-card done" href="1b_helpers.html">
         <span class="num">1b · helpers</span>
-        <h3>Module-level helper functions</h3>
-        <p>Lines 38–237. Every standalone function: <code>_profile_context</code>, <code>_manager_client</code>, <code>_extract_json</code>, <code>_keyword_fallback</code>, <code>_has_ready_steps</code>, <code>_run_explicit_check</code>, and others.</p>
-        <div class="lines">~200 lines</div>
+        <h3>The shared + phase helpers</h3>
+        <p><code>_maintain_summary</code>, <code>_persist</code>, <code>_manager_client</code> / <code>_manager_cfg</code>, <code>_context_settings</code> on the base — plus the phase helpers: <code>render_for_prompt</code>, DAG metrics, the router decision, executor context threading, and <code>stage_call</code> / <code>stage_call_stream</code>.</p>
+        <div class="lines">across the package</div>
       </a>
 
       <a class="file-card done" href="1c_prompts.html">
         <span class="num">1c · prompts</span>
-        <h3>The two system prompts</h3>
-        <p>Lines 240–453. The 160-line <code>_plan_system_prompt</code> that builds the planner's instructions, and the <code>_synthesis_system_prompt</code> that shapes the final reply. Walked through section by section.</p>
-        <div class="lines">~215 lines (mostly prompt text)</div>
-      </a>
-
-      <a class="file-card todo" href="1d_class.html">
-        <span class="num">1d · Engine class</span>
-        <h3>__init__, public API, run_turn</h3>
-        <p>Lines 456–660. <code>EngineResult</code>, the Engine class's state, the async-state accessors used by the notifier, and the main <code>run_turn</code> method end-to-end.</p>
-        <div class="lines">~200 lines · coming next</div>
-      </a>
-
-      <a class="file-card todo" href="1e_phases.html">
-        <span class="num">1e · phases</span>
-        <h3>The pipeline methods</h3>
-        <p>Lines 664–1141. <code>_maintain_summary</code>, <code>_plan</code>, <code>_execute</code>, <code>_check</code>, <code>_synthesize</code>, <code>_persist</code> — the four stages from Level 2, now in code.</p>
-        <div class="lines">~480 lines · coming next</div>
+        <h3>The real prompts</h3>
+        <p>The decomposer's system prompt (AdaptOrch §B.1) in <code>decomposer/</code>, and the synthesizer's operator prompts (compose / aggregate / rank / resolve) in <code>synthesizer/</code>. Walked through one at a time.</p>
+        <div class="lines">decomposer + synthesizer</div>
       </a>
 
     </div>
 
     <h2>A quick map before you dive in</h2>
     <p class="section-intro">
-      The whole file can be sketched in twelve lines. Every method we'll
-      meet over the next five pages slots into one of these slots:
+      The whole engine can be sketched in a dozen lines. Every phase we'll meet
+      over the next three pages slots into one of these:
     </p>
 
-<pre class="code"><span class="lbl">engine.py · structural skeleton</span><span class="ln"><span class="c"># 1. Module setup (chapter 1a)</span></span><span class="ln">_MAX_RETRIES = <span class="n">3</span></span><span class="ln">_SOUL = _load_soul_once()</span><span class="ln"></span><span class="ln"><span class="c"># 2. Module-level helpers (chapter 1b)</span></span><span class="ln"><span class="k">def</span> <span class="b">_profile_context</span>(...) ...    <span class="c"># pull standing memories into the planner prompt</span></span><span class="ln"><span class="k">def</span> <span class="b">_manager_client</span>(...) ...      <span class="c"># build the AsyncOpenAI client for the manager</span></span><span class="ln"><span class="k">def</span> <span class="b">_extract_json</span>(...) ...        <span class="c"># tolerant JSON parser for planner output</span></span><span class="ln"><span class="k">def</span> <span class="b">_keyword_fallback</span>(...) ...    <span class="c"># last-ditch routing when planner returns garbage</span></span><span class="ln"><span class="k">def</span> <span class="b">_has_ready_steps</span>(...) ...     <span class="c"># the executor loop's continue condition</span></span><span class="ln"><span class="k">async def</span> <span class="b">_run_explicit_check</span>(...)   <span class="c"># deterministic checks (check_window etc.)</span></span><span class="ln"></span><span class="ln"><span class="c"># 3. System prompts (chapter 1c)</span></span><span class="ln"><span class="k">def</span> <span class="b">_plan_system_prompt</span>(...) ...     <span class="c"># the planner's instructions</span></span><span class="ln"><span class="k">def</span> <span class="b">_synthesis_system_prompt</span>(...) ... <span class="c"># the synthesizer's instructions</span></span><span class="ln"></span><span class="ln"><span class="c"># 4. The Engine class (chapters 1d + 1e)</span></span><span class="ln"><span class="dec">@dataclass</span></span><span class="ln"><span class="k">class</span> <span class="p">EngineResult</span>: reply, step_results</span><span class="ln"></span><span class="ln"><span class="k">class</span> <span class="p">Engine</span>:</span><span class="ln">    <span class="k">def</span> <span class="b">__init__</span>(...) ...                  <span class="c"># in-memory state, no DB</span></span><span class="ln">    <span class="k">async def</span> <span class="b">run_turn</span>(...) ...             <span class="c"># THE entry point — chapter 1d</span></span><span class="ln">    <span class="k">async def</span> <span class="b">_maintain_summary</span>(...) ...    <span class="c"># short-term memory window</span></span><span class="ln">    <span class="k">async def</span> <span class="b">_plan</span>(...) ...                <span class="c"># stage 1</span></span><span class="ln">    <span class="k">async def</span> <span class="b">_execute</span>(...) ...             <span class="c"># stage 2</span></span><span class="ln">    <span class="k">async def</span> <span class="b">_check</span>(...) ...               <span class="c"># stage 3</span></span><span class="ln">    <span class="k">async def</span> <span class="b">_synthesize</span>(...) ...          <span class="c"># stage 4</span></span><span class="ln">    <span class="k">async def</span> <span class="b">_persist</span>(...) ...             <span class="c"># write conversation back to the store</span></span></pre>
+<pre class="code"><span class="lbl">the AdaptOrch turn · structural skeleton (coordinator.py)</span><span class="ln"><span class="k">class</span> <span class="p">AdaptOrchEngine</span>(BaseEngine):</span><span class="ln">    <span class="k">async def</span> <span class="b">run_turn</span>(self, thread_id, store, user_input):</span><span class="ln">        summary, keep_from = <span class="k">await</span> self._maintain_summary(...)   <span class="c"># base: short-term memory</span></span><span class="ln">        working_ctx = cw.render_for_prompt(convo, summary, keep_from, exclude_last=<span class="b">True</span>)</span><span class="ln"></span><span class="ln">        <span class="c"># Phase 1 — decompose (LLM). Trivial requests fast-path out here.</span></span><span class="ln">        decomp = <span class="k">await</span> decomposer.decompose(user_input, self._agents, memory_ctx=working_ctx)</span><span class="ln">        <span class="k">if</span> decomp.trivial: <span class="k">return</span> EngineResult(reply=decomp.reply)</span><span class="ln"></span><span class="ln">        task_dag = decomposer.to_dag(decomp)          <span class="c"># Phase 2 — DAG: ω / δ / γ / layers</span></span><span class="ln">        decision = router.route(task_dag)             <span class="c"># Phase 3 — Algorithm 1 → topology</span></span><span class="ln">        results  = <span class="k">await</span> execute(decision.topology, task_dag, ctx)  <span class="c"># Phase 4 — run subtasks</span></span><span class="ln">        synth    = <span class="k">await</span> synthesizer.synthesize(results, ...)      <span class="c"># Phase 5 — Algorithm 2</span></span><span class="ln"></span><span class="ln">        router.log_route(decision, ..., outcome={...})  <span class="c"># the learned-routing dataset</span></span><span class="ln">        <span class="k">await</span> self._persist(store, thread_id, user_input, synth.output, <span class="b">False</span>)</span><span class="ln">        <span class="k">return</span> EngineResult(reply=synth.output, step_results=[...])</span></pre>
 
     <h2>Reading conventions</h2>
     <ul>
-      <li>Every code excerpt is the <strong>actual source</strong> from the file at the time of writing — line numbers are real and shown in the gutter so you can jump to them in your editor.</li>
+      <li>Every code excerpt is the <strong>actual source</strong> from the files at the time of writing — kept concise and representative.</li>
       <li>Each excerpt is followed by a <strong>note block</strong> that explains <em>why</em> the code is shaped the way it is — invariants, edge cases, the alternative that was rejected.</li>
-      <li>When a function calls into another file (e.g. <code>orchestrator.run</code>), we note the chapter where you'll meet it.</li>
+      <li>When a phase calls into another file (e.g. <code>orchestrator.run</code>), we note the chapter where you'll meet it.</li>
       <li>Tricky one-liners get their own commentary. Trivial getters do not.</li>
     </ul>
 
     <h2>Ready?</h2>
     <p>
-      Start with <a href="1a_setup.html" style="color:#86efac;">1a — imports, constants, SOUL loader</a>.
-      It's only 36 lines but it sets up two pieces of state (<code>_SOUL</code>
-      and the retry budget) that the rest of the file leans on.
+      Start with <a href="1a_setup.html" style="color:#86efac;">1a — BaseEngine.__init__ and the run_turn wiring</a>.
+      It sets up the per-thread state and shows how the five phases are threaded
+      together into one turn.
     </p>
   </div>
 </section>
@@ -154,7 +145,7 @@
       </a>
       <a class="next" href="1a_setup.html">
         <span class="dir">Next →</span>
-        <span class="title">1a · Imports, constants, SOUL loader</span>
+        <span class="title">1a · BaseEngine.__init__ + run_turn wiring</span>
       </a>
     </div>
     <p class="meta">ANet · architecture/docs/l3/1engine/1_engine.html</p>

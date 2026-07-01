@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>1b · engine.py — Helpers · ANet L3</title>
+<title>1b · AdaptOrch engine — Helpers · ANet L3</title>
 <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -16,7 +16,7 @@
       <div class="crumbs">
         <a href="../index.html">L3 index</a>
         <span class="sep">/</span>
-        <a href="1_engine.html">01 · engine.py</a>
+        <a href="1_engine.html">01 · AdaptOrch engine</a>
         <span class="sep">/</span>
         <span style="color: #86efac;">1b · helpers</span>
       </div>
@@ -30,358 +30,262 @@
 
 <section>
   <div class="container">
-    <span class="eyebrow">engine.py · section 2 of 5</span>
-    <h1>Module-level helpers.</h1>
+    <span class="eyebrow">the engine · section 2 of 3</span>
+    <h1>The shared and phase helpers.</h1>
     <p class="lede">
-      Lines 38–237. Eleven standalone functions that live above the Engine
-      class. Most are one screenful; together they handle profile/memory
-      context, manager-client construction, planner-output parsing,
-      executor-loop scheduling, and deterministic checks. Anything the
-      Engine methods leave un-implemented, it's because one of these helpers
+      Two groups. The <strong>shared helpers</strong> on <code>BaseEngine</code> and
+      <code>engine_base.py</code> — rolling summary, manager client, persistence —
+      that every engine inherits. And the <strong>phase helpers</strong> scattered
+      across the AdaptOrch package: the context renderer, the DAG metrics, the
+      router decision, the executors' context threading, and the per-stage model
+      calls. Anything the pipeline in chapter 1a leaves un-explained, one of these
       already did it.
     </p>
 
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_profile_context</code> <span class="lineno">lines 43–67</span></h2>
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <h2 style="color:#86efac;">Part A — shared helpers (engine_base.py)</h2>
 
-<pre class="code"><span class="lbl">engine.py:43–67</span><span class="ln"><span class="k">def</span> <span class="b">_profile_context</span>(limit: <span class="b">int</span> = <span class="n">12</span>) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    <span class="k">try</span>:</span><span class="ln">        <span class="k">from</span> anet.core <span class="k">import</span> memory_store</span><span class="ln">        <span class="k">if not</span> memory_store.is_available():</span><span class="ln">            <span class="k">return</span> <span class="s">""</span></span><span class="ln">        mems = memory_store.get_all(limit=<span class="n">200</span>)</span><span class="ln">        <span class="k">if not</span> mems:</span><span class="ln">            <span class="k">return</span> <span class="s">""</span></span><span class="ln">        <span class="c"># Standing memories first (identity/preferences), then recent facts.</span></span><span class="ln">        prefs = [m <span class="k">for</span> m <span class="k">in</span> mems <span class="k">if</span> m.get(<span class="s">"always_inject"</span>)]</span><span class="ln">        facts = [m <span class="k">for</span> m <span class="k">in</span> mems <span class="k">if</span> m <span class="k">not in</span> prefs]</span><span class="ln">        facts.sort(key=<span class="k">lambda</span> m: m.get(<span class="s">"created_at"</span>, <span class="s">""</span>), reverse=<span class="b">True</span>)</span><span class="ln">        picked, seen = [], <span class="b">set</span>()</span><span class="ln">        <span class="k">for</span> m <span class="k">in</span> prefs + facts:</span><span class="ln">            c = (m.get(<span class="s">"content"</span>) <span class="k">or</span> <span class="s">""</span>).strip()</span><span class="ln">            <span class="k">if</span> c <span class="k">and</span> c <span class="k">not in</span> seen:</span><span class="ln">                seen.add(c)</span><span class="ln">                picked.append(c)</span><span class="ln">            <span class="k">if</span> <span class="b">len</span>(picked) >= limit:</span><span class="ln">                <span class="k">break</span></span><span class="ln">        <span class="k">if not</span> picked:</span><span class="ln">            <span class="k">return</span> <span class="s">""</span></span><span class="ln">        <span class="k">return</span> <span class="s">"\n"</span>.join(<span class="s">f"- {c}"</span> <span class="k">for</span> c <span class="k">in</span> picked)</span><span class="ln">    <span class="k">except</span> <span class="b">Exception</span>:</span><span class="ln">        <span class="k">return</span> <span class="s">""</span></span></pre>
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2><code>_maintain_summary</code> — short-term memory <span class="lineno">engine_base.py:113–159</span></h2>
+
+<pre class="code"><span class="lbl">engine_base.py:113–159 · excerpt</span><span class="ln"><span class="k">async def</span> <span class="b">_maintain_summary</span>(self, store, thread_id, messages) <span class="o">-></span> <span class="b">tuple</span>[<span class="b">str</span>, <span class="b">int</span>]:</span><span class="ln">    <span class="k">from</span> anet.core <span class="k">import</span> context_window <span class="k">as</span> cw</span><span class="ln"></span><span class="ln">    recent_tokens, min_recent = _context_settings()</span><span class="ln">    summary, count = <span class="k">await</span> store.get_summary(thread_id)</span><span class="ln">    count = <span class="b">max</span>(<span class="n">0</span>, <span class="b">min</span>(count, <span class="b">len</span>(messages)))</span><span class="ln"></span><span class="ln">    keep_from, overflow = cw.plan_window(messages, recent_tokens, min_recent, count)</span><span class="ln"></span><span class="ln">    <span class="k">if</span> overflow:</span><span class="ln">        client, model = _manager_client()</span><span class="ln">        msgs = cw.build_summary_messages(summary, overflow)</span><span class="ln">        resp = <span class="k">await</span> client.chat.completions.create(</span><span class="ln">            model=model, temperature=<span class="n">0</span>, max_tokens=<span class="n">700</span>, messages=msgs)</span><span class="ln">        new_summary = (resp.choices[<span class="n">0</span>].message.content <span class="k">or</span> <span class="s">""</span>).strip()</span><span class="ln">        <span class="k">if</span> new_summary:</span><span class="ln">            summary = new_summary</span><span class="ln">            <span class="k">await</span> store.set_summary(thread_id, summary, keep_from)</span><span class="ln">    self._summaries[thread_id] = summary</span><span class="ln">    <span class="k">return</span> summary, keep_from</span></pre>
 
     <div class="note">
-      <strong>What it produces:</strong> a markdown-ish bullet list of up to
-      12 user facts, prepended into the planner prompt under
-      <em>"What I know about you"</em>. This is how the planner already
-      knows your name, your role, and your standing preferences before you
-      type anything.
+      <strong>The rolling summary + token-budgeted window.</strong> This is the
+      whole short-term-memory strategy. It hands the pure planner in
+      <code>context_window.py</code> (chapter 12) the messages, the token budget,
+      and how many turns are already summarised; <code>plan_window</code> returns
+      a <code>keep_from</code> cut and the <code>overflow</code> — the turns that
+      have just scrolled out of the verbatim window. Everything at
+      <code>messages[keep_from:]</code> is sent verbatim; everything before is
+      covered by <code>summary</code>.
     </div>
 
-    <div class="note">
-      <strong>Selection order matters.</strong> Standing memories
-      (<code>always_inject</code> categories: identity + preference) come
-      first because the planner needs them to apply per-turn — they don't
-      have to be relevant to the current message. Then plain facts come in
-      by recency. The <code>seen</code> set de-duplicates by content so two
-      memories carrying the same fact don't both win a slot.
+    <div class="note info">
+      <strong>Summarisation fires only on overflow</strong> — typically once every
+      several turns, not every turn. When it does, it's one manager call
+      (<code>temperature=0</code>, <code>max_tokens=700</code>) that folds the
+      overflow into the running summary, then persists it via
+      <code>store.set_summary</code>. If nothing overflowed, there's no LLM call at
+      all. The real file also caches the fixed summariser system prompt when the
+      provider supports Anthropic-style prompt caching.
     </div>
 
     <div class="note warn">
-      <strong><code>limit=12</code></strong> is a deliberate small number.
-      The planner prompt is already long (see chapter 1c); 12 facts at
-      ~80 chars each adds ~1 KB. Going higher dilutes the model's attention
-      on the actual task. The cap is a per-function default; the engine
-      never overrides it.
-    </div>
-
-    <div class="note info">
-      <strong>The outer <code>try/except</code></strong> is the same defensive
-      pattern as <code>_load_soul_once</code>: if memory is unavailable (no
-      key, broken Chroma, fresh install), this function returns
-      <code>""</code> and the planner prompt just omits the
-      profile section. Memory failures are <em>never</em> allowed to
-      crash a turn.
+      <strong>Failure is safe.</strong> If the summariser call raises, the code
+      sets <code>keep_from = count</code> — it refuses to advance past what's
+      already summarised, so no turn is ever dropped from view without coverage
+      (the window may temporarily exceed budget instead). Memory maintenance never
+      loses a turn.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_MANAGER_PROVIDERS</code> + <code>_manager_cfg</code> <span class="lineno">lines 71–83</span></h2>
+    <h2><code>_persist</code> — write the turn back <span class="lineno">engine_base.py:163–168</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:71–83</span><span class="ln">_MANAGER_PROVIDERS = {</span><span class="ln">    <span class="s">"google"</span>:     (<span class="s">"https://generativelanguage.googleapis.com/v1beta/openai/"</span>, <span class="s">"GOOGLE_API_KEY"</span>),</span><span class="ln">    <span class="s">"openrouter"</span>: (<span class="s">"https://openrouter.ai/api/v1"</span>,                             <span class="s">"OPENROUTER_API_KEY"</span>),</span><span class="ln">    <span class="s">"openai"</span>:     (<span class="s">"https://api.openai.com/v1"</span>,                                <span class="s">"OPENAI_API_KEY"</span>),</span><span class="ln">}</span><span class="ln"></span><span class="ln"><span class="k">def</span> <span class="b">_manager_cfg</span>() <span class="o">-></span> <span class="b">tuple</span>[<span class="b">str</span>, <span class="b">str</span>]:</span><span class="ln">    <span class="k">try</span>:</span><span class="ln">        <span class="k">from</span> anet.core.config_loader <span class="k">import</span> manager_config</span><span class="ln">        cfg = manager_config()</span><span class="ln">        <span class="k">return</span> (cfg.get(<span class="s">"model"</span>) <span class="k">or</span> <span class="s">"gemini-2.5-pro"</span>), (cfg.get(<span class="s">"provider"</span>) <span class="k">or</span> <span class="s">"google"</span>)</span><span class="ln">    <span class="k">except</span> <span class="b">Exception</span>:</span><span class="ln">        <span class="k">return</span> <span class="s">"gemini-2.5-pro"</span>, <span class="s">"google"</span></span></pre>
-
-    <div class="note">
-      <strong>Three manager providers, all OpenAI-compatible.</strong> Google's
-      Generative Language API exposes an OpenAI-compatible endpoint at
-      <code>v1beta/openai/</code>; OpenRouter brokers ~300 models behind the
-      same wire format; OpenAI is OpenAI. The lookup table maps each name
-      to <code>(base_url, env_var_name)</code>.
-    </div>
-
-    <div class="note info">
-      <strong>What's <em>not</em> in this table:</strong>
-      <ul>
-        <li><strong>Anthropic native</strong> — not here because the manager call uses <code>AsyncOpenAI</code>. If you want Claude as the manager, you go through OpenRouter (<code>provider: openrouter</code>, <code>model: anthropic/claude-sonnet-4.6</code>).</li>
-        <li><strong>Vertex (Google or Anthropic)</strong> — handled in <code>_manager_client</code> below, which special-cases them and reaches into <code>agent_runner.build_vertex_client()</code>.</li>
-      </ul>
-    </div>
+<pre class="code"><span class="lbl">engine_base.py:163–168</span><span class="ln"><span class="dec">@staticmethod</span></span><span class="ln"><span class="k">async def</span> <span class="b">_persist</span>(store, thread_id, user_input, reply, is_async_resume) <span class="o">-></span> <span class="b">None</span>:</span><span class="ln">    <span class="k">if not</span> is_async_resume:</span><span class="ln">        <span class="k">await</span> store.append(thread_id, <span class="s">"user"</span>, user_input)</span><span class="ln">    <span class="k">await</span> store.append(thread_id, <span class="s">"assistant"</span>, reply)</span></pre>
 
     <div class="note">
-      <strong>Hardcoded fallback:</strong> if <code>config_loader</code>
-      raises (e.g. <code>anet.config.yaml</code> missing or malformed), the
-      manager defaults to <code>gemini-2.5-pro</code> on Google. This
-      matches the pack's shipped default, so a half-set-up workspace still
-      runs as long as <code>GOOGLE_API_KEY</code> is set.
+      <strong>The one write per turn.</strong> Appends the user message (unless
+      this is an async resume, where the user message was already stored) and the
+      assistant reply to the conversation store. It's a <code>@staticmethod</code>
+      because it needs no engine state — it's pure store plumbing. Every exit path
+      in <code>run_turn</code> (trivial fast-path, normal, and the error guard)
+      routes through it, so the conversation is always consistent.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_context_settings</code> <span class="lineno">lines 86–94</span></h2>
+    <h2><code>_manager_cfg</code> / <code>_manager_client</code> <span class="lineno">engine_base.py:26–51</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:86–94</span><span class="ln"><span class="k">def</span> <span class="b">_context_settings</span>() <span class="o">-></span> <span class="b">tuple</span>[<span class="b">int</span>, <span class="b">int</span>]:</span><span class="ln">    <span class="s">"""(recent_tokens, min_recent) for the short-term window — how many tokens of</span></span><span class="ln"><span class="s">    recent turns to keep verbatim, and the floor of recent messages always kept."""</span></span><span class="ln">    <span class="k">try</span>:</span><span class="ln">        <span class="k">from</span> anet.core.config_loader <span class="k">import</span> load</span><span class="ln">        cfg = load().get(<span class="s">"context"</span>, {}) <span class="k">or</span> {}</span><span class="ln">        <span class="k">return</span> <span class="b">int</span>(cfg.get(<span class="s">"recent_tokens"</span>, <span class="n">3000</span>)), <span class="b">int</span>(cfg.get(<span class="s">"min_recent"</span>, <span class="n">4</span>))</span><span class="ln">    <span class="k">except</span> <span class="b">Exception</span>:</span><span class="ln">        <span class="k">return</span> <span class="n">3000</span>, <span class="n">4</span></span></pre>
+<pre class="code"><span class="lbl">engine_base.py:26–51 · excerpt</span><span class="ln">_MANAGER_PROVIDERS = {</span><span class="ln">    <span class="s">"google"</span>:     (<span class="s">"https://generativelanguage.googleapis.com/v1beta/openai/"</span>, <span class="s">"GOOGLE_API_KEY"</span>),</span><span class="ln">    <span class="s">"openrouter"</span>: (<span class="s">"https://openrouter.ai/api/v1"</span>,                             <span class="s">"OPENROUTER_API_KEY"</span>),</span><span class="ln">    <span class="s">"openai"</span>:     (<span class="s">"https://api.openai.com/v1"</span>,                                <span class="s">"OPENAI_API_KEY"</span>),</span><span class="ln">}</span><span class="ln"></span><span class="ln"><span class="k">def</span> <span class="b">_manager_cfg</span>() <span class="o">-></span> <span class="b">tuple</span>[<span class="b">str</span>, <span class="b">str</span>]:</span><span class="ln">    <span class="k">from</span> anet.core.config_loader <span class="k">import</span> manager_config</span><span class="ln">    cfg = manager_config()</span><span class="ln">    <span class="k">return</span> (cfg.get(<span class="s">"model"</span>) <span class="k">or</span> <span class="s">"gemini-2.5-pro"</span>), (cfg.get(<span class="s">"provider"</span>) <span class="k">or</span> <span class="s">"google"</span>)</span><span class="ln"></span><span class="ln"><span class="k">def</span> <span class="b">_manager_client</span>() <span class="o">-></span> <span class="b">tuple</span>[AsyncOpenAI, <span class="b">str</span>]:</span><span class="ln">    model, provider = _manager_cfg()</span><span class="ln">    <span class="k">if</span> provider <span class="k">in</span> (<span class="s">"vertex_google"</span>, <span class="s">"vertex_anthropic"</span>, <span class="s">"vertex_claude"</span>):</span><span class="ln">        <span class="k">from</span> anet.core.agent_runner <span class="k">import</span> build_vertex_client</span><span class="ln">        <span class="k">return</span> build_vertex_client(), model</span><span class="ln">    base_url, env_key = _MANAGER_PROVIDERS.get(provider, _MANAGER_PROVIDERS[<span class="s">"google"</span>])</span><span class="ln">    api_key = os.getenv(env_key)</span><span class="ln">    <span class="k">if not</span> api_key:</span><span class="ln">        <span class="k">raise</span> <span class="b">RuntimeError</span>(<span class="s">f"{env_key} not set (needed for manager provider='{provider}')"</span>)</span><span class="ln">    <span class="k">return</span> AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=<span class="n">120</span>), model</span></pre>
+
+    <div class="note">
+      <strong>The manager client — used for the summary call and as the default
+      per-stage model.</strong> <code>_manager_cfg</code> resolves
+      <code>(model, provider)</code> from the pack's <code>manager:</code> config,
+      defaulting to <code>gemini-2.5-pro</code> on Google. <code>_manager_client</code>
+      builds the client: the three OpenAI-compatible providers use a base_url +
+      env-var lookup; the Vertex variants delegate to
+      <code>agent_runner.build_vertex_client()</code> (Application Default
+      Credentials). A missing API key raises with the exact env-var name — you
+      literally can't run without it.
+    </div>
+
+    <div class="note info">
+      <strong>Where the manager model is used:</strong> directly for
+      <code>_maintain_summary</code>'s summariser call. It's also the
+      <em>fallback</em> for every orchestration stage — the decomposer, merger,
+      and arbiter all resolve to the manager model unless a per-stage override is
+      set. See <code>stage_models</code> in Part B.
+    </div>
+
+    <div class="note warn">
+      <strong>Unknown provider → Google.</strong> The
+      <code>.get(provider, _MANAGER_PROVIDERS["google"])</code> falls back silently
+      if the config names a provider that isn't in the table. Chosen on purpose:
+      the alternative (raise on unknown) makes a typo'd config destructive; a
+      fallback with a missing-key error is recoverable.
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2><code>_context_settings</code> <span class="lineno">engine_base.py:54–62</span></h2>
+
+<pre class="code"><span class="lbl">engine_base.py:54–62</span><span class="ln"><span class="k">def</span> <span class="b">_context_settings</span>() <span class="o">-></span> <span class="b">tuple</span>[<span class="b">int</span>, <span class="b">int</span>]:</span><span class="ln">    <span class="s">"""(recent_tokens, min_recent) for the short-term window."""</span></span><span class="ln">    <span class="k">try</span>:</span><span class="ln">        <span class="k">from</span> anet.core.config_loader <span class="k">import</span> load</span><span class="ln">        cfg = load().get(<span class="s">"context"</span>, {}) <span class="k">or</span> {}</span><span class="ln">        <span class="k">return</span> <span class="b">int</span>(cfg.get(<span class="s">"recent_tokens"</span>, <span class="n">3000</span>)), <span class="b">int</span>(cfg.get(<span class="s">"min_recent"</span>, <span class="n">4</span>))</span><span class="ln">    <span class="k">except</span> <span class="b">Exception</span>:</span><span class="ln">        <span class="k">return</span> <span class="n">3000</span>, <span class="n">4</span></span></pre>
 
     <div class="note">
       <strong>The two knobs that govern short-term memory:</strong>
       <ul>
-        <li><strong><code>recent_tokens = 3000</code></strong> — the engine will keep enough recent turns verbatim to fit within this many tokens; anything older gets summarised into the rolling summary.</li>
-        <li><strong><code>min_recent = 4</code></strong> — even if a single message blows the 3000-token budget, the last 4 messages are kept verbatim no matter what. This stops the summariser from "eating" the in-progress conversation.</li>
+        <li><strong><code>recent_tokens = 3000</code></strong> — keep enough recent turns verbatim to fit within this many tokens; anything older folds into the rolling summary.</li>
+        <li><strong><code>min_recent = 4</code></strong> — even if a single message blows the budget, the last 4 messages are kept verbatim. This stops the summariser from "eating" the in-progress exchange.</li>
       </ul>
       Both are overridable per pack via <code>context:</code> in
-      <code>anet.config.yaml</code>; you'll see them again in chapter 1e
-      when we walk <code>_maintain_summary</code>.
+      <code>anet.config.yaml</code>, and both feed straight into
+      <code>_maintain_summary</code> above.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <h2 style="color:#86efac;">Part B — phase helpers (the AdaptOrch package)</h2>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2><code>render_for_prompt</code> — flatten context for a phase <span class="lineno">context_window.py:105–127</span></h2>
+
+<pre class="code"><span class="lbl">context_window.py:105–127 · excerpt</span><span class="ln"><span class="k">def</span> <span class="b">render_for_prompt</span>(messages, summary, keep_from, *, exclude_last=<span class="b">False</span>) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    end = <span class="b">len</span>(messages) - <span class="n">1</span> <span class="k">if</span> exclude_last <span class="k">else</span> <span class="b">len</span>(messages)</span><span class="ln">    tail = messages[keep_from:end]</span><span class="ln">    rendered = [<span class="s">f"{m['role'].upper()}: {m['content'].strip()}"</span> <span class="k">for</span> m <span class="k">in</span> tail <span class="k">if</span> ...]</span><span class="ln">    parts = []</span><span class="ln">    <span class="k">if</span> summary: parts.append(<span class="s">f"Summary of earlier conversation:\n{summary}"</span>)</span><span class="ln">    <span class="k">if</span> rendered: parts.append(<span class="s">"Recent turns:\n"</span> + <span class="s">"\n"</span>.join(rendered))</span><span class="ln">    <span class="k">return</span> <span class="s">"\n\n"</span>.join(parts)</span></pre>
+
+    <div class="note">
+      <strong>Same context as the chat window, flattened to one string.</strong>
+      Several phases take their context as a <em>string</em> slot rather than a
+      chat-message list: the decomposer's <code>memory_ctx</code> and every
+      executor's <code>global_context</code>. This renders "summary + recent
+      verbatim turns" into that shape. <code>exclude_last=True</code> drops the
+      trailing message when the caller passes it separately (the current
+      <code>user_input</code> becomes the decomposer's <code>task</code>).
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_manager_client</code> <span class="lineno">lines 97–106</span></h2>
+    <h2>DAG metrics — <code>TaskDAG.features</code> / <code>summary</code> <span class="lineno">dag/__init__.py:87–103</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:97–106</span><span class="ln"><span class="k">def</span> <span class="b">_manager_client</span>() <span class="o">-></span> <span class="b">tuple</span>[AsyncOpenAI, <span class="b">str</span>]:</span><span class="ln">    model, provider = _manager_cfg()</span><span class="ln">    <span class="k">if</span> provider <span class="k">in</span> (<span class="s">"vertex_google"</span>, <span class="s">"vertex_anthropic"</span>, <span class="s">"vertex_claude"</span>):</span><span class="ln">        <span class="k">from</span> anet.core.agent_runner <span class="k">import</span> build_vertex_client</span><span class="ln">        <span class="k">return</span> build_vertex_client(), model</span><span class="ln">    base_url, env_key = _MANAGER_PROVIDERS.get(provider, _MANAGER_PROVIDERS[<span class="s">"google"</span>])</span><span class="ln">    api_key = os.getenv(env_key)</span><span class="ln">    <span class="k">if not</span> api_key:</span><span class="ln">        <span class="k">raise</span> <span class="b">RuntimeError</span>(<span class="s">f"{env_key} not set (needed for manager provider='{provider}')"</span>)</span><span class="ln">    <span class="k">return</span> AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=<span class="n">120</span>), model</span></pre>
-
-    <div class="note">
-      <strong>The flow:</strong>
-      <ol>
-        <li>Resolve <code>(model, provider)</code> from the pack config.</li>
-        <li>If the provider is one of the three Vertex variants, delegate to <code>agent_runner.build_vertex_client()</code> which uses Application Default Credentials — different auth, different return path (covered in chapter 03).</li>
-        <li>Otherwise look up <code>(base_url, env_key)</code> in <code>_MANAGER_PROVIDERS</code>.</li>
-        <li>Read the env var. If missing, raise <code>RuntimeError</code> with the exact env-var name you need to set. This <em>is</em> allowed to bubble up — unlike SOUL/profile, you literally cannot plan without an API key.</li>
-        <li>Build an <code>AsyncOpenAI</code> client with a 120-second timeout (long enough for slow planner calls, short enough to fail rather than hang forever).</li>
-      </ol>
-    </div>
-
-    <div class="note warn">
-      <strong>Unknown provider behaviour:</strong> the
-      <code>.get(provider, _MANAGER_PROVIDERS["google"])</code> silently
-      falls back to Google if the pack config names a provider that isn't
-      in the table. That's chosen on purpose — the alternative (raise on
-      unknown) makes upgrading a typo'd config destructive. Falling back
-      with a missing-key error is recoverable.
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_last_user_msg</code> <span class="lineno">lines 111–115</span></h2>
-
-<pre class="code"><span class="lbl">engine.py:111–115</span><span class="ln"><span class="k">def</span> <span class="b">_last_user_msg</span>(messages: <span class="b">list</span>[<span class="b">dict</span>]) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    <span class="k">for</span> m <span class="k">in</span> <span class="b">reversed</span>(messages):</span><span class="ln">        <span class="k">if</span> m.get(<span class="s">"role"</span>) == <span class="s">"user"</span>:</span><span class="ln">            <span class="k">return</span> m.get(<span class="s">"content"</span>, <span class="s">""</span>)</span><span class="ln">    <span class="k">return</span> <span class="s">""</span></span></pre>
+<pre class="code"><span class="lbl">dag/__init__.py:87–103 · excerpt</span><span class="ln"><span class="k">def</span> <span class="b">features</span>(self) <span class="o">-></span> <span class="b">dict</span>:</span><span class="ln">    <span class="k">return</span> {</span><span class="ln">        <span class="s">"num_nodes"</span>: self.num_nodes, <span class="s">"num_edges"</span>: self.num_edges,</span><span class="ln">        <span class="s">"omega"</span>: self.omega, <span class="s">"delta"</span>: <span class="b">round</span>(self.delta, <span class="n">4</span>),</span><span class="ln">        <span class="s">"gamma"</span>: <span class="b">round</span>(self.gamma, <span class="n">4</span>), <span class="s">"parallelism_ratio"</span>: <span class="b">round</span>(self.parallelism_ratio, <span class="n">4</span>),</span><span class="ln">        <span class="s">"num_layers"</span>: <span class="b">len</span>(self.layers),</span><span class="ln">    }</span><span class="ln"></span><span class="ln"><span class="k">def</span> <span class="b">summary</span>(self) <span class="o">-></span> <span class="b">str</span>:  <span class="c"># one-line shape for the status line</span></span><span class="ln">    <span class="k">return</span> <span class="s">f"{self.num_nodes} subtasks · {len(self.layers)} layers · ω={self.omega} δ={self.delta:g} γ={self.gamma:.2f}"</span></pre>
 
     <div class="note">
-      <strong>Scans backward</strong> rather than caching, because the
-      messages list is small (we keep it short by design) and walking from
-      the end finds the answer in one step for the common case. Used by
-      <code>_plan</code> to retrieve the message it's actually planning
-      against — and by <code>_memory_context</code> below to scope a memory
-      search to the current request.
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_extract_json</code> — the tolerant parser <span class="lineno">lines 118–136</span></h2>
-
-<pre class="code"><span class="lbl">engine.py:118–136</span><span class="ln"><span class="k">def</span> <span class="b">_extract_json</span>(text: <span class="b">str</span>) <span class="o">-></span> <span class="b">dict</span>:</span><span class="ln">    text = text.strip()</span><span class="ln">    <span class="k">try</span>:</span><span class="ln">        <span class="k">return</span> json.loads(text)</span><span class="ln">    <span class="k">except</span> json.JSONDecodeError:</span><span class="ln">        <span class="k">pass</span></span><span class="ln">    m = re.search(<span class="s">r"```(?:json)?\s*([\s\S]+?)\s*```"</span>, text)</span><span class="ln">    <span class="k">if</span> m:</span><span class="ln">        <span class="k">try</span>:</span><span class="ln">            <span class="k">return</span> json.loads(m.group(<span class="n">1</span>))</span><span class="ln">        <span class="k">except</span> json.JSONDecodeError:</span><span class="ln">            <span class="k">pass</span></span><span class="ln">    m = re.search(<span class="s">r"\{[\s\S]+\}"</span>, text)</span><span class="ln">    <span class="k">if</span> m:</span><span class="ln">        <span class="k">try</span>:</span><span class="ln">            <span class="k">return</span> json.loads(m.group(<span class="n">0</span>))</span><span class="ln">        <span class="k">except</span> json.JSONDecodeError:</span><span class="ln">            <span class="k">pass</span></span><span class="ln">    <span class="k">raise</span> <span class="b">ValueError</span>(<span class="s">f"No JSON found in: {text!r}"</span>)</span></pre>
-
-    <div class="note">
-      <strong>Three escalating attempts</strong> to recover JSON from a model
-      reply:
-      <ol>
-        <li><strong>Strict parse</strong> — the planner prompt says "OUTPUT ONLY JSON", and 99% of the time that's exactly what comes back.</li>
-        <li><strong>Fenced parse</strong> — some models can't help wrapping JSON in <code>```json ... ```</code>. Strip the fence and try again.</li>
-        <li><strong>Greedy regex parse</strong> — find the first <code>{</code> and the last <code>}</code> and try the slice between them. Catches "Here's the plan: {…}" cases.</li>
-      </ol>
-      Only after all three fail do we raise. The caller (<code>_plan</code>
-      in chapter 1e) catches the <code>ValueError</code> and falls back to
-      <code>_keyword_fallback</code> — see below.
-    </div>
-
-    <div class="note warn">
-      <strong>Why not use a JSON-mode API?</strong> Because the engine has to
-      work across providers — OpenRouter, Vertex, openai-compatible
-      endpoints — and not all of them support JSON-mode reliably for every
-      model. A tolerant parser is more portable than a feature flag.
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_memory_context</code> <span class="lineno">lines 139–155</span></h2>
-
-<pre class="code"><span class="lbl">engine.py:139–155</span><span class="ln"><span class="k">def</span> <span class="b">_memory_context</span>(user_msg: <span class="b">str</span>) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    <span class="k">try</span>:</span><span class="ln">        <span class="k">from</span> anet.AnetTools.memory_tool <span class="k">import</span> search_memories</span><span class="ln">        results = search_memories(user_msg, max_results=<span class="n">5</span>)</span><span class="ln">        <span class="k">if not</span> results:</span><span class="ln">            <span class="k">return</span> <span class="s">""</span></span><span class="ln">        lines = <span class="s">"\n"</span>.join(</span><span class="ln">            <span class="s">f"  [{m['id']}] {m['content']}"</span></span><span class="ln">            + (<span class="s">f"  (project: {m['project_path']})"</span> <span class="k">if</span> m.get(<span class="s">"project_path"</span>) <span class="k">else</span> <span class="s">""</span>)</span><span class="ln">            <span class="k">for</span> m <span class="k">in</span> results</span><span class="ln">        )</span><span class="ln">        <span class="k">return</span> (</span><span class="ln">            <span class="s">"RELEVANT MEMORIES FROM PAST SESSIONS (use these to inform your plan):\n"</span></span><span class="ln">            + lines</span><span class="ln">        )</span><span class="ln">    <span class="k">except</span> <span class="b">Exception</span>:</span><span class="ln">        <span class="k">return</span> <span class="s">""</span></span></pre>
-
-    <div class="note">
-      <strong>What it does:</strong> semantic-searches mem0 for memories
-      relevant to the <em>current</em> user message (vs.
-      <code>_profile_context</code> which is request-independent) and
-      formats up to 5 hits as a block prepended to the planner prompt.
-    </div>
-
-    <div class="note info">
-      <strong>Two distinct memory injections in one prompt:</strong>
+      <strong>The structural metrics Phase 2 computes, in one place.</strong>
+      <code>build()</code> (chapter for the DAG file) runs Kahn layering and one DP
+      pass to fill in:
       <ul>
-        <li><code>_profile_context</code> — always-on, identity/preferences.</li>
-        <li><code>_memory_context</code> — task-relevant, by similarity to the current request.</li>
+        <li><strong>ω (omega)</strong> — parallelism width, the widest layer: how many subtasks can run at once.</li>
+        <li><strong>δ (delta)</strong> — weighted critical-path depth: the longest dependency chain by cost weight.</li>
+        <li><strong>γ (gamma)</strong> — coupling density, <code>Σc / |E|</code>: the average context-sharing across edges.</li>
+        <li><strong>layers</strong> — the topological layering the hybrid executor walks.</li>
       </ul>
-      Both live in mem0; the difference is purely retrieval. Standing
-      memories surface unconditionally so a preference like "always prefix
-      functions <code>anet_</code>" reaches every code task. Relevance hits
-      only show up when the model needs them.
+      <code>features()</code> is the flat dict the router logs; <code>summary()</code>
+      is the human one-liner you see on the status line.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_dedup_reply</code> <span class="lineno">lines 158–166</span></h2>
+    <h2>The router decision — Algorithm 1 <span class="lineno">router/__init__.py:80–113</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:158–166</span><span class="ln"><span class="k">def</span> <span class="b">_dedup_reply</span>(text: <span class="b">str</span>) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    n = <span class="b">len</span>(text)</span><span class="ln">    <span class="k">if</span> n < <span class="n">100</span>:</span><span class="ln">        <span class="k">return</span> text</span><span class="ln">    start = text[:<span class="n">80</span>]</span><span class="ln">    idx = text.find(start, n // <span class="n">3</span>)</span><span class="ln">    <span class="k">if</span> idx > <span class="n">0</span>:</span><span class="ln">        <span class="k">return</span> text[:idx].rstrip()</span><span class="ln">    <span class="k">return</span> text</span></pre>
+<pre class="code"><span class="lbl">router/__init__.py:80–113 · excerpt</span><span class="ln">_DEFAULT_THRESHOLDS = {<span class="s">"theta_omega"</span>: <span class="n">0.5</span>, <span class="s">"theta_gamma"</span>: <span class="n">0.6</span>, <span class="s">"theta_delta"</span>: <span class="n">5.0</span>}</span><span class="ln"></span><span class="ln"><span class="k">def</span> <span class="b">route</span>(dag, *, th=<span class="b">None</span>, gamma_override=<span class="b">None</span>) <span class="o">-></span> RouteDecision:</span><span class="ln">    t_omega, t_gamma, t_delta = th[<span class="s">"theta_omega"</span>], th[<span class="s">"theta_gamma"</span>], th[<span class="s">"theta_delta"</span>]</span><span class="ln">    <span class="k">if</span> E == <span class="n">0</span>:                                topo = Topology.PARALLEL      <span class="c"># τ_P — no deps</span></span><span class="ln">    <span class="k">elif</span> omega == <span class="n">1</span>:                         topo = Topology.SEQUENTIAL    <span class="c"># τ_S — single chain</span></span><span class="ln">    <span class="k">elif</span> gamma > t_gamma <span class="k">and</span> V > t_delta:    topo = Topology.HIERARCHICAL  <span class="c"># τ_H — coupled + big</span></span><span class="ln">    <span class="k">elif</span> r > t_omega <span class="k">and</span> gamma <= t_gamma:   topo = Topology.PARALLEL      <span class="c"># τ_P — wide, low coupling</span></span><span class="ln">    <span class="k">else</span>:                                    topo = Topology.HYBRID       <span class="c"># τ_X — mixed</span></span></pre>
 
     <div class="note">
-      <strong>The "did the model paste its answer twice?" guard.</strong>
-      Some thinking models occasionally re-emit their full answer at the
-      end of a streamed response. This function takes the first 80
-      characters of the reply, searches for that same prefix anywhere
-      after the first third of the text, and truncates at the match if
-      found. Defensive and cheap; almost never triggers.
-    </div>
-
-    <div class="note warn">
-      <strong>Why <code>n // 3</code> and not just <code>1</code>?</strong>
-      Because a reply that legitimately begins "ANet replies: …" and
-      happens to repeat the phrase "ANet replies:" partway through (e.g.
-      inside a code example) would otherwise be falsely truncated. Starting
-      the search at the one-third mark makes false positives essentially
-      impossible.
+      <strong>Pure, deterministic, O(1).</strong> The router reads the metrics the
+      DAG already computed (ω, γ, |V|, |E|, and <code>r = ω/|V|</code>) and applies
+      the five-rule Algorithm 1 against the calibrated thresholds
+      <strong>θ_ω=0.5, θ_γ=0.6, θ_δ=5</strong> — overridable per pack via the
+      <code>orchestration:</code> block. No LLM. The <code>gamma_override</code>
+      argument lets synthesis re-route with an inflated coupling estimate
+      (γ' = γ + 0.2) without rebuilding the DAG. Every call returns a
+      <code>RouteDecision</code> carrying the topology, the human-readable reason
+      (with the numbers), and a <code>features</code> snapshot for the log.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_keyword_fallback</code> <span class="lineno">lines 169–185</span></h2>
+    <h2>Executor context threading <span class="lineno">executors/__init__.py:55–94</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:169–185</span><span class="ln"><span class="k">def</span> <span class="b">_keyword_fallback</span>(user_msg: <span class="b">str</span>, agents: <span class="b">list</span>[<span class="b">dict</span>]) <span class="o">-></span> <span class="b">dict</span>:</span><span class="ln">    plannable = [a <span class="k">for</span> a <span class="k">in</span> agents <span class="k">if</span> a[<span class="s">"name"</span>] != <span class="s">"checker_agent"</span>]</span><span class="ln">    lower = user_msg.lower()</span><span class="ln">    best, best_score = plannable[<span class="n">0</span>], <span class="n">0</span></span><span class="ln">    <span class="k">for</span> a <span class="k">in</span> plannable:</span><span class="ln">        score = <span class="b">sum</span>(</span><span class="ln">            <span class="n">1</span> <span class="k">for</span> tt <span class="k">in</span> a.get(<span class="s">"task_types"</span>, [])</span><span class="ln">            <span class="k">for</span> w <span class="k">in</span> tt.lower().split() <span class="k">if</span> w <span class="k">in</span> lower</span><span class="ln">        )</span><span class="ln">        <span class="k">if</span> score > best_score:</span><span class="ln">            best_score, best = score, a</span><span class="ln">    <span class="b">print</span>(<span class="s">f"[engine] keyword fallback → '{best['name']}'"</span>, file=sys.stderr)</span><span class="ln">    <span class="k">return</span> {<span class="s">"type"</span>: <span class="s">"plan"</span>, <span class="s">"steps"</span>: [{</span><span class="ln">        <span class="s">"id"</span>: <span class="n">1</span>, <span class="s">"agent"</span>: best[<span class="s">"name"</span>], <span class="s">"task"</span>: user_msg,</span><span class="ln">        <span class="s">"success_criteria"</span>: <span class="s">"Task completed without errors."</span>, <span class="s">"check"</span>: <span class="b">None</span>,</span><span class="ln">        <span class="s">"depends_on"</span>: [], <span class="s">"wait_for_async"</span>: <span class="b">False</span>,</span><span class="ln">    }]}</span></pre>
+<pre class="code"><span class="lbl">executors/__init__.py:55–94 · excerpt</span><span class="ln"><span class="k">def</span> <span class="b">compose</span>(description, global_context=<span class="s">""</span>, forward_context=<span class="s">""</span>) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    <span class="c"># shared context (if any), then relevant prior results, then the task itself</span></span><span class="ln">    parts = []</span><span class="ln">    <span class="k">if</span> global_context.strip():  parts.append(<span class="s">f"## Shared context\n{global_context.strip()}"</span>)</span><span class="ln">    <span class="k">if</span> forward_context.strip(): parts.append(<span class="s">f"## Relevant prior results\n{forward_context.strip()}"</span>)</span><span class="ln">    parts.append(<span class="s">f"## Your task\n{description.strip()}"</span>)</span><span class="ln">    <span class="k">return</span> <span class="s">"\n\n"</span>.join(parts)</span><span class="ln"></span><span class="ln"><span class="k">def</span> <span class="b">accumulate_predecessors</span>(st, outputs, budget) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    <span class="c"># predecessor outputs, ranked by coupling c(u,v), truncated to a char budget</span></span><span class="ln">    preds = <span class="b">sorted</span>(st.depends_on, key=<span class="k">lambda</span> u: st.coupling.get(u, DEFAULT_COUPLING), reverse=<span class="b">True</span>)</span><span class="ln">    ...  <span class="c"># concatenate most-coupled first until the budget is spent</span></span></pre>
 
     <div class="note">
-      <strong>The last-resort planner.</strong> If the LLM planner returns
-      something <code>_extract_json</code> can't salvage, the engine still
-      has to do <em>something</em>. This function scores each agent's
-      <code>task_types</code> words against the user message and routes the
-      whole request as a one-step plan to the best match. The criterion is
-      naive (string-in-string), the result is a plausible single-step plan
-      — better than crashing.
+      <strong>The executors are pure topology + context assembly.</strong> They
+      never call an LLM or touch agents — they schedule subtasks and build each
+      one's prompt, then call the injected <code>ctx.run_subtask</code> (wired to
+      <code>orchestrator.run</code> in chapter 1a). <code>compose</code> assembles
+      the prompt every subtask receives: <em>Shared context → Relevant prior
+      results → Your task</em>. <code>accumulate_predecessors</code> is the
+      relevance-weighted truncation — it ranks a subtask's predecessor outputs by
+      coupling strength (most-coupled first) and fits them into a char budget.
     </div>
 
     <div class="note info">
-      <strong>Excludes the checker</strong> from candidates because the
-      checker isn't a worker agent; planning a task <em>to</em> the checker
-      makes no sense.
-    </div>
-
-    <div class="note warn">
-      <strong>The <code>print(..., file=sys.stderr)</code></strong> is the
-      one logging call in this function. We want this rare event to be
-      visible to operators (it usually signals a flaky free model returning
-      garbage) without disrupting the TUI, which only writes to stdout.
+      <strong>Each topology threads context differently.</strong> τ_P gives each
+      subtask <em>global context only</em> (they're independent); τ_S accumulates
+      predecessor outputs down the chain; τ_H has a lead delegate with isolated
+      sub-agents; τ_X rolls prior layers forward. <code>execute(topology, dag, ctx)</code>
+      dispatches to the right one via <code>get_executor</code>.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_has_ready_steps</code> — the executor's continue test <span class="lineno">lines 188–205</span></h2>
+    <h2><code>stage_call</code> / <code>stage_call_stream</code> <span class="lineno">stage_models.py:26–121</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:188–205</span><span class="ln"><span class="k">def</span> <span class="b">_has_ready_steps</span>(plan: <span class="b">list</span>[<span class="b">dict</span>], step_statuses: <span class="b">dict</span>) <span class="o">-></span> <span class="b">bool</span>:</span><span class="ln">    <span class="k">for</span> step <span class="k">in</span> plan:</span><span class="ln">        sid = <span class="b">str</span>(step.get(<span class="s">"id"</span>, step.get(<span class="s">"agent"</span>, <span class="s">""</span>)))</span><span class="ln">        <span class="k">if</span> step_statuses.get(sid) <span class="k">in</span> (<span class="s">"completed"</span>, <span class="s">"offloaded"</span>, <span class="s">"failed"</span>):</span><span class="ln">            <span class="k">continue</span></span><span class="ln">        deps       = step.get(<span class="s">"depends_on"</span>, [])</span><span class="ln">        wait_async = step.get(<span class="s">"wait_for_async"</span>, <span class="b">False</span>)</span><span class="ln">        blocked = <span class="b">any</span>(</span><span class="ln">            step_statuses.get(<span class="b">str</span>(d), <span class="s">"pending"</span>) == <span class="s">"offloaded"</span> <span class="k">and</span> wait_async</span><span class="ln">            <span class="k">for</span> d <span class="k">in</span> deps</span><span class="ln">        )</span><span class="ln">        pending_deps = <span class="b">any</span>(</span><span class="ln">            step_statuses.get(<span class="b">str</span>(d), <span class="s">"pending"</span>) <span class="k">in</span> (<span class="s">"pending"</span>, <span class="s">"running"</span>)</span><span class="ln">            <span class="k">for</span> d <span class="k">in</span> deps</span><span class="ln">        )</span><span class="ln">        <span class="k">if not</span> blocked <span class="k">and not</span> pending_deps:</span><span class="ln">            <span class="k">return</span> <span class="b">True</span></span><span class="ln">    <span class="k">return</span> <span class="b">False</span></span></pre>
+<pre class="code"><span class="lbl">stage_models.py:26–84 · excerpt</span><span class="ln"><span class="k">def</span> <span class="b">stage_model</span>(stage: <span class="b">str</span>) <span class="o">-></span> <span class="b">tuple</span>[<span class="b">str</span>, <span class="b">str</span>]:</span><span class="ln">    <span class="c"># orchestration.&lt;stage&gt;.{model,provider} → manager.{model,provider} → defaults</span></span><span class="ln">    stage_cfg = (cfg.get(<span class="s">"orchestration"</span>) <span class="k">or</span> {}).get(stage) <span class="k">or</span> {}</span><span class="ln">    mgr = cfg.get(<span class="s">"manager"</span>) <span class="k">or</span> {}</span><span class="ln">    <span class="k">return</span> (stage_cfg.get(<span class="s">"model"</span>) <span class="k">or</span> mgr.get(<span class="s">"model"</span>) <span class="k">or</span> _DEFAULT_MODEL,</span><span class="ln">            stage_cfg.get(<span class="s">"provider"</span>) <span class="k">or</span> mgr.get(<span class="s">"provider"</span>) <span class="k">or</span> _DEFAULT_PROVIDER_NAME)</span><span class="ln"></span><span class="ln"><span class="k">async def</span> <span class="b">stage_call</span>(stage, messages, *, max_tokens=<span class="n">1500</span>, temperature=<span class="n">0.0</span>) <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    client, model = build_stage_client(stage)</span><span class="ln">    resp = <span class="k">await</span> client.chat.completions.create(model=model, messages=messages, ...)</span><span class="ln">    _tok.record(resp, stage=stage)          <span class="c"># per-stage token accounting</span></span><span class="ln">    <span class="k">return</span> (resp.choices[<span class="n">0</span>].message.content <span class="k">or</span> <span class="s">""</span>).strip()</span></pre>
 
     <div class="note">
-      <strong>Returns <code>True</code> the moment it finds <em>any</em>
-      step that can run next.</strong> Used by the executor loop in
-      <code>run_turn</code> as the condition to keep iterating. The
-      function:
-      <ol>
-        <li>Skips steps that are already <code>completed</code>, <code>offloaded</code> (running async in background), or <code>failed</code>.</li>
-        <li>For each remaining step, looks at <code>depends_on</code>.</li>
-        <li>If <em>any</em> dep is offloaded <strong>and</strong> this step is marked <code>wait_for_async</code>, the step is blocked (waiting for the background result).</li>
-        <li>If any dep is still <code>pending</code> or <code>running</code>, the step isn't ready yet.</li>
-        <li>Otherwise → <code>True</code>: this step is ready to run.</li>
-      </ol>
+      <strong>How every LLM-using phase resolves its model.</strong> The decomposer
+      and synthesizer call <code>stage_call</code> / <code>stage_call_stream</code>
+      with a stage name (<code>"decomposer"</code>, <code>"merger"</code>,
+      <code>"arbiter"</code>). <code>stage_model</code> resolves the model in a
+      strict order: a per-stage override under <code>orchestration:</code> → the
+      manager model → built-in defaults. So by default everything runs on the
+      manager model, and you override a stage only when you want to (e.g. a cheap
+      model for decomposition, a stronger one for synthesis).
     </div>
 
     <div class="note info">
-      <strong>Short-circuits.</strong> Returns at the first ready step — no
-      need to enumerate all of them. The executor will scan again on the
-      next iteration anyway. The function is called many times per turn,
-      so early-out matters.
-    </div>
-
-    <div class="note warn">
-      <strong>The "offloaded but not awaited" case.</strong> If a step
-      depends on an offloaded step but <em>doesn't</em> set
-      <code>wait_for_async</code>, it's treated as ready — the dependent
-      step runs without waiting for the background task. This is what
-      enables fire-and-forget patterns (e.g. start a 3D render in
-      background, immediately reply to the user, notify when the render
-      completes).
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h2><code>_run_explicit_check</code> — deterministic checks <span class="lineno">lines 210–237</span></h2>
-
-<pre class="code"><span class="lbl">engine.py:210–237</span><span class="ln"><span class="k">async def</span> <span class="b">_run_explicit_check</span>(checker_tool: <span class="b">dict</span>, check: <span class="b">dict</span>, notify) <span class="o">-></span> <span class="b">tuple</span>[<span class="b">str</span>, <span class="b">str</span>]:</span><span class="ln">    action = check.get(<span class="s">"action"</span>, <span class="s">""</span>)</span><span class="ln">    params = <span class="s">", "</span>.join(<span class="s">f"{k}={v!r}"</span> <span class="k">for</span> k, v <span class="k">in</span> check.items() <span class="k">if</span> k != <span class="s">"action"</span>)</span><span class="ln">    notify(<span class="s">f"checker: {action}({params})..."</span>)</span><span class="ln"></span><span class="ln">    r = <span class="k">await</span> checker_tool[<span class="s">"run"</span>](check)</span><span class="ln">    <span class="k">if</span> <span class="s">"error"</span> <span class="k">in</span> r:</span><span class="ln">        <span class="k">return</span> <span class="s">"unknown"</span>, r[<span class="s">"error"</span>]</span><span class="ln"></span><span class="ln">    <span class="k">if</span> action == <span class="s">"check_window"</span>:</span><span class="ln">        <span class="k">return</span> (</span><span class="ln">            (<span class="s">"success"</span>, <span class="s">f"Window '{r.get('title')}' is open."</span>)</span><span class="ln">            <span class="k">if</span> r.get(<span class="s">"exists"</span>)</span><span class="ln">            <span class="k">else</span> (<span class="s">"failure"</span>, <span class="s">f"Window '{check.get('title')}' not found on screen."</span>)</span><span class="ln">        )</span><span class="ln">    <span class="k">if</span> action == <span class="s">"check_process"</span>:</span><span class="ln">        <span class="k">return</span> (</span><span class="ln">            (<span class="s">"success"</span>, <span class="s">f"Process '{check.get('process_name')}' is running (PID {r.get('pid')})."</span>)</span><span class="ln">            <span class="k">if</span> r.get(<span class="s">"running"</span>)</span><span class="ln">            <span class="k">else</span> (<span class="s">"failure"</span>, <span class="s">f"Process '{check.get('process_name')}' is not running."</span>)</span><span class="ln">        )</span><span class="ln">    <span class="k">if</span> action == <span class="s">"check_path"</span>:</span><span class="ln">        <span class="k">return</span> (</span><span class="ln">            (<span class="s">"success"</span>, <span class="s">f"Path exists ({r.get('type')})."</span>)</span><span class="ln">            <span class="k">if</span> r.get(<span class="s">"exists"</span>)</span><span class="ln">            <span class="k">else</span> (<span class="s">"failure"</span>, <span class="s">f"Path '{check.get('path')}' does not exist."</span>)</span><span class="ln">        )</span><span class="ln">    <span class="k">return</span> <span class="s">"unknown"</span>, <span class="s">f"Unknown check action '{action}'"</span></span></pre>
-
-    <div class="note">
-      <strong>The "no LLM needed" checker.</strong> When the planner
-      pre-declared a check (e.g. <code>{"action": "check_window", "title":
-      "Notepad"}</code>), the Engine doesn't call the checker LLM — it
-      calls this function, which calls the <code>checker</code> tool, which
-      actually looks at your OS to verify.
-    </div>
-
-    <div class="note">
-      <strong>Three deterministic actions:</strong>
-      <ul>
-        <li><strong><code>check_window</code></strong> — is a window with this title open? (used after <code>computer_agent</code> opens an app)</li>
-        <li><strong><code>check_process</code></strong> — is a named process running?</li>
-        <li><strong><code>check_path</code></strong> — does this file or folder exist?</li>
-      </ul>
-      Each returns <code>("success", description)</code> or
-      <code>("failure", description)</code>. The string is presented to the
-      user verbatim in the Synthesizer's input.
+      <strong><code>stage_call_stream</code></strong> is the streaming variant — it
+      passes each content delta to the <code>on_token</code> sink as it arrives, so
+      the synthesizer's final answer types out live in your terminal. Both variants
+      record token usage tagged by stage (via <code>tokens.py</code>), which is
+      what feeds the per-phase usage in the routing log.
     </div>
 
     <div class="note info">
-      <strong>The <code>notify</code> callback</strong> is the
-      <code>on_status</code> context-var from chapter 1a, passed in by the
-      caller. It writes "checker: check_window(title='Notepad')…" to the
-      status line of the TUI, so the user sees the check happening live.
-    </div>
-
-    <div class="note warn">
-      <strong>Unknown action returns <code>"unknown"</code></strong> — not
-      <code>"failure"</code>. The Engine's <code>_check</code> caller falls
-      back to the LLM checker on <code>"unknown"</code>, so a typo in the
-      action name degrades gracefully to LLM-judged checking instead of
-      hard-failing.
+      <strong>Note what these do <em>not</em> do:</strong> there's no per-stage
+      <code>orchestration.mode</code> flag and no legacy fallback. The five phases
+      always run; the only per-stage knob is the model.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
     <h2>What this section leaves you with</h2>
     <p class="section-intro">
-      Eleven module-level functions, ready to be called by the Engine
-      class. Mentally group them like this:
+      Two groups of helpers. Mentally file them like this:
     </p>
 
     <table class="tbl">
-      <thead><tr><th>Group</th><th>Functions</th><th>Used by</th></tr></thead>
+      <thead><tr><th>Group</th><th>Helpers</th><th>Used by</th></tr></thead>
       <tbody>
         <tr>
-          <td><strong>Prompt context</strong></td>
-          <td><code>_profile_context</code>, <code>_memory_context</code></td>
-          <td>The planner prompt builder in chapter 1c.</td>
+          <td><strong>Shared (engine_base.py)</strong></td>
+          <td><code>_maintain_summary</code>, <code>_persist</code>, <code>_manager_cfg</code>, <code>_manager_client</code>, <code>_context_settings</code></td>
+          <td>Every engine; called from <code>run_turn</code> (chapter 1a).</td>
         </tr>
         <tr>
-          <td><strong>Manager wiring</strong></td>
-          <td><code>_MANAGER_PROVIDERS</code>, <code>_manager_cfg</code>, <code>_context_settings</code>, <code>_manager_client</code></td>
-          <td><code>_plan</code>, <code>_maintain_summary</code>, <code>_synthesize</code> in chapters 1d/1e.</td>
+          <td><strong>Context</strong></td>
+          <td><code>render_for_prompt</code>, executor <code>compose</code> / <code>accumulate_predecessors</code></td>
+          <td>The decomposer's <code>memory_ctx</code> and the executors' prompts.</td>
         </tr>
         <tr>
-          <td><strong>Parsing &amp; cleanup</strong></td>
-          <td><code>_extract_json</code>, <code>_dedup_reply</code>, <code>_last_user_msg</code></td>
-          <td><code>_plan</code> (parse), <code>_synthesize</code> (dedup).</td>
+          <td><strong>DAG + routing (pure)</strong></td>
+          <td><code>TaskDAG.features</code> / <code>summary</code>, <code>router.route</code></td>
+          <td>Phases 2 &amp; 3, and the routing log.</td>
         </tr>
         <tr>
-          <td><strong>Fallbacks &amp; scheduling</strong></td>
-          <td><code>_keyword_fallback</code>, <code>_has_ready_steps</code></td>
-          <td><code>_plan</code> (on parse failure), the executor while-loop in <code>run_turn</code>.</td>
-        </tr>
-        <tr>
-          <td><strong>Deterministic checks</strong></td>
-          <td><code>_run_explicit_check</code></td>
-          <td><code>_check</code> in chapter 1e.</td>
+          <td><strong>Per-stage models</strong></td>
+          <td><code>stage_call</code>, <code>stage_call_stream</code>, <code>stage_model</code></td>
+          <td>The decomposer (Phase 1) and synthesizer (Phase 5).</td>
         </tr>
       </tbody>
     </table>
 
     <p>
-      Next up: <a href="1c_prompts.html" style="color:#86efac;">1c — the two
-      system prompts</a>. ~215 lines of mostly-text that decide what every
-      planner and synthesizer call looks like.
+      Next up: <a href="1c_prompts.html" style="color:#86efac;">1c — the real
+      prompts</a>. The decomposer's system prompt and the synthesizer's five
+      operator prompts, walked through one at a time.
     </p>
   </div>
 </section>
@@ -391,11 +295,11 @@
     <div class="page-nav">
       <a href="1a_setup.html">
         <span class="dir">← Previous</span>
-        <span class="title">1a · Imports, constants, SOUL loader</span>
+        <span class="title">1a · BaseEngine.__init__ + run_turn wiring</span>
       </a>
       <a class="next" href="1c_prompts.html">
         <span class="dir">Next →</span>
-        <span class="title">1c · The two system prompts</span>
+        <span class="title">1c · The real prompts</span>
       </a>
     </div>
     <p class="meta">ANet · architecture/docs/l3/1engine/1b_helpers.html</p>

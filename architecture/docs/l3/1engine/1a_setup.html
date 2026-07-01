@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>1a · engine.py — Setup · ANet L3</title>
+<title>1a · AdaptOrch engine — Setup · ANet L3</title>
 <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -16,7 +16,7 @@
       <div class="crumbs">
         <a href="../index.html">L3 index</a>
         <span class="sep">/</span>
-        <a href="1_engine.html">01 · engine.py</a>
+        <a href="1_engine.html">01 · AdaptOrch engine</a>
         <span class="sep">/</span>
         <span style="color: #86efac;">1a · setup</span>
       </div>
@@ -30,164 +30,199 @@
 
 <section>
   <div class="container">
-    <span class="eyebrow">engine.py · section 1 of 5</span>
-    <h1>Imports, constants, SOUL.</h1>
+    <span class="eyebrow">the engine · section 1 of 3</span>
+    <h1>BaseEngine.__init__ and the run_turn wiring.</h1>
     <p class="lede">
-      Lines 1–36. Boring on the surface, load-bearing in practice. This is
-      where the file declares its dependencies, sets two constants the rest
-      of the file leans on, and reads <code>SOUL.md</code> exactly once so
-      it can be injected into every planner prompt without re-reading the
-      file each turn.
+      The engine is two files. <code>engine_base.py</code> holds the shared
+      state and infrastructure every engine inherits; <code>coordinator.py</code>
+      holds <code>AdaptOrchEngine.run_turn</code>, which threads the five phases
+      into one turn. This page reads the constructor, then walks the wiring that
+      turns one <code>user_input</code> into a streamed reply.
     </p>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2>The module docstring <span class="lineno">lines 1–7</span></h2>
+    <h2>The base-engine docstring <span class="lineno">engine_base.py:1–12</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:1–7</span><span class="ln"><span class="s">"""</span></span><span class="ln"><span class="s">engine.py — Pure-Python replacement for graph_builder.py + LangGraph StateGraph.</span></span><span class="ln"></span><span class="ln"><span class="s">Same planner → executor → checker → synthesizer pipeline, implemented as</span></span><span class="ln"><span class="s">async methods on the Engine class. No LangGraph, no LangChain.</span></span><span class="ln"><span class="s">Messages are plain dicts {"role": "user"|"assistant", "content": str}.</span></span><span class="ln"><span class="s">"""</span></span></pre>
+<pre class="code"><span class="lbl">engine_base.py:1–12</span><span class="ln"><span class="s">"""</span></span><span class="ln"><span class="s">engine_base.py — shared engine infrastructure.</span></span><span class="ln"></span><span class="ln"><span class="s">Defines the BaseEngine class that every orchestration engine (AdaptOrchEngine</span></span><span class="ln"><span class="s">today, future paper-based engines later) inherits from. Owns per-thread state</span></span><span class="ln"><span class="s">(turn counters, rolling summaries), the rolling-summary maintenance, and the</span></span><span class="ln"><span class="s">persistence helper. Engine-specific pipelines (e.g. AdaptOrch's 5-phase</span></span><span class="ln"><span class="s">decompose → DAG → route → execute → synthesize) live in their respective</span></span><span class="ln"><span class="s">subclasses; this file is engine-agnostic.</span></span><span class="ln"></span><span class="ln"><span class="s">Per-engine entry point: subclasses must implement `run_turn`.</span></span><span class="ln"><span class="s">"""</span></span></pre>
 
     <div class="note">
       <strong>What this tells you up front:</strong>
       <ul>
-        <li><strong>"Pure-Python replacement"</strong> — this file used to be a LangGraph <code>StateGraph</code>. It isn't anymore. There's no framework hiding control flow; everything you see runs in plain <code>async</code>/<code>await</code>.</li>
-        <li><strong>"No LangGraph, no LangChain"</strong> — load-bearing in the README's "no framework lock-in" claim. Confirming it here in the file's own docstring matters: a future contributor who reaches for LangChain's <code>RunnableSequence</code> should pause.</li>
-        <li><strong>"Messages are plain dicts"</strong> — the entire engine speaks one shape: <code>{"role": "user"|"assistant", "content": str}</code>. No Pydantic models, no custom classes. This is what makes the conversation cheap to serialise into <code>conversations.db</code> and easy to pass to any provider's SDK.</li>
+        <li><strong>"engine-agnostic"</strong> — the base owns nothing pipeline-specific. Per-thread state, the rolling-summary logic, and persistence live here; the actual orchestration (AdaptOrch's five phases) lives in the subclass. Swapping in a different orchestration strategy later means a new subclass, not a rewrite.</li>
+        <li><strong>"subclasses must implement <code>run_turn</code>"</strong> — that's the one abstract method. <code>BaseEngine.run_turn</code> raises <code>NotImplementedError</code>; <code>AdaptOrchEngine</code> supplies the real one.</li>
+        <li><strong>Messages are plain dicts</strong> — the whole engine speaks one shape: <code>{"role": "user"|"assistant", "content": str}</code>. No Pydantic models. That's what makes conversations cheap to serialise into <code>conversations.db</code> and easy to pass to any provider's SDK.</li>
       </ul>
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2>Standard-library imports <span class="lineno">lines 9–17</span></h2>
+    <h2><code>BaseEngine.__init__</code> — the state <span class="lineno">engine_base.py:86–99</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:9–17</span><span class="ln"><span class="k">import</span> asyncio</span><span class="ln"><span class="k">import</span> hashlib</span><span class="ln"><span class="k">import</span> json</span><span class="ln"><span class="k">import</span> os</span><span class="ln"><span class="k">import</span> re</span><span class="ln"><span class="k">import</span> sys</span><span class="ln"><span class="k">from</span> dataclasses <span class="k">import</span> dataclass, field</span><span class="ln"><span class="k">from</span> datetime <span class="k">import</span> datetime</span><span class="ln"><span class="k">from</span> pathlib <span class="k">import</span> Path</span></pre>
+<pre class="code"><span class="lbl">engine_base.py:86–99</span><span class="ln"><span class="k">def</span> <span class="b">__init__</span>(</span><span class="ln">    self,</span><span class="ln">    agents:        <span class="b">list</span>[<span class="b">dict</span>],</span><span class="ln">    tools:         <span class="b">dict</span>,</span><span class="ln">    manager_tools: <span class="b">dict</span> | <span class="b">None</span> = <span class="b">None</span>,</span><span class="ln">) <span class="o">-></span> <span class="b">None</span>:</span><span class="ln">    self._agents       = agents</span><span class="ln">    self._agent_map    = {a[<span class="s">"name"</span>]: a <span class="k">for</span> a <span class="k">in</span> agents}</span><span class="ln">    self._tools        = tools</span><span class="ln">    self._manager_tools = manager_tools <span class="k">or</span> {}</span><span class="ln">    <span class="c"># Incremental memory: turn counters per thread</span></span><span class="ln">    self._turn_counts: <span class="b">dict</span>[<span class="b">str</span>, <span class="b">int</span>] = {}</span><span class="ln">    <span class="c"># Short-term memory: latest rolling summary per thread (for the agent path)</span></span><span class="ln">    self._summaries: <span class="b">dict</span>[<span class="b">str</span>, <span class="b">str</span>] = {}</span></pre>
 
     <div class="note">
-      <strong>Each one earns its keep:</strong>
-      <table class="tbl">
-        <thead><tr><th>Module</th><th>Used for</th></tr></thead>
-        <tbody>
-          <tr><td><code>asyncio</code></td><td>The whole pipeline is async; used directly for <code>gather</code>, <code>create_task</code>, and <code>to_thread</code> (mem0 is sync — we shove it into a thread so the turn returns).</td></tr>
-          <tr><td><code>hashlib</code></td><td>Just one use: <code>_cache_key()</code> hashes a task string to make a stable cache key for the in-memory result cache.</td></tr>
-          <tr><td><code>json</code></td><td>Parsing the planner's output — the planner only ever returns JSON.</td></tr>
-          <tr><td><code>os</code></td><td>Reading env vars (<code>ASSISTANT_NAME</code>, the provider API keys).</td></tr>
-          <tr><td><code>re</code></td><td>Used by <code>_extract_json</code> to dig a JSON object out of a model reply that wrapped it in <code>```json</code> fences.</td></tr>
-          <tr><td><code>sys</code></td><td>Printing diagnostics to <code>stderr</code> — never to <code>stdout</code>, because the TUI writes there.</td></tr>
-          <tr><td><code>dataclasses</code></td><td>Only used once: the tiny <code>EngineResult</code> at line 458.</td></tr>
-          <tr><td><code>datetime</code></td><td>Time-stamping the planner prompt with <em>"current date and time"</em> so the model can answer "what's the latest X".</td></tr>
-          <tr><td><code>pathlib.Path</code></td><td>Filesystem paths, naturally.</td></tr>
-        </tbody>
-      </table>
+      <strong>What gets held, and why:</strong>
+      <ul>
+        <li><strong><code>_agents</code></strong> — the list of agent configs (research / code / computer / checker, plus any pack-supplied agents). Each is a dict with a <code>name</code>, <code>task_types</code>, its model, and its toolbox.</li>
+        <li><strong><code>_agent_map</code></strong> — the same agents keyed by name, built once. The coordinator's <code>_resolve_agent</code> uses it to turn a decomposer-assigned agent name into a live config in O(1).</li>
+        <li><strong><code>_tools</code></strong> — the shared tool dict every subtask's agent draws from (each agent still only <em>sees</em> its own toolbox; this is the superset the orchestrator resolves against).</li>
+        <li><strong><code>_manager_tools</code></strong> — tools the manager can call itself (rare; defaults to <code>{}</code>).</li>
+        <li><strong><code>_turn_counts</code> / <code>_summaries</code></strong> — the only mutable per-thread state, both plain dicts keyed by <code>thread_id</code>. No database in the engine object itself: durable state lives in the <code>store</code> that's passed into <code>run_turn</code>.</li>
+      </ul>
     </div>
 
     <div class="note info">
-      <strong>Imported but trim:</strong> note that <code>Path</code>,
-      <code>field</code>, and <code>re</code> each have only one or two call
-      sites in the file. They're imported at the top anyway because the
-      cost is zero and the search-and-find experience for a future reader
-      is much better when imports live where you expect them.
+      <strong>No filesystem, no network in the constructor.</strong> Building an
+      engine is cheap and side-effect-free — you can construct one before the
+      workspace is fully set up. Everything that touches disk or a provider is
+      lazy, inside the methods that need it.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2>The third-party + intra-package imports <span class="lineno">lines 19–22</span></h2>
+    <h2>The entry point contract <span class="lineno">engine_base.py:108–109</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:19–22</span><span class="ln"><span class="k">from</span> openai <span class="k">import</span> AsyncOpenAI</span><span class="ln"></span><span class="ln"><span class="k">from</span> anet.core <span class="k">import</span> orchestrator</span><span class="ln"><span class="k">from</span> anet.core.context <span class="k">import</span> on_status <span class="k">as</span> _status_var, on_token <span class="k">as</span> _token_var, is_cancelled <span class="k">as</span> _is_cancelled</span></pre>
+<pre class="code"><span class="lbl">engine_base.py:108–109</span><span class="ln"><span class="k">async def</span> <span class="b">run_turn</span>(self, thread_id: <span class="b">str</span>, store, user_input: <span class="b">str</span>) <span class="o">-></span> EngineResult:</span><span class="ln">    <span class="k">raise</span> <span class="b">NotImplementedError</span>(<span class="s">"BaseEngine subclasses must implement run_turn"</span>)</span></pre>
 
     <div class="note">
-      <strong>Three imports, three distinct roles:</strong>
-      <ul>
-        <li><strong><code>AsyncOpenAI</code></strong> — the <em>only</em> LLM SDK engine.py touches directly, used solely for the manager call (planner + synthesizer). Worker-agent calls go through <code>orchestrator → agent_runner</code>, which handles Anthropic and Vertex as well. The manager is always OpenAI-compatible (OpenRouter / Google / OpenAI / Vertex via OpenAI compat) — see <code>_MANAGER_PROVIDERS</code> in chapter 1b.</li>
-        <li><strong><code>orchestrator</code></strong> — the agentic loop that runs one step. Engine.py never calls into a model directly for agent work; every step is shipped off to <code>orchestrator.run(...)</code>. Covered fully in <strong>chapter 02</strong>.</li>
-        <li><strong><code>on_status</code>, <code>on_token</code>, <code>is_cancelled</code></strong> — three <code>ContextVar</code>-style hooks defined in <code>anet/core/context.py</code> (chapter 16). They let the engine emit status updates ("manager: planning…") and token streams to whatever UI is listening, and check if the user pressed ESC, <em>without</em> the engine knowing anything about the UI. The underscore-prefix + <code>as</code>-rename makes it clear these are private-by-convention re-exports for use only inside this file.</li>
-      </ul>
+      <strong>The whole public API is one method.</strong> <code>main.py</code>
+      calls <code>result = await engine.run_turn(thread_id, store, user_input)</code>
+      and reads <code>result.reply</code>. Everything below is what
+      <code>AdaptOrchEngine</code> does inside that call.
     </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2><code>AdaptOrchEngine.run_turn</code> — the outer guard <span class="lineno">coordinator.py:29–40</span></h2>
+
+<pre class="code"><span class="lbl">coordinator.py:29–40</span><span class="ln"><span class="k">class</span> <span class="p">AdaptOrchEngine</span>(BaseEngine):</span><span class="ln">    <span class="k">async def</span> <span class="b">run_turn</span>(self, thread_id, store, user_input) <span class="o">-></span> EngineResult:</span><span class="ln">        <span class="k">try</span>:</span><span class="ln">            <span class="k">return</span> <span class="k">await</span> self._adaptorch_turn(thread_id, store, user_input)</span><span class="ln">        <span class="k">except</span> <span class="b">Exception</span> <span class="k">as</span> exc:</span><span class="ln">            self._notify(<span class="s">f"manager: AdaptOrch error ({exc})"</span>)</span><span class="ln">            reply = <span class="s">f"Sorry — something went wrong while handling that turn: {exc}"</span></span><span class="ln">            <span class="k">try</span>:</span><span class="ln">                <span class="k">await</span> self._persist(store, thread_id, user_input, reply, <span class="b">False</span>)</span><span class="ln">            <span class="k">except</span> <span class="b">Exception</span>:</span><span class="ln">                <span class="k">pass</span></span><span class="ln">            <span class="k">return</span> EngineResult(reply=reply)</span></pre>
 
     <div class="note warn">
-      <strong>The decoupling matters:</strong> these three context vars are
-      the entire interface between engine and CLI. Swap the CLI for a web
-      UI (the planned <code>anet-server</code>) and engine doesn't change a
-      line — only the UI's <code>on_status</code>/<code>on_token</code>
-      handlers do.
+      <strong>One try/except wraps the whole turn.</strong> A hard pipeline
+      error — a cycle in the DAG, an unexpected exception inside a phase —
+      surfaces as a clean error <code>EngineResult</code> rather than a crash.
+      Note what changed from the old engine: there is <strong>no legacy fallback
+      path</strong> any more. The turn either runs the five phases or reports a
+      clean error; it is never silently re-routed to some other pipeline.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2>Two constants <span class="lineno">lines 24–25</span></h2>
+    <h2>Phase 0 — context assembly <span class="lineno">coordinator.py:50–58</span></h2>
 
-<pre class="code"><span class="lbl">engine.py:24–25</span><span class="ln">_MAX_RETRIES    = <span class="n">3</span></span><span class="ln">_ASSISTANT_NAME = os.getenv(<span class="s">"ASSISTANT_NAME"</span>, <span class="s">"Anet"</span>)</span></pre>
-
-    <div class="note">
-      <strong><code>_MAX_RETRIES = 3</code></strong> — the entire reason the
-      engine can't run away. Every <em>partial</em> verdict from the checker
-      bumps an <code>attempts</code> counter; when <code>attempts >= 3 - 1</code>
-      the step is forced to advance even if the verdict is still partial.
-      We meet this constant again in chapter 1e's <code>_check</code>
-      method, but it's declared here so the bound is visible at the top of
-      the file. Changing it to <code>5</code> here would change the engine's
-      patience globally — no other file needs editing.
-    </div>
+<pre class="code"><span class="lbl">coordinator.py:50–58</span><span class="ln">on_status = _status_var.get()</span><span class="ln">messages = <span class="k">await</span> store.load(thread_id)</span><span class="ln">convo = messages + [{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input}]</span><span class="ln">summary, keep_from = <span class="k">await</span> self._maintain_summary(store, thread_id, convo)</span><span class="ln"><span class="c"># Working context the decomposer (and downstream executors) reason over:</span></span><span class="ln"><span class="c"># rolling summary + verbatim recent turns, minus the current user_input</span></span><span class="ln"><span class="c"># itself (passed separately as `task`). Without this, AdaptOrch was blind to</span></span><span class="ln"><span class="c"># prior turns.</span></span><span class="ln">working_ctx = cw.render_for_prompt(convo, summary, keep_from, exclude_last=<span class="b">True</span>)</span></pre>
 
     <div class="note">
-      <strong><code>_ASSISTANT_NAME</code></strong> — defaults to
-      <code>"Anet"</code>, but can be overridden with the
-      <code>ASSISTANT_NAME</code> env var so a forked deployment can rebrand
-      without touching code. It's injected into the planner and synthesizer
-      prompts ("You are Anet, an AI assistant…").
-    </div>
-
-    <!-- ───────────────────────────────────────────────────────── -->
-    <h2>Loading <code>SOUL.md</code> once <span class="lineno">lines 27–36</span></h2>
-
-<pre class="code"><span class="lbl">engine.py:27–36</span><span class="ln"><span class="c"># ── Soul (loaded once at import, injected into manager prompts) ───────────────</span></span><span class="ln"></span><span class="ln"><span class="k">def</span> <span class="b">_load_soul_once</span>() <span class="o">-></span> <span class="b">str</span>:</span><span class="ln">    <span class="k">try</span>:</span><span class="ln">        <span class="k">from</span> anet.core.config_loader <span class="k">import</span> load_soul</span><span class="ln">        <span class="k">return</span> load_soul()</span><span class="ln">    <span class="k">except</span> <span class="b">Exception</span>:</span><span class="ln">        <span class="k">return</span> <span class="s">""</span></span><span class="ln"></span><span class="ln">_SOUL = _load_soul_once()</span></pre>
-
-    <div class="note">
-      <strong>Why "loaded once":</strong> <code>SOUL.md</code> is the active
-      pack's persona file — a few hundred bytes of free-form text that gets
-      glued into the system prompt every turn. Reading the file from disk
-      every <code>_plan()</code> call would be wasteful and would also make
-      hot-reloading unpredictable. Reading it once at <strong>import
-      time</strong> means:
-      <ul>
-        <li>It's loaded before <code>run_turn</code> ever runs (zero per-turn cost).</li>
-        <li>If <code>SOUL.md</code> doesn't exist (pack without one), <code>load_soul()</code> raises, we swallow the exception, and <code>_SOUL = ""</code> — every downstream check is just <code>if _SOUL</code>.</li>
-        <li>Switching packs via <code>/changepack</code> requires <em>rebuilding the engine</em> (which re-imports nothing — but reload of config <em>is</em> triggered). The CLI handles this; engine.py treats <code>_SOUL</code> as immutable for the lifetime of the engine instance.</li>
-      </ul>
-    </div>
-
-    <div class="note warn">
-      <strong>The bare-<code>except Exception</code></strong> looks lazy but
-      is deliberate: this code runs at <em>module import</em>. If it raises,
-      <code>engine.py</code> can't be imported, and the CLI dies before
-      printing anything useful. A silent empty-string fallback is strictly
-      better than a stack trace on startup when the pack hasn't been set up
-      yet (e.g. on first run before <code>~/.anet/</code> is seeded).
+      <strong>Before any phase runs, the engine builds the working context.</strong>
+      <code>_maintain_summary</code> (on the base — chapter 1b) returns the rolling
+      <code>summary</code> plus a <code>keep_from</code> cut point;
+      <code>render_for_prompt</code> flattens "summary + recent verbatim turns"
+      into a single string. <code>exclude_last=True</code> drops the current
+      <code>user_input</code> because it's passed to the decomposer separately as
+      the <code>task</code> — including it here would duplicate it.
     </div>
 
     <div class="note info">
-      <strong>Lazy import inside the function:</strong>
-      <code>from anet.core.config_loader import load_soul</code> is inside
-      <code>_load_soul_once()</code>, not at the top. This is the pattern
-      we'll see again and again: top-of-file imports stay minimal (just
-      stdlib + <code>openai</code> + <code>orchestrator</code> + the three
-      context-vars), and anything that touches the workspace is imported
-      lazily so circular imports and partially-initialised states never
-      blow up engine import.
+      <strong>This is what fixed AdaptOrch's amnesia.</strong> The working context
+      threads prior-turn memory into <em>both</em> the decomposer (as
+      <code>memory_ctx</code>) and every executor (as <code>global_context</code>),
+      so a follow-up like "now do the same for the other repo" resolves correctly.
     </div>
 
     <!-- ───────────────────────────────────────────────────────── -->
-    <h2>What this 36-line section leaves you with</h2>
+    <h2>Phases 1–3 — decompose, DAG, route <span class="lineno">coordinator.py:60–74</span></h2>
+
+<pre class="code"><span class="lbl">coordinator.py:60–74</span><span class="ln"><span class="c"># ── Phase 1 — Decomposition (+ trivial fast-path) ──────────────</span></span><span class="ln">on_status(<span class="s">"manager: decomposing task..."</span>)</span><span class="ln">decomp = <span class="k">await</span> decomposer.decompose(user_input, self._agents, memory_ctx=working_ctx)</span><span class="ln"></span><span class="ln"><span class="k">if</span> decomp.trivial:</span><span class="ln">    reply = decomp.reply <span class="k">or</span> <span class="s">"Done."</span></span><span class="ln">    <span class="k">await</span> self._persist(store, thread_id, user_input, reply, <span class="b">False</span>)</span><span class="ln">    <span class="k">return</span> EngineResult(reply=reply)</span><span class="ln"></span><span class="ln"><span class="c"># ── Phase 2 — DAG construction ─────────────────────────────────</span></span><span class="ln">task_dag = decomposer.to_dag(decomp)   <span class="c"># raises CycleError on a cycle → caught above</span></span><span class="ln"></span><span class="ln"><span class="c"># ── Phase 3 — Topology routing ─────────────────────────────────</span></span><span class="ln">decision = routermod.route(task_dag)</span><span class="ln">on_status(<span class="s">f"manager: routed → {decision.topology.symbol} · {task_dag.summary()}"</span>)</span></pre>
+
+    <div class="note">
+      <strong>Three phases, two of them pure.</strong>
+      <ol>
+        <li><strong>Decompose</strong> is the one LLM call so far — it returns a <code>Decomposition</code> that is either a trivial fast-path reply (greeting, one-liner) or a list of subtasks. A trivial decomposition short-circuits the whole pipeline: persist and return, no agents spun up.</li>
+        <li><strong>DAG</strong> (<code>to_dag</code>) is pure Python — it validates the subtasks and computes ω / δ / γ / layers. A cycle raises <code>CycleError</code>, caught by the outer guard.</li>
+        <li><strong>Route</strong> (<code>router.route</code>) is pure and O(1) — it reads the DAG's metrics and picks one of four topologies via Algorithm 1. The status line shows the chosen symbol (τ_P / τ_S / τ_H / τ_X) and the DAG shape.</li>
+      </ol>
+      The metrics and Algorithm 1's thresholds are covered in chapter 1b.
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>Phase 4 — execution, wired to the agent loop <span class="lineno">coordinator.py:76–97</span></h2>
+
+<pre class="code"><span class="lbl">coordinator.py:76–97</span><span class="ln"><span class="c"># ── Phase 4 — Execution ────────────────────────────────────────</span></span><span class="ln"><span class="k">async def</span> <span class="b">run_subtask</span>(st, prompt: <span class="b">str</span>) <span class="o">-></span> StepResult:</span><span class="ln">    agent = self._resolve_agent(st.agent)</span><span class="ln">    <span class="k">try</span>:</span><span class="ln">        result = <span class="k">await</span> orchestrator.run(agent, self._tools, prompt, [], on_status)</span><span class="ln">        text = (result <span class="k">or</span> {}).get(<span class="s">"text"</span>, <span class="s">""</span>)</span><span class="ln">        <span class="k">return</span> StepResult(id=st.id, agent=agent[<span class="s">"name"</span>], description=st.description, output=text)</span><span class="ln">    <span class="k">except</span> <span class="b">Exception</span> <span class="k">as</span> exc:</span><span class="ln">        <span class="k">return</span> StepResult(id=st.id, agent=agent[<span class="s">"name"</span>], description=st.description,</span><span class="ln">                          output=<span class="s">f"[subtask failed: {exc}]"</span>, success=<span class="b">False</span>, error=<span class="b">str</span>(exc))</span><span class="ln"></span><span class="ln">ctx = ExecContext(run_subtask=run_subtask, global_context=working_ctx, on_status=on_status)</span><span class="ln"></span><span class="ln"><span class="k">async def</span> <span class="b">reroute_fn</span>(gamma_override: <span class="b">float</span>):</span><span class="ln">    d2 = routermod.route(task_dag, gamma_override=gamma_override)</span><span class="ln">    on_status(<span class="s">f"manager: re-routing → {d2.topology.symbol} (γ'={gamma_override:.2f})"</span>)</span><span class="ln">    <span class="k">return</span> d2.topology, <span class="k">await</span> execute(d2.topology, task_dag, ctx)</span><span class="ln"></span><span class="ln">results = <span class="k">await</span> execute(decision.topology, task_dag, ctx)</span></pre>
+
+    <div class="note">
+      <strong>This is the seam between the engine and the agent loop.</strong>
+      The executors (chapter 1b) are pure scheduling — they know a topology and
+      how to assemble each subtask's prompt, but they don't know about agents or
+      tools. The engine injects <code>run_subtask</code>: it resolves the
+      decomposer-assigned agent name to a live config and ships the assembled
+      prompt to <code>orchestrator.run</code> — <em>the</em> agentic loop, one run
+      per subtask (chapter 02). The result is wrapped in a <code>StepResult</code>;
+      a raised exception becomes a <code>success=False</code> result rather than
+      aborting the whole turn.
+    </div>
+
+    <div class="note info">
+      <strong><code>reroute_fn</code> is handed to synthesis, not called here.</strong>
+      It re-routes with an inflated coupling estimate and re-executes — but only
+      Phase 5's <code>resolve</code> operator ever invokes it, and only on a genuine
+      contradiction. See below.
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>Phase 5 — synthesis, then log + persist <span class="lineno">coordinator.py:99–129</span></h2>
+
+<pre class="code"><span class="lbl">coordinator.py:99–129 · excerpt</span><span class="ln"><span class="c"># ── Phase 5 — Adaptive synthesis ───────────────────────────────</span></span><span class="ln">on_status(<span class="s">"manager: synthesizing..."</span>)</span><span class="ln">synth = <span class="k">await</span> synthesizer.synthesize(</span><span class="ln">    results, topology=decision.topology, task=user_input,</span><span class="ln">    dag=task_dag, request_class=decomp.request_class, reroute_fn=reroute_fn,</span><span class="ln">)</span><span class="ln">reply = synth.output <span class="k">or</span> <span class="s">"I worked through the task but produced no final answer."</span></span><span class="ln"></span><span class="ln"><span class="c"># Log the routing decision + outcome (the learned-routing dataset).</span></span><span class="ln">usage = tokens.current()</span><span class="ln">routermod.log_route(decision, request_class=decomp.request_class, outcome={</span><span class="ln">    <span class="s">"method"</span>: synth.method, <span class="s">"consistency"</span>: <span class="b">round</span>(synth.consistency, <span class="n">3</span>),</span><span class="ln">    <span class="s">"iterations"</span>: synth.iterations, <span class="s">"rerouted"</span>: synth.rerouted, ...</span><span class="ln">})</span><span class="ln"></span><span class="ln"><span class="k">await</span> self._persist(store, thread_id, user_input, reply, <span class="b">False</span>)</span><span class="ln">step_results = [{<span class="s">"agent"</span>: r.agent, <span class="s">"status"</span>: <span class="s">"ok"</span> <span class="k">if</span> r.success <span class="k">else</span> <span class="s">"failed"</span>,</span><span class="ln">                <span class="s">"result"</span>: r.output} <span class="k">for</span> r <span class="k">in</span> results]</span><span class="ln"><span class="k">return</span> EngineResult(reply=reply, step_results=step_results)</span></pre>
+
+    <div class="note">
+      <strong>Synthesis is Algorithm 2 — a dispatcher over operators, not a gate.</strong>
+      <code>synthesize</code> picks the operator that fits the topology + request
+      class (compose / aggregate / vote / rank / resolve), streams the combined
+      answer to your terminal, and returns a <code>SynthesisResult</code>. The
+      <code>reroute_fn</code> from Phase 4 is passed in but is used <em>only</em>
+      by <code>resolve</code>, on a real contradiction. Consistency score is just a
+      signal inside vote/resolve — it is no longer a global merge/arbiter gate.
+      The operator prompts are in chapter 1c.
+    </div>
+
+    <div class="note info">
+      <strong>Every decision is logged.</strong> <code>router.log_route</code>
+      appends the DAG features, chosen topology, and the synthesis outcome
+      (operator, consistency, iterations, tokens) to
+      <code>routing_log.jsonl</code> — the training signal for future learned
+      routing. It's collected from the first decision, not bolted on later.
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2><code>_resolve_agent</code> — the one coordinator helper <span class="lineno">coordinator.py:133–140</span></h2>
+
+<pre class="code"><span class="lbl">coordinator.py:133–140</span><span class="ln"><span class="k">def</span> <span class="b">_resolve_agent</span>(self, name: <span class="b">str</span>) <span class="o">-></span> <span class="b">dict</span>:</span><span class="ln">    <span class="k">if</span> name <span class="k">and</span> name <span class="k">in</span> self._agent_map:</span><span class="ln">        <span class="k">return</span> self._agent_map[name]</span><span class="ln">    <span class="k">if</span> <span class="s">"code_agent"</span> <span class="k">in</span> self._agent_map:</span><span class="ln">        <span class="k">return</span> self._agent_map[<span class="s">"code_agent"</span>]</span><span class="ln">    <span class="k">return</span> self._agents[<span class="n">0</span>]</span></pre>
+
+    <div class="note">
+      <strong>A bad or empty agent assignment never crashes.</strong> The
+      decomposer assigns an agent name per subtask; if it names one that doesn't
+      exist (or leaves it blank), this falls back to <code>code_agent</code>, then
+      to the first agent. The <code>_agent_map</code> built in the constructor
+      makes the lookup O(1).
+    </div>
+
+    <!-- ───────────────────────────────────────────────────────── -->
+    <h2>What this section leaves you with</h2>
     <p class="section-intro">
-      Three things in module scope, ready for the rest of the file to use:
+      The shape of one turn, end to end:
     </p>
     <table class="tbl">
-      <thead><tr><th>Symbol</th><th>Type</th><th>Used by</th></tr></thead>
+      <thead><tr><th>Step</th><th>Where</th><th>Kind</th></tr></thead>
       <tbody>
-        <tr><td><code>_MAX_RETRIES</code></td><td><code>int = 3</code></td><td><code>_check()</code> (chapter 1e), the executor loop in <code>run_turn()</code></td></tr>
-        <tr><td><code>_ASSISTANT_NAME</code></td><td><code>str</code></td><td>Both prompt builders in chapter 1c</td></tr>
-        <tr><td><code>_SOUL</code></td><td><code>str</code> (may be empty)</td><td>Both prompt builders in chapter 1c</td></tr>
+        <tr><td>Assemble working context</td><td><code>_maintain_summary</code> + <code>render_for_prompt</code></td><td>base + pure</td></tr>
+        <tr><td>Phase 1 · decompose</td><td><code>decomposer.decompose</code></td><td>LLM</td></tr>
+        <tr><td>Phase 2 · DAG</td><td><code>decomposer.to_dag</code></td><td>pure</td></tr>
+        <tr><td>Phase 3 · route</td><td><code>router.route</code></td><td>pure</td></tr>
+        <tr><td>Phase 4 · execute</td><td><code>execute(...)</code> → <code>orchestrator.run</code> per subtask</td><td>agent loop</td></tr>
+        <tr><td>Phase 5 · synthesize</td><td><code>synthesizer.synthesize</code></td><td>LLM (streamed)</td></tr>
+        <tr><td>Log + persist</td><td><code>router.log_route</code>, <code>_persist</code></td><td>base + I/O</td></tr>
       </tbody>
     </table>
 
     <p>
-      Next up: the module-level helpers — the dozen or so functions that
-      live above the Engine class and do all the "glue" work the methods
-      depend on.
+      Next up: <a href="1b_helpers.html" style="color:#86efac;">1b — the shared
+      and phase helpers</a>. The rolling-summary machinery, the manager-client
+      construction, and the pure helpers each phase leans on.
     </p>
 
   </div>
@@ -198,11 +233,11 @@
     <div class="page-nav">
       <a href="1_engine.html">
         <span class="dir">← Previous</span>
-        <span class="title">1 · engine.py overview</span>
+        <span class="title">1 · AdaptOrch engine overview</span>
       </a>
       <a class="next" href="1b_helpers.html">
         <span class="dir">Next →</span>
-        <span class="title">1b · Module-level helpers</span>
+        <span class="title">1b · Shared + phase helpers</span>
       </a>
     </div>
     <p class="meta">ANet · architecture/docs/l3/1engine/1a_setup.html</p>

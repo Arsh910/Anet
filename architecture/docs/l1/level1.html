@@ -566,17 +566,18 @@
 <section class="reveal">
   <div class="container">
     <div class="eyebrow">The big picture</div>
-    <h2>One request flows through <span class="accent">four stages.</span></h2>
+    <h2>One request flows through <span class="accent">an adaptive pipeline.</span></h2>
     <p class="section-intro">
-      Every message you type travels the same four-stage pipeline. This is the
-      single most important thing to learn — once you see it, the rest of
-      ANet is just <em>"who plays which role here."</em> Think of it as an
-      assembly line: each stage has one job, hands off cleanly to the next, and
-      the line is short enough to picture end to end.
+      Every message you type is broken into a small graph of subtasks — and ANet
+      then <em>chooses how to run that graph</em> from its shape. This is the single
+      most important thing to learn — once you see it, the rest of ANet is just
+      <em>"who plays which role here."</em> Four moving parts you can picture end to
+      end: <strong>decompose → route → execute → synthesize</strong>, with the middle
+      adapting to each request.
     </p>
 
     <div class="diagram-wrap">
-      <svg viewBox="0 0 1000 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Request lifecycle: user to planner to executor to checker to synthesizer">
+      <svg viewBox="0 0 1000 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Request lifecycle: user to decompose to route to execute to synthesize">
         <defs>
           <linearGradient id="g-plan"  x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%"  stop-color="#8B5CF6"/><stop offset="100%" stop-color="#6D28D9"/>
@@ -604,29 +605,29 @@
         <!-- PLANNER -->
         <g>
           <rect x="160" y="130" width="160" height="100" rx="14" fill="url(#g-plan)"/>
-          <text x="240" y="170" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">Planner</text>
-          <text x="240" y="195" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">classifies + builds DAG</text>
+          <text x="240" y="170" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">Decompose</text>
+          <text x="240" y="195" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">request → subtask DAG</text>
         </g>
 
         <!-- EXECUTOR -->
         <g>
           <rect x="380" y="130" width="160" height="100" rx="14" fill="url(#g-exec)"/>
-          <text x="460" y="170" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">Executor</text>
-          <text x="460" y="195" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">runs ready steps in parallel</text>
+          <text x="460" y="170" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">Route</text>
+          <text x="460" y="195" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">DAG shape → topology</text>
         </g>
 
         <!-- CHECKER -->
         <g>
           <rect x="600" y="130" width="160" height="100" rx="14" fill="url(#g-check)"/>
-          <text x="680" y="170" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">Checker</text>
-          <text x="680" y="195" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">success / partial / fail</text>
+          <text x="680" y="170" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">Execute</text>
+          <text x="680" y="195" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">∥ / seq / hier / hybrid</text>
         </g>
 
         <!-- SYNTH -->
         <g>
           <rect x="820" y="130" width="150" height="100" rx="14" fill="url(#g-synth)"/>
-          <text x="895" y="170" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">Synthesizer</text>
-          <text x="895" y="195" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">streams final reply</text>
+          <text x="895" y="170" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">Synthesize</text>
+          <text x="895" y="195" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="12">combine → stream reply</text>
         </g>
 
         <!-- Lines -->
@@ -635,15 +636,15 @@
         <line class="flow-line" x1="540" y1="180" x2="595" y2="180" stroke="#9ca3af" stroke-width="2" marker-end="url(#arrow)"/>
         <line class="flow-line" x1="760" y1="180" x2="815" y2="180" stroke="#9ca3af" stroke-width="2" marker-end="url(#arrow)"/>
 
-        <!-- Retry loop (checker → executor) -->
-        <path d="M 680 230 Q 680 300 460 300 Q 460 300 460 235"
+        <!-- Reroute loop (synthesize → execute, on contradiction) -->
+        <path d="M 895 230 Q 895 300 680 300 Q 680 300 680 235"
               fill="none" stroke="#FF6B35" stroke-width="1.5" stroke-dasharray="4 4"
               marker-end="url(#arrow)" opacity="0.6"/>
-        <text x="570" y="320" text-anchor="middle" fill="#FF6B35" font-size="11" opacity="0.8">
-          on "partial" → adjust + retry (bounded)
+        <text x="790" y="320" text-anchor="middle" fill="#FF6B35" font-size="11" opacity="0.8">
+          on a real contradiction → resolve + re-route (bounded)
         </text>
 
-        <!-- Simple branch (planner) -->
+        <!-- Simple branch (decompose) -->
         <path d="M 240 130 Q 240 70 460 70 L 970 70 L 970 130"
               fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4 4"
               opacity="0.5"/>
@@ -654,8 +655,9 @@
     </div>
 
     <p class="section-intro" style="margin-top: 16px;">
-      The pipeline lives in <code>anet/core/engine.py</code>. It is plain Python —
-      no LangChain, no graph framework — about 700 lines, four stages.
+      The pipeline lives in <code>anet/core/AdaptOrch/</code> (a coordinator plus one
+      file per phase), on the shared <code>engine_base.py</code>. It is plain Python —
+      no LangChain, no graph framework. It's based on the <em>AdaptOrch</em> paper.
     </p>
   </div>
 </section>
@@ -665,39 +667,39 @@
      ──────────────────────────────────────────────────────────────── -->
 <section class="reveal">
   <div class="container">
-    <div class="eyebrow">What each stage does</div>
-    <h2>The four roles, one at a time.</h2>
+    <div class="eyebrow">What each phase does</div>
+    <h2>The phases, one at a time.</h2>
 
     <div class="grid grid-4" style="margin-top: 40px;">
       <div class="card plan">
         <div class="step">1</div>
-        <h3>Planner</h3>
+        <h3>Decompose</h3>
         <div class="sub">The Manager LLM</div>
-        <p>Reads your request and either replies directly (greeting, trivial question) or emits a <strong>DAG</strong> — a list of steps, each labelled with the agent that will do it and what it <code>depends_on</code>.</p>
+        <p>Reads your request and either replies directly (greeting, trivial question) or breaks it into a <strong>subtask DAG</strong> — steps, each labelled with the agent that will do it and what it <code>depends_on</code>.</p>
       </div>
       <div class="card exec">
         <div class="step">2</div>
-        <h3>Executor</h3>
-        <div class="sub">asyncio.gather</div>
-        <p>Walks the DAG. Every step whose dependencies are done runs <strong>in parallel</strong>. Each step boots its own agent, with its own model and its own tools.</p>
+        <h3>Route</h3>
+        <div class="sub">Algorithm 1</div>
+        <p>Measures the graph's shape — width <code>ω</code>, depth <code>δ</code>, coupling <code>γ</code> — and picks the topology that fits: <strong>parallel</strong>, <strong>sequential</strong>, <strong>hierarchical</strong>, or <strong>hybrid</strong>.</p>
       </div>
       <div class="card check">
         <div class="step">3</div>
-        <h3>Checker</h3>
-        <div class="sub">A second LLM judges</div>
-        <p>Labels each result <code>success</code>, <code>partial</code>, or <code>failure</code>. On <code>partial</code> it can write an <em>adjustment</em> — a tweak to the plan — and the executor retries that branch.</p>
+        <h3>Execute</h3>
+        <div class="sub">the chosen topology</div>
+        <p>Runs the subtasks in that shape. Each step boots its own agent — its own model, its own tools — with the right context (predecessor outputs) threaded in.</p>
       </div>
       <div class="card synth">
         <div class="step">4</div>
-        <h3>Synthesizer</h3>
-        <div class="sub">Streams to your terminal</div>
-        <p>Combines every step's result into one coherent reply, streamed token-by-token. This is the only stage you actually <em>see</em> typing back at you.</p>
+        <h3>Synthesize</h3>
+        <div class="sub">Algorithm 2 · streams to your terminal</div>
+        <p>Combines every step's result with the operator that fits — <strong>compose</strong>, <strong>aggregate</strong>, <strong>vote</strong>, <strong>rank</strong>, or <strong>resolve</strong> — streamed token-by-token. The only phase you actually <em>see</em>.</p>
       </div>
     </div>
 
     <div class="callout">
-      <strong>The mental shortcut:</strong> Planner says <em>what</em>, Executor says <em>do it now</em>,
-      Checker says <em>was that good enough?</em>, Synthesizer says <em>here's the answer</em>.
+      <strong>The mental shortcut:</strong> Decompose says <em>what the pieces are</em>, Route says <em>how to run them</em>,
+      Execute <em>does it</em>, Synthesize says <em>here's the answer</em>.
     </div>
   </div>
 </section>
@@ -710,7 +712,7 @@
     <div class="eyebrow">Zoom in</div>
     <h2>Inside one step: <span class="accent">the agentic loop.</span></h2>
     <p class="section-intro">
-      When the Executor runs a step, it hands control to the <span class="term">orchestrator</span>
+      When Execute runs a subtask, it hands control to the <span class="term">orchestrator</span>
       (<code>anet/core/orchestrator.py</code>). The orchestrator is what
       <em>actually</em> talks to a model and tools — over and over — until the agent
       decides it's done or hits a safety limit.
@@ -829,14 +831,14 @@
         <g>
           <rect x="340" y="40" width="320" height="120" rx="12" fill="url(#g-soft2)" stroke="rgba(59,130,246,0.5)" stroke-width="1"/>
           <text x="500" y="68" text-anchor="middle" fill="#93c5fd" font-size="14" font-weight="700">Engine</text>
-          <text x="500" y="84" text-anchor="middle" fill="#9ca3af" font-size="11">core/engine.py</text>
+          <text x="500" y="84" text-anchor="middle" fill="#9ca3af" font-size="11">core/AdaptOrch/ · engine_base.py</text>
           <!-- inner pipeline -->
           <rect x="360" y="100" width="60" height="40" rx="6" fill="rgba(139,92,246,0.4)"/>
-          <text x="390" y="125" text-anchor="middle" fill="#fff" font-size="10" font-weight="600">Plan</text>
+          <text x="390" y="125" text-anchor="middle" fill="#fff" font-size="10" font-weight="600">Decomp</text>
           <rect x="430" y="100" width="60" height="40" rx="6" fill="rgba(59,130,246,0.4)"/>
-          <text x="460" y="125" text-anchor="middle" fill="#fff" font-size="10" font-weight="600">Exec</text>
+          <text x="460" y="125" text-anchor="middle" fill="#fff" font-size="10" font-weight="600">Route</text>
           <rect x="500" y="100" width="60" height="40" rx="6" fill="rgba(255,107,53,0.4)"/>
-          <text x="530" y="125" text-anchor="middle" fill="#fff" font-size="10" font-weight="600">Check</text>
+          <text x="530" y="125" text-anchor="middle" fill="#fff" font-size="10" font-weight="600">Exec</text>
           <rect x="570" y="100" width="70" height="40" rx="6" fill="rgba(34,197,94,0.4)"/>
           <text x="605" y="125" text-anchor="middle" fill="#fff" font-size="10" font-weight="600">Synth</text>
         </g>
@@ -871,8 +873,8 @@
         </g>
         <g>
           <rect x="360" y="350" width="280" height="70" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
-          <text x="500" y="378" text-anchor="middle" fill="#e6e9ef" font-size="13" font-weight="700">mem0 (long-term)</text>
-          <text x="500" y="398" text-anchor="middle" fill="#9ca3af" font-size="11">Chroma + fastembed, local</text>
+          <text x="500" y="378" text-anchor="middle" fill="#e6e9ef" font-size="13" font-weight="700">RecMem (long-term)</text>
+          <text x="500" y="398" text-anchor="middle" fill="#9ca3af" font-size="11">3-tier · Chroma + fastembed, local</text>
         </g>
         <g>
           <rect x="680" y="350" width="280" height="70" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
@@ -925,16 +927,17 @@
       </div>
       <div class="card check">
         <div class="step">L</div>
-        <h3>Long-term — mem0</h3>
-        <div class="sub">~/.anet/memory/</div>
-        <p>Every five turns (and once on clean exit), recent conversation is handed to <strong>mem0</strong> — which uses your LLM to extract <em>durable facts</em> about you and stores them in a local Chroma vector DB. Surfaced again next session.</p>
+        <h3>Long-term — RecMem</h3>
+        <div class="sub">~/.anet/memory/recmem/</div>
+        <p>Every few turns (and once on clean exit), recent turns are buffered into <strong>RecMem</strong>'s <em>subconscious</em> tier — cheap embeddings, no LLM. Only when an interaction <em>recurs</em> does your LLM consolidate it into durable <em>episodic</em> + <em>semantic</em> memory. Local Chroma + on-device fastembed. Surfaced again next session.</p>
       </div>
     </div>
 
     <div class="callout">
-      <strong>The key insight:</strong> long-term memory isn't just a transcript dump.
-      Mem0 extracts, de-duplicates, and classifies each fact, so the store stays
-      small and useful instead of growing forever.
+      <strong>The key insight:</strong> long-term memory isn't a transcript dump, and it
+      isn't eager either. RecMem buffers cheaply and spends the LLM to consolidate a fact
+      only when it <em>recurs</em> — so most turns cost zero memory tokens and the store
+      stays small and useful instead of growing forever.
     </div>
   </div>
 </section>
@@ -999,24 +1002,25 @@
     </p>
 
     <!-- ─────────────────────────────────────────────────────────── -->
-    <h3 class="sub-header"><span class="num">Step 1</span> The Planner reads it.</h3>
+    <h3 class="sub-header"><span class="num">Step 1</span> Decompose reads it.</h3>
     <p>
-      The Manager LLM looks at your message and recognises three distinct
+      The Manager LLM looks at your message and recognises distinct
       skill-shapes: <strong>search the web</strong>, <strong>write &amp; test
-      code</strong>, <strong>send a chat message</strong>. It picks the agent
-      that owns each skill and lays them out in dependency order — code can't
-      run until research returns the repo list, Telegram can't run until the
-      report file exists. So the plan ends up purely sequential this time.
-      (If you'd said <em>"research X <strong>and</strong> research Y,"</em>
-      the Planner would have run them side-by-side instead.)
+      code</strong>, <strong>validate</strong>, <strong>send a chat message</strong>. It
+      assigns each to the agent that owns that skill and lays them out in dependency
+      order — code can't run until research returns the repo list, Telegram can't run
+      until the report exists. So the DAG ends up a sequential chain this time.
+      (If you'd said <em>"research X <strong>and</strong> research Y,"</em> those nodes
+      would have no dependency between them — and routing would pick the
+      <strong>parallel</strong> topology to run them side-by-side.)
     </p>
 
     <!-- ─────────────────────────────────────────────────────────── -->
-    <h3 class="sub-header"><span class="num">Step 2</span> The DAG it builds.</h3>
+    <h3 class="sub-header"><span class="num">Step 2</span> The DAG it builds — and the route it picks.</h3>
 
     <div class="diagram-wrap">
       <svg viewBox="0 0 1000 540" xmlns="http://www.w3.org/2000/svg" role="img"
-           aria-label="DAG for the example request: research, code with internal loop, checker, telegram, synthesizer">
+           aria-label="DAG for the example request: research, code with internal loop, checker validation, telegram">
         <defs>
           <linearGradient id="ex-research" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%"  stop-color="#8B5CF6"/><stop offset="100%" stop-color="#6D28D9"/>
@@ -1078,16 +1082,11 @@
         </g>
         <line x1="500" y1="334" x2="500" y2="366" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#ex-arrow)"/>
 
-        <!-- CHECKER GATE -->
+        <!-- CHECKER SUBTASK -->
         <g class="dag-node">
           <rect x="340" y="373" width="320" height="58" rx="14" fill="url(#ex-check)"/>
-          <text x="500" y="398" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">checker_agent — success / partial / fail</text>
-          <text x="500" y="416" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="11">if "partial": loops back to B with an adjustment</text>
-          <!-- retry arrow back to B -->
-          <path d="M 340 402 Q 220 402 220 280 Q 220 234 280 234"
-                fill="none" stroke="#FF6B35" stroke-width="1.5"
-                stroke-dasharray="4 4" marker-end="url(#ex-arrow-orange)" opacity="0.7"/>
-          <text x="160" y="335" fill="#FF6B35" font-size="11" font-weight="600">retry (bounded)</text>
+          <text x="500" y="398" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">checker_agent — validates step B</text>
+          <text x="500" y="416" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="11">confirms tests pass + report is well-formed</text>
         </g>
         <line x1="500" y1="431" x2="500" y2="463" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#ex-arrow)"/>
 
@@ -1101,15 +1100,17 @@
     </div>
 
     <p>
-      Three real steps, plus the Checker sitting like a gate between B and C.
-      The yellow self-loop on B is the <strong>agentic loop</strong> you saw
-      earlier — the code agent iterating on its own to fix its tests. The
-      orange arrow is the Checker's retry path, used only if B can't get
-      itself clean in the time it has.
+      Four subtasks in a sequential chain: research → code → validate → notify. The
+      yellow self-loop on B is the <strong>agentic loop</strong> you saw earlier — the
+      code agent iterating on its own to fix its tests. There's no separate checker
+      <em>stage</em> here: <code>checker_agent</code> is just another subtask that
+      validates B before C runs. Routing sees a deep, single-file chain
+      (depth <code>δ</code> high, width <code>ω</code>=1) and picks the
+      <strong>sequential</strong> topology.
     </p>
 
     <!-- ─────────────────────────────────────────────────────────── -->
-    <h3 class="sub-header"><span class="num">Step 3</span> The Executor runs the DAG.</h3>
+    <h3 class="sub-header"><span class="num">Step 3</span> Execute runs the DAG (sequential topology).</h3>
 
     <div class="ex-step research">
       <div class="marker">A</div>
@@ -1120,7 +1121,7 @@
           opens the first credible result with <code>web_fetch</code>, and
           parses out the five top names and their star counts.
         </p>
-        <p><strong>Returns:</strong> a short JSON list of <code>{name, stars}</code>. Hands control back to the Executor.</p>
+        <p><strong>Returns:</strong> a short JSON list of <code>{name, stars}</code>. Hands control back to the executor.</p>
       </div>
     </div>
 
@@ -1142,17 +1143,17 @@
     <div class="ex-step check">
       <div class="marker">⟳</div>
       <div class="body">
-        <h4>checker_agent inspects step B <span class="agent-tag">checker_agent</span></h4>
+        <h4>checker_agent validates step B <span class="agent-tag">checker_agent</span></h4>
         <p>
-          Reads what B claimed and verifies it briefly. Tests passed, file
-          exists, structure looks right → labels it
-          <span class="badge success">success</span>. The DAG advances to C.
+          Runs as its own subtask: reads what B produced and verifies it — tests
+          passed, <code>report.json</code> exists, structure looks right. Its verdict
+          flows forward with the other results into synthesis.
         </p>
         <p>
-          If the tests were still red after a few attempts, the Checker would
-          stamp <span class="badge partial">partial</span> and send the
-          Executor back to B with a hint — that's the orange arrow in the
-          diagram above. The whole loop is bounded so it can't churn forever.
+          AdaptOrch has no separate checker <em>stage</em> that bounces work back. If
+          the final outputs ever genuinely <em>contradicted</em> each other, the
+          synthesis phase would <span class="badge partial">resolve</span> and re-route
+          — but a clean sequential chain like this just flows forward.
         </p>
       </div>
     </div>
@@ -1172,13 +1173,13 @@
     </div>
 
     <!-- ─────────────────────────────────────────────────────────── -->
-    <h3 class="sub-header"><span class="num">Step 4</span> The Synthesizer wraps up.</h3>
+    <h3 class="sub-header"><span class="num">Step 4</span> Synthesize wraps up.</h3>
     <p>
-      With every step labelled <span class="badge success">success</span>, the
-      Synthesizer takes the combined results and composes one short reply for
-      your terminal — confirming what ran, what got written, and that
-      Telegram was notified. It streams in token-by-token so you see it
-      typing live.
+      With every subtask done, the synthesis phase picks the operator that fits — here
+      the parts are complementary (a report, a validation, a delivery), so it
+      <strong>composes</strong> them into one short reply for your terminal, confirming
+      what ran, what got written, and that Telegram was notified. It streams in
+      token-by-token so you see it typing live.
     </p>
 
     <div class="output-box">
@@ -1194,11 +1195,11 @@
     </div>
 
     <div class="callout">
-      <strong>What you just saw:</strong> the Planner picked agents,
-      the Executor coordinated them, each agent ran its own loop with tools,
-      the safety gate held back every write, the Checker validated the
-      important hand-off, and the Synthesizer spoke. That's all of Level 1
-      in a single request.
+      <strong>What you just saw:</strong> <em>Decompose</em> broke the request into a
+      subtask DAG, <em>Route</em> saw a deep chain and picked the sequential topology,
+      <em>Execute</em> ran each subtask (each agent looping with its own tools, the
+      safety gate holding back every write, checker_agent validating), and
+      <em>Synthesize</em> composed the reply. That's all of Level 1 in a single request.
     </div>
   </div>
 </section>
@@ -1212,11 +1213,11 @@
     <h2>If you remember <span class="accent">five things</span>, you've got it.</h2>
 
     <ol class="points">
-      <li><strong>The pipeline has four stages:</strong> Planner → Executor → Checker → Synthesizer. They live in <code>engine.py</code>.</li>
-      <li><strong>The Planner emits a DAG.</strong> Independent steps run in parallel; dependent steps wait.</li>
+      <li><strong>The pipeline is five phases:</strong> Decompose → DAG → Route → Execute → Synthesize. They live in <code>anet/core/AdaptOrch/</code> on the shared <code>engine_base.py</code>.</li>
+      <li><strong>Decompose emits a DAG; Route picks a topology</strong> from its shape (parallel / sequential / hierarchical / hybrid). Independent steps run in parallel; dependent steps wait.</li>
       <li><strong>Each step is an agent running a loop:</strong> model → tool → result → model again, capped by <code>max_steps</code>.</li>
       <li><strong>Writes pause for confirmation</strong> at the safety gate; reads don't.</li>
-      <li><strong>Two memory layers</strong> — rolling short-term inside a session, fact-extracted long-term across sessions.</li>
+      <li><strong>Two memory layers</strong> — rolling short-term inside a session, and RecMem's recurrence-consolidated long-term across sessions.</li>
     </ol>
   </div>
 </section>
@@ -1227,7 +1228,7 @@
 <footer>
   <div class="container">
     <p>That's the whole core in one page.</p>
-    <p>Level 2 will open up each stage — the actual prompts the Planner uses, how the Checker decides "partial," how the Executor batches parallel steps, and what gets persisted where. The <em>same example</em> from above will reappear, traced through at a deeper level of detail.</p>
+    <p>Level 2 will open up each phase — the actual prompt the decomposer uses, how routing reads <code>ω/δ/γ</code> to choose a topology, how each topology executes, how synthesis picks its operator, and what gets persisted where. The <em>same example</em> from above will reappear, traced through at a deeper level of detail.</p>
     <a href="../l2/level2.html" class="next-link">Level 2 — Under the hood →</a>
     <p style="margin-top: 30px; font-size: 12px;">ANet · architecture/docs/l1/level1.html</p>
   </div>
