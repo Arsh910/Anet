@@ -7,7 +7,9 @@
 
 # ── Session memory ────────────────────────────────────────────────────────────
 # Legacy in-repo session store. Sessions now live in ~/.anet (or your ANET_HOME).
-memory/
+# Anchored to the repo root (leading slash) so it ONLY matches a top-level memory/
+# folder — NOT anet/memory/ (the vendored RecMem package, which MUST be tracked).
+/memory/
 
 # ── Agent sandbox ─────────────────────────────────────────────────────────────
 # Runtime working dir: downloads and bare-filename writes land here.

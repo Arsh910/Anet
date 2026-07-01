@@ -49,17 +49,30 @@ skills:
   stale_after_days: 30         # Curator archives agent-made skills unused this long
   curator_interval_hours: 12   # Curator won't re-run more often than this
 
-# Memory — long-term memory via mem0 (local Chroma vector store + on-device
-# fastembed embeddings + your LLM for fact extraction). Stored under ~/.anet/memory/.
-# By default the extraction LLM is the manager's model; override it here if you want
-# a cheaper/stronger model just for memory:
+# Memory — long-term, cross-session memory (local Chroma vector store + on-device
+# fastembed embeddings + your LLM). Stored under ~/.anet/memory/. Two backends:
+#   recmem (default) → native 3-tier recurrence memory (subconscious→episodic→
+#                      semantic); the LLM is invoked only when an interaction
+#                      RECURS, so most turns cost zero memory tokens. Data lives
+#                      under ~/.anet/memory/recmem/.
+#   mem0             → mem0-backed flat store (LLM fact-extraction per pass).
+#                      Data lives under ~/.anet/memory/chroma/.
+# The memory LLM defaults to the manager's model; override just for memory below.
 #   model: nex-agi/nex-n2-pro:free
 #   provider: openrouter
 memory:
+  backend: recmem              # recmem | mem0  (switch takes effect on next start)
   user_profile_enabled: true   # run a memory-extraction pass on session exit
   nudge_enabled: true
   nudge_interval: 10           # turns between nudges to save useful facts (0 = off)
   incremental_interval: 5      # turns between background memory extractions (0 = off)
+
+  # RecMem tuning (backend: recmem). Consolidation fires when an incoming
+  # interaction finds >= recurrence_threshold similar snippets (cosine >=
+  # sim_threshold) already buffered; dedup_threshold skips near-identical facts.
+  recurrence_threshold: 2
+  sim_threshold: 0.72
+  dedup_threshold: 0.92
 
   # What mem0 should extract from conversation (steers its extraction prompt).
   instructions: >

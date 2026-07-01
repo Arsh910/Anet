@@ -1,17 +1,18 @@
 """
 memory_tool — persistent cross-session memory for ANet agents.
 
-Thin tool-facing adapter over `anet.core.memory_store` (mem0-backed: local Chroma
-vector store + on-device fastembed embeddings + the user's configured LLM for
-intelligent fact extraction/de-duplication). The agent-visible interface is
-unchanged: save / search / list / delete / clear.
+Thin tool-facing adapter over `anet.core.memory_store`, which is backend-pluggable
+(recmem by default, or mem0 — see `memory.backend` in anet.config.yaml). Either way
+it's a local Chroma vector store + on-device fastembed embeddings + the user's
+configured LLM. The agent-visible interface is unchanged: save / search / list /
+delete / clear.
 
 `search_memories()` and `preference_memories()` are imported synchronously by the
-engine (plan-time recall) and the orchestrator (per-agent memory injection); they
-keep their original return shape (id / content / tags / project_path / created_at).
+orchestrator (per-agent memory injection); they keep their original return shape
+(id / content / tags / project_path / created_at / ...).
 
-On first use the old flat-file store (~/.anet/memory.json) is migrated into mem0
-once, then renamed aside so it isn't re-imported.
+On first use the old flat-file store (~/.anet/memory.json) is migrated into the
+active backend once, then renamed aside so it isn't re-imported.
 """
 from __future__ import annotations
 

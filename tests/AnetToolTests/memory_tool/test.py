@@ -65,22 +65,36 @@ def test_save_requires_content():
     assert "error" in r
 
 
+def _seed_standing(content, *, applies_to, always_inject, category):
+    """Inject a memory with explicit standing metadata directly into whichever
+    backend is active — so the test is deterministic without an LLM key. mem0 and
+    recmem store metadata differently, so branch on the live backend."""
+    import json
+    mem = memory_store.get_memory()
+    backend = getattr(memory_store, "backend_name", "mem0")
+    if backend == "recmem":
+        mem.remember(content, tier="semantic", metadata={
+            "category": category, "always_inject": always_inject,
+            "applies_to": json.dumps(applies_to)})
+    else:  # mem0
+        mem.add(content, user_id="anet", infer=False, metadata={
+            "category": category, "always_inject": always_inject,
+            "applies_to": applies_to})
+
+
 def test_standing_memory_scoping():
     """Standing (always_inject) memories are retrieved by their LLM-assigned
     `applies_to` metadata, scoped per agent — no tag convention. (We inject the
     metadata directly here so the test is deterministic without an LLM key.)"""
     if not _AVAILABLE:
-        print("  skip (mem0 unavailable)"); return
+        print("  skip (memory backend unavailable)"); return
     _run({"action": "clear"})
-    mem = memory_store.get_memory()
-    mem.add("Prefix functions with anet_", user_id="anet",
-            metadata={"category": "preference", "always_inject": True,
-                      "applies_to": ["code_agent"]}, infer=False)
-    mem.add("Be terse", user_id="anet",
-            metadata={"category": "preference", "always_inject": True,
-                      "applies_to": ["all"]}, infer=False)
-    mem.add("Project uses FastAPI", user_id="anet",
-            metadata={"category": "project", "always_inject": False}, infer=False)
+    _seed_standing("Prefix functions with anet_", applies_to=["code_agent"],
+                   always_inject=True, category="preference")
+    _seed_standing("Be terse", applies_to=["all"],
+                   always_inject=True, category="preference")
+    _seed_standing("Project uses FastAPI", applies_to=["all"],
+                   always_inject=False, category="project")
 
     code = {m["content"] for m in mt.preference_memories("code_agent")}
     research = {m["content"] for m in mt.preference_memories("research_agent")}

@@ -10,6 +10,7 @@ Startup sequence:
   6. Build the AdaptOrch engine (task-adaptive 5-phase pipeline)
   7. Async readline loop → Live spinner while working → thinking panel + response
 """
+from __future__ import annotations
 
 import argparse
 import asyncio

@@ -9,34 +9,45 @@ Internals and design of ANet. For installation and day-to-day usage, see the
 
 ## Request lifecycle
 
-ANet routes every request through a **planning layer** (the "manager") that
-decides which agents run, in what order, and which can run in parallel. Each
-agent has its own model, its own tools, and its own job.
+ANet routes every request through **AdaptOrch** — a task-adaptive engine (the
+"manager") that decomposes the request into a subtask DAG, measures the graph's
+shape, and picks the execution topology that fits it. Each subtask runs an agent
+with its own model, its own tools, and its own job. This is the **sole**
+orchestration engine (the earlier planner/executor/checker engine was retired).
 
 ```mermaid
 flowchart TD
-    U(["You — natural-language request"]) --> M{"Manager · Planner"}
-    M -->|"greeting / simple fact"| R(["Direct reply"])
-    M -->|"real task"| P["Plan a DAG of steps"]
-    P --> A1["research_agent"]
-    P --> A2["code_agent"]
-    P --> A3["computer_agent"]
-    A1 --> C{"checker_agent"}
-    A2 --> C
-    A3 --> C
-    C -->|"partial / failed"| P
-    C -->|"success"| S["Synthesizer"]
-    S --> O(["Final reply"])
-    A2 -. spawn_tool .-> A1
+    U(["You — natural-language request"]) --> D{"Manager · Decompose"}
+    D -->|"greeting / trivial"| R(["Direct reply"])
+    D -->|"real task"| G["Build subtask DAG · compute ω / δ / γ"]
+    G --> RT{"Route · Algorithm 1"}
+    RT -->|"wide, low coupling"| P["τ_P parallel"]
+    RT -->|"deep chain"| SQ["τ_S sequential"]
+    RT -->|"coordination"| H["τ_H hierarchical"]
+    RT -->|"mixed"| X["τ_X hybrid · layered"]
+    P --> SY["Synthesize · Algorithm 2"]
+    SQ --> SY
+    H --> SY
+    X --> SY
+    SY --> O(["Final reply — streamed"])
 ```
 
-- **Planner** — classifies the request as `simple` (direct reply) or a `plan`
-  (a DAG of steps). Steps declare `depends_on` and `wait_for_async`.
-- **Executor** — runs all *ready* steps concurrently (`asyncio.gather`);
-  dependent steps wait for their predecessors.
-- **Checker** — classifies each step's result as **success / partial / failure**
-  and can return an *adjustment* that triggers a bounded retry.
-- **Synthesizer** — streams the final answer from the combined step results.
+Five phases (each emits a live status line; per-phase tokens are tracked):
+
+- **Decompose** — an LLM turns the request into subtasks with `depends_on` edges,
+  each assigned an agent — or fast-paths a trivial request straight to a reply.
+- **DAG** — builds the graph and computes its metrics: **ω** (parallel width),
+  **δ** (weighted critical-path depth), **γ** (coupling density), and the layers.
+- **Route (Algorithm 1)** — picks a topology from the shape: **τ_P** parallel,
+  **τ_S** sequential, **τ_H** hierarchical, or **τ_X** hybrid (layer-by-layer).
+- **Execute** — the topology's executor runs each subtask through the shared agent
+  loop, threading the right context (predecessor outputs, prior layers) to each.
+- **Synthesize (Algorithm 2)** — combines the outputs with the operator that fits
+  the join: **compose** (distinct parts), **aggregate** (research findings),
+  **vote** (redundant answers → majority), **rank** (candidates), or **resolve**
+  (a genuine contradiction → arbiter, with a bounded re-route loop). Streams the
+  final answer. Consistency score is a signal *inside* vote/resolve — it no longer
+  gates the whole merge, so distinct parallel outputs are composed, not arbitrated.
 
 ---
 
@@ -47,34 +58,36 @@ flowchart LR
     subgraph CLI["CLI · main.py"]
         IN["Prompt + slash commands"]
     end
-    subgraph ENG["Engine · OldEngine/engine.py"]
-        PL["Planner"] --> EX["Executor"] --> CH["Checker"] --> SY["Synthesizer"]
+    subgraph ENG["Engine · AdaptOrch/coordinator.py (BaseEngine)"]
+        DE["Decompose"] --> DG["DAG · ω/δ/γ"] --> RO["Route"] --> EX["Execute"] --> SY["Synthesize"]
     end
-    subgraph RUN["Agent loop · OldEngine/orchestrator.py + agent_runner"]
+    subgraph RUN["Agent loop · orchestrator.py + agent_runner"]
         LOOP["Agentic loop · cycle detection"]
     end
 
-    IN --> PL
+    IN --> DE
     SY --> IN
     EX --> LOOP
     LOOP --> TOOLS[("Built-in tools<br/>+ ExTools")]
     LOOP --> MCP[("MCP servers<br/>(from the active pack)")]
     ENG --> STORE[("conversations.db<br/>shared, keyed by thread")]
-    RUN --> MEM[("mem0<br/>(Chroma + fastembed)")]
+    RUN --> MEM[("RecMem<br/>(Chroma + fastembed)")]
     RUN --> SK[("skills/<br/>learned procedures")]
 ```
 
 | Module | Responsibility |
 |---|---|
-| `anet/core/OldEngine/engine.py` | **Active** orchestration coordinator: planner → executor → checker → synthesizer (pure Python, no LangChain) |
-| `anet/core/OldEngine/orchestrator.py` | The agentic loop for one agent: model ↔ tool-call iterations, cycle detection, confirmation gate, skill tracking. Shared — also used by `spawn_tool` and the AdaptOrch executors |
+| `anet/core/engine_base.py` | **BaseEngine** — engine-agnostic infra every engine inherits: per-thread state, rolling-summary maintenance (short-term memory), the persistence helper, shared manager-model resolution |
+| `anet/core/AdaptOrch/coordinator.py` | **AdaptOrchEngine** — the **sole** orchestration engine (subclasses `BaseEngine`); `run_turn` drives the five phases, emits per-phase status, and streams the answer. A hard pipeline error surfaces as a clean error result — there is no legacy fallback |
+| `anet/core/AdaptOrch/{dag,decomposer,router,executors,synthesizer,stage_models}` | **AdaptOrch** phases — decompose → DAG metrics ω/δ/γ → topology router (Algorithm 1) → parallel/sequential/hierarchical/hybrid executors → adaptive synthesis (Algorithm 2, the 5-operator dispatcher). `stage_models` resolves each stage's model. Each `run_subtask` runs an agent via the shared orchestrator loop |
+| `anet/core/orchestrator.py` | The agentic loop for one agent: model ↔ tool-call iterations, cycle detection, confirmation gate, skill tracking. Shared — runs every subtask and `spawn_tool` |
 | `anet/core/agent_runner.py` | One model call; provider dispatch (OpenAI-compatible, Anthropic, Vertex) |
-| `anet/core/AdaptOrch/coordinator.py` | **AdaptOrch coordinator** — `run_turn` that drives the five phases; a drop-in `Engine` swap selected by `orchestration.mode: adaptorch` (default `legacy`). Set it in `/settings → Orchestration engine`. Emits per-phase status + streams the answer; falls back to the OldEngine on any error |
-| `anet/core/AdaptOrch/{dag,decomposer,router,executors,synthesizer,stage_models}` | **AdaptOrch** phases — decompose → DAG metrics ω/δ/γ → topology router (Algorithm 1) → parallel/sequential/hierarchical/hybrid executors → adaptive synthesis (Algorithm 2). `stage_models` resolves each stage's model. Each `run_subtask` runs an agent via the shared orchestrator loop |
 | `anet/core/tokens.py` | Per-turn token accounting — running total in the spinner, per-stage breakdown in the routing log |
 | `anet/AnetTools/toolsets.py` | Capability bundles + the COMMON baseline every agent inherits |
 | `anet/core/store.py` | `aiosqlite` conversation store — one shared DB keyed by `thread` |
-| `anet/core/memory_store.py` | Long-term memory backend — wraps mem0 (local Chroma + fastembed + your LLM) |
+| `anet/core/context_window.py` | Short-term memory: the token-budgeted rolling-summary + verbatim-recent-turns window (pure logic; driven by `BaseEngine._maintain_summary`) |
+| `anet/core/memory_store/` | Long-term memory — a **backend-pluggable** package: re-exports `recmem_store` (default) or `mem0_store`, selected by `memory.backend` |
+| `anet/memory/recmem/` + `anet/memory/adapters.py` | Native **RecMem** engine (subconscious → episodic → semantic, recurrence-triggered consolidation) + its fastembed / chromadb / LLM provider adapters |
 | `anet/core/skill_manager.py` | Self-improving skills — search, create, curate |
 | `anet/core/mcp_loader.py` | MCP server lifecycle (launch, list tools, keep alive) |
 | `anet/core/ex_loader.py` | Load ExTools/ExAgents from `exanet.config.yaml` |
@@ -87,7 +100,7 @@ flowchart LR
 | Guard | Behaviour |
 |---|---|
 | **Confirmation gate** | `shell_tool` (every command), `edit_tool` (every edit), and destructive `file_tool` actions pause for explicit `y` / `n` / `a` approval |
-| **Per-agent step cap** | each agent has a `max_steps` limit (defaults: research 10, code 60, file 25, computer 20, checker 8) |
+| **Per-agent step cap** | each agent has a `max_steps` limit (defaults: research 10, code 60, computer 20, checker 8) |
 | **Cycle detection** | the same write operation repeated 3× in a sliding window stops the loop (reads are exempt) |
 | **Spawn depth limit** | `spawn_tool` nesting is capped at 2 to prevent runaway delegation |
 
@@ -97,44 +110,50 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    T["Conversation turns"] -->|"every 5 turns"| BG["mem0 fact extraction"]
+    T["Conversation turns"] -->|"every 5 turns"| BG["observe() → subconscious"]
     T -->|"every 10 turns"| NUDGE["Memory nudge to active agent"]
-    EXIT(["Clean exit"]) --> FINAL["Final mem0 extraction pass"]
-    BG --> M[("mem0 store<br/>Chroma + fastembed")]
-    NUDGE --> M
-    FINAL --> M
-    M -->|"recalled next session"| PLAN["Planner already knows you"]
+    EXIT(["Clean exit"]) --> FINAL["Final observe() pass"]
+    BG --> SUB[("subconscious<br/>raw snippets")]
+    SUB -->|"recurrence detected"| CONS["LLM consolidation"]
+    CONS --> EPI[("episodic + semantic<br/>durable memory")]
+    NUDGE -->|"memory_tool save"| EPI
+    FINAL --> SUB
+    EPI -->|"recalled next session"| KNOW["Manager already knows you"]
 ```
 
 - **Short-term memory (rolling window)** — each turn the model is given a
-  **token-budgeted** view of the conversation (`context_window.py`): a **rolling
-  summary** of older turns plus as many recent turns as fit `context.recent_tokens`
-  (default 3000), with the last `min_recent` always kept verbatim. When turns
-  overflow the budget the summary is updated automatically (one LLM call, only
-  then) and persisted per-thread in the store, so it survives `/session` switches
-  and `--resume`. This replaced the old fixed "last-8-messages" slice, so the
-  planner now retains the whole session, not just the tail. `/forget` and
-  `/compress` remain as manual overrides.
-- **Long-term memory (mem0)** — every `incremental_interval` turns (default 5),
-  and once more on clean exit, the recent conversation is handed to **mem0**, which
-  uses your configured LLM to extract the salient facts and de-duplicate them
-  against what it already knows (steered by `memory.instructions` in the pack
-  config). Storage is fully local: a **Chroma** vector DB under `~/.anet/memory/`
-  with **fastembed** (on-device) embeddings — no server, no hosted service. The
-  manager recalls relevant memories on the next session, and `/profile` shows
-  everything stored.
-- **Memory classification (no hardcoded tags)** — when a memory is saved explicitly,
-  the LLM classifies it into a **category defined in `memory.categories`** (config,
-  not code) and decides which agents it `applies_to`. Categories marked
+  **token-budgeted** view of the conversation (`context_window.py`, driven by
+  `BaseEngine._maintain_summary`): a **rolling summary** of older turns plus as many
+  recent turns as fit `context.recent_tokens` (default 3000), with the last
+  `min_recent` always kept verbatim. When turns overflow the budget the summary is
+  updated automatically (one LLM call, only then) and persisted per-thread, so it
+  survives `/session` switches and `--resume`. The AdaptOrch decomposer and its
+  executors reason over **summary + verbatim recent turns** (`render_for_prompt`),
+  not the summary alone. `/forget` and `/compress` are manual overrides.
+- **Long-term memory (RecMem, the default backend)** — a native **3-tier
+  recurrence memory** (`anet/memory/recmem/`): raw interactions land in the
+  **subconscious** (a cheap embedding buffer, no LLM). Every `incremental_interval`
+  turns (default 5) and once on clean exit, recent turns are `observe()`d there.
+  When an incoming interaction finds enough semantically-similar snippets already
+  buffered (a **recurrence**), and only then, the LLM is invoked once to consolidate
+  the cluster into durable **episodic** (event summaries) and **semantic** (facts)
+  memory — so most turns cost **zero** memory tokens. Storage is fully local: three
+  **Chroma** collections under `~/.anet/memory/recmem/` with **fastembed**
+  (on-device) embeddings — no server, no hosted service. `/profile` shows what's
+  stored. (Set `memory.backend: mem0` to use the mem0 backend instead, stored under
+  `~/.anet/memory/chroma/`.)
+- **Memory classification (no hardcoded tags)** — when a memory is saved explicitly
+  via `memory_tool`, the LLM classifies it into a **category defined in
+  `memory.categories`** (config, not code) and decides which agents it `applies_to`.
+  It's stored verbatim in the durable tier with that metadata. Categories marked
   `always_inject: true` (e.g. `preference`, `identity`) reach their agents on every
   task — even when they share no keywords with the request — which is how a standing
-  style rule like "prefix functions `anet_`" actually gets applied. Everything else
-  is retrieved by relevance. No magic `preference`/`code_agent` tags for the model to
-  remember; the classification and scoping are decided by the model, against
-  editable config.
+  style rule like "prefix functions `anet_`" gets applied. Everything else is
+  retrieved by relevance. The classification and scoping are the model's, against
+  editable config — no magic tags. (This standing-preference layer is carried in
+  per-memory metadata, so it works identically on both backends.)
 - **Memory nudge** — every `nudge_interval` turns (default 10), the active agent
-  is prompted to persist genuinely new facts via `memory_tool` (which writes to the
-  same mem0 store).
+  is prompted to persist genuinely new facts via `memory_tool`.
 - **Context compression** — past ~40 messages, ANet offers **[f] forget**
   (keep last 20) or **[c] compress** (summarise). Also `/forget`, `/compress`.
 - **Self-improving skills** — see [skills/README.md](../anet_pack/skills/README.md).
@@ -150,7 +169,8 @@ metadata (e.g. `title.txt`).
 
 ```text
 <anet-home>/                 # e.g. ~/.anet  (or ANET_HOME)
-├── memory/                  # long-term memory (mem0): Chroma DB + history.db
+├── memory/                  # long-term memory — recmem/ (RecMem: 3 Chroma
+│                            #   collections) or chroma/ + history.db (mem0)
 └── sessions/
     ├── conversations.db     # one shared store for ALL sessions, keyed by thread
     └── <session_id>/        # per-session folder — metadata only (title.txt)
@@ -163,7 +183,7 @@ metadata (e.g. `title.txt`).
 
 ## The Smiths — assisted integration
 
-ANet ships three standalone agents (never seen by the planner) that scaffold,
+ANet ships three standalone agents (never seen by the manager) that scaffold,
 **validate**, and **wire up** integrations for you.
 
 ```mermaid
@@ -250,8 +270,9 @@ Anet/
 ├── anet/                    # the read-only core (engine + built-ins)
 │   ├── AnetAgents/          # Built-in agent definitions
 │   ├── AnetTools/           # Built-in tool implementations (+ registrar)
+│   ├── memory/              # RecMem engine (recmem/) + provider adapters (adapters.py)
 │   ├── cli/banner.py        # Animated startup banner + README image export
-│   └── core/                # OldEngine/ (engine+orchestrator) · AdaptOrch/ (coordinator + dag, decomposer, router, executors, synthesizer, stage_models) · tokens, agent_runner, store, memory, skills, loaders, paths, workspace
+│   └── core/                # engine_base (BaseEngine) · AdaptOrch/ (coordinator + dag, decomposer, router, executors, synthesizer, stage_models) · orchestrator, agent_runner · context_window · tokens, store · memory_store/ (recmem|mem0 dispatch) · skills, loaders, paths, workspace
 │
 ├── anet_pack/               # the DEFAULT PACK (ships with ANet; the dev workspace)
 │   ├── __init__.py          # makes it an importable package (so it ships in the wheel)
@@ -266,7 +287,7 @@ Anet/
 ├── architecture/            # ← you are here
 └── <anet-home>/             # the user's data, e.g. ~/.anet  (NOT in the repo)
     ├── anet_pack/           # the user's editable pack (seeded from the bundled one)
-    ├── memory/              # long-term memory (mem0): Chroma DB + history.db
+    ├── memory/              # long-term memory — recmem/ (RecMem) or chroma/+history.db (mem0)
     ├── anet_files/          # downloads + agent output
     └── sessions/            # conversations.db + per-session metadata
 ```
