@@ -1,9 +1,10 @@
 import React from 'react'
-import { Hexagon, Plus, Settings, Sun, Moon } from 'lucide-react'
+import { Hexagon, Plus, Settings } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import ThemeToggle from './ThemeToggle'
 
 export default function TopBar() {
-  const { agents, theme, toggleTheme } = useStore()
+  const { agents } = useStore()
   const model = agents.find(a => a.isManager)?.model || 'claude-sonnet-4.6'
   const working = agents.filter(a => a.status === 'active').length
 
@@ -32,9 +33,7 @@ export default function TopBar() {
         Working · {working} active
       </span>
       <button className="btn btn-primary"><Plus size={15} /> New session</button>
-      <button className="icon-btn" onClick={toggleTheme} title="Toggle theme">
-        {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-      </button>
+      <ThemeToggle />
       <button className="icon-btn" title="Settings"><Settings size={16} /></button>
     </div>
   )
