@@ -2681,8 +2681,9 @@ async def main() -> None:
             for agent in merged_builtins:
                 extra = extra_map.get(agent["name"], {})
                 for t in extra.get("tools", []):
-                    if t not in agent["tools"]:
-                        agent["tools"] = agent["tools"] + [t]
+                    existing = agent.get("tools") or []
+                    if t not in existing:
+                        agent["tools"] = existing + [t]
                 for tt in extra.get("task_types", []):
                     if tt not in agent.get("task_types", []):
                         agent["task_types"] = agent.get("task_types", []) + [tt]
