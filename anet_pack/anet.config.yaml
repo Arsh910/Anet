@@ -6,13 +6,13 @@
 # Color theme for this pack — set it interactively with /theme, or by hand here.
 # It travels with the pack, so different packs can look different (handy for telling
 # them apart). Options: cyan · emerald · amber · violet · crimson · matrix · mono
-theme: cyan
+theme: amber
 
 # Manager — plans and coordinates every request.
 # Default is a free OpenRouter model so a single free key works out of the box.
 # Swap for a stronger model (e.g. anthropic/claude-sonnet-4.6) once you've added a key.
 manager:
-  model: nex-agi/nex-n2-pro:free
+  model: anthropic/claude-sonnet-4.6
   provider: openrouter
 
 # Per-agent overrides. Each agent uses the free default below; give any agent a
@@ -28,18 +28,25 @@ manager:
 #     mcp: [codegraph]
 agents:
   research_agent:
-    model: nex-agi/nex-n2-pro:free
-    provider: openrouter
-  code_agent:
-    model: nex-agi/nex-n2-pro:free
-    provider: openrouter
-  computer_agent:
-    model: nex-agi/nex-n2-pro:free
-    provider: openrouter
-  checker_agent:
-    model: nex-agi/nex-n2-pro:free
+    model: openai/gpt-5.4-mini
     provider: openrouter
 
+  computer_agent:
+    model: openai/gpt-5.4-mini
+    provider: openrouter
+
+  checker_agent:
+    model: z-ai/glm-5.2
+    provider: openrouter
+
+  code_agent:
+    model: anthropic/claude-haiku-4.5
+    provider: openrouter
+    mcp: [ponytail, playwright, gentleman-book]   # playwright moved here (file_agent retired)
+    task_types:
+    - "ponytail mcp"
+    - "playwright mcp"
+    - "gentleman-book"
 # Self-improving skills — written after complex tasks, injected into relevant ones.
 skills:
   enabled: true
@@ -78,7 +85,8 @@ memory:
   instructions: >
     Capture durable facts that help future sessions: the user's identity and standing
     preferences, project locations and tech stacks, important decisions, environment
-    and setup details, and explicit instructions. Ignore small talk and transient chatter.
+    and setup details, and explicit instructions. Ignore small talk and transient
+    chatter.
 
   # Categories an explicit save is classified into BY THE LLM (no hardcoded tags).
   # always_inject: true  → reaches its applies_to agents every task, even when it
@@ -86,11 +94,17 @@ memory:
   # always_inject: false → retrieved only when relevant to the task.
   # Edit freely: add your own (e.g. a 'security_rule' that always reaches code_agent).
   categories:
-    - {name: preference,  always_inject: true,  description: "A standing instruction or style to apply automatically — naming conventions, tone, output format, coding style, do/don't rules."}
-    - {name: identity,    always_inject: true,  description: "Who the user is: name, role, background, languages, interests, team."}
-    - {name: project,     always_inject: false, description: "Facts about a specific project: its path, stack, structure, key decisions."}
-    - {name: environment, always_inject: false, description: "Setup/tooling/config: OS, installed tools, where credentials live, important paths."}
-    - {name: fact,        always_inject: false, description: "Any other useful fact worth recalling that doesn't fit the above."}
+  - {name: preference, always_inject: true, description: "A standing instruction or
+      style to apply automatically — naming conventions, tone, output format, coding
+      style, do/don't rules."}
+  - {name: identity, always_inject: true, description: "Who the user is: name, role,
+      background, languages, interests, team."}
+  - {name: project, always_inject: false, description: "Facts about a specific project:
+      its path, stack, structure, key decisions."}
+  - {name: environment, always_inject: false, description: "Setup/tooling/config:
+      OS, installed tools, where credentials live, important paths."}
+  - {name: fact, always_inject: false, description: "Any other useful fact worth recalling
+      that doesn't fit the above."}
 
 # Context (short-term memory) — every turn the model sees a rolling summary of
 # older turns plus as many recent turns as fit a token budget. The summary updates

@@ -1,0 +1,12 @@
+# Ponytail MCP server — lazy-senior-dev ruleset as a prompt/tool
+#
+# Repo-backed MCP (not an npm package): vendored from a subdirectory of
+# https://github.com/DietrichGebert/ponytail. See README.md in this folder
+# for what to clone/copy if this vendored copy is ever missing.
+#
+# Tools provided: ponytail_instructions (returns the ruleset for lite/full/ultra)
+
+command: node
+args:
+  - "ponytail-mcp/index.js"
+cwd: "anet_pack/mcps/ponytail"

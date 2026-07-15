@@ -1,0 +1,18 @@
+# Gentleman Book MCP server — search/read the Gentleman Programming Book's
+# 18 chapters on software architecture.
+#
+# Repo-backed MCP (Go binary, not an npm/pip package). Source:
+# https://github.com/Alan-TheGentleman/gentleman-book-mcp
+# See README.md in this folder for how to rebuild if the binary is missing.
+#
+# The server reads chapter content from a SEPARATE repo at runtime (BOOK_PATH)
+# rather than embedding it — https://github.com/Alan-TheGentleman/gentleman-programming-book
+#
+# Tools: list_chapters, read_chapter, search_book, get_book_index
+# (semantic_search/build_semantic_index/semantic_status need OPENAI_API_KEY or
+# a local Ollama server — unset here, so those tools will report unavailable)
+
+command: "anet_pack/mcps/gentleman-book/bin/gentleman-book-mcp.exe"
+cwd: "."
+env:
+  BOOK_PATH: "anet_pack/mcps/gentleman-book/book-src/src/data/book"

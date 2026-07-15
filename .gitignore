@@ -79,6 +79,17 @@ desktop.ini
 # servers themselves via /addmcp. (node_modules/ and .env/*.env are already
 # ignored globally above — secrets never ship.)
 anet_pack/mcps/codegraph/
+# Same reasoning: nested .git repos (server source + book content) and a
+# compiled platform-specific binary — never committable, config.yaml + README
+# in the parent dir are enough for anyone to rebuild.
+anet_pack/mcps/gentleman-book/repo/
+anet_pack/mcps/gentleman-book/book-src/
+anet_pack/mcps/gentleman-book/bin/
+# ponytail-mcp similarly vendors third-party source (see its README for the
+# rebuild steps) — kept local-only pending a decision on whether to ship it.
+anet_pack/mcps/ponytail/hooks/
+anet_pack/mcps/ponytail/skills/
+anet_pack/mcps/ponytail/ponytail-mcp/
 # Runtime artifacts created while developing against anet_pack/.
 anet_pack/skills/.usage.json
 anet_pack/skills/archived/
