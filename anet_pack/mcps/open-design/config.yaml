@@ -1,0 +1,16 @@
+# Playwright MCP server — full browser automation
+#
+# Install: npm install -g @playwright/mcp
+# Docs:    https://github.com/microsoft/playwright-mcp
+#
+# Tools provided: browser_navigate, browser_click, browser_type,
+#   browser_snapshot, browser_take_screenshot, browser_fill_form, and more.
+
+command: "C:\\Users\\arshd\\AppData\\Local\\Programs\\Open Design\\Open Design.exe"
+args:
+  - "C:\\Users\\arshd\\AppData\\Local\\Programs\\Open Design\\resources\\app\\prebundled\\daemon\\daemon-cli.mjs"
+  - "mcp"
+env:
+  OD_DATA_DIR: "C:\\Users\\arshd\\AppData\\Roaming\\Open Design\\namespaces\\release-stable-win\\data"
+  OD_SIDECAR_IPC_PATH: "\\\\.\\pipe\\open-design-release-stable-win-daemon"
+  ELECTRON_RUN_AS_NODE: "1"

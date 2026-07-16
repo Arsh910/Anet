@@ -42,11 +42,12 @@ agents:
   code_agent:
     model: anthropic/claude-haiku-4.5
     provider: openrouter
-    mcp: [ponytail, playwright, gentleman-book]   # playwright moved here (file_agent retired)
+    mcp: [ponytail, playwright, gentleman-book,open-design]   # playwright moved here (file_agent retired)
     task_types:
     - "ponytail mcp"
     - "playwright mcp"
     - "gentleman-book"
+    - "open-design"
 # Self-improving skills — written after complex tasks, injected into relevant ones.
 skills:
   enabled: true
