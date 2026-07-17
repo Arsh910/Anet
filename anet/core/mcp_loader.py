@@ -27,6 +27,20 @@ def _mcp_dir() -> Path:
 _connections: dict[str, "_MCPConnection"] = {}
 
 
+def _resolve_pack_path(value: str) -> str:
+    """A config.yaml value written as "anet_pack/..." means "relative to the
+    pack itself" — authored assuming ANet runs from a dev checkout (cwd ==
+    repo root). Once installed, ANet is launched from the user's own project
+    dir, so that assumption breaks. Rewrite the "anet_pack/" prefix to the
+    pack's real location (repo checkout or <home>/anet_pack) so it resolves
+    the same way regardless of where `anet` was launched from."""
+    prefix = "anet_pack/"
+    if not value.startswith(prefix):
+        return value
+    from anet.core import paths as _paths
+    return str(_paths.workspace_root() / value[len(prefix):])
+
+
 # ── Connection class ──────────────────────────────────────────────────────────
 
 class _MCPConnection:
@@ -59,9 +73,12 @@ class _MCPConnection:
             self._ready.set()
             return
 
-        command = self.cfg.get("command", "")
-        args    = list(self.cfg.get("args") or [])
+        command = _resolve_pack_path(self.cfg.get("command", ""))
+        args    = [_resolve_pack_path(a) for a in (self.cfg.get("args") or [])]
         env     = self.cfg.get("env") or None
+        if env:
+            env = {k: _resolve_pack_path(v) if isinstance(v, str) else v
+                   for k, v in env.items()}
 
         if not command:
             self.error = "no 'command' in config.yaml"
@@ -122,7 +139,7 @@ class _MCPConnection:
         """
         override = self.cfg.get("cwd")
         if override:
-            p = Path(override).expanduser()
+            p = Path(_resolve_pack_path(override)).expanduser()
             if not p.is_absolute():
                 p = (Path.cwd() / p).resolve()
         else:
