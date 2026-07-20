@@ -70,3 +70,15 @@ desktop.ini
 # Runtime artifacts created while developing against anet_pack/.
 anet_pack/skills/.usage.json
 anet_pack/skills/archived/
+
+# ── SWE-bench harness (tests/SWE_bench/) ────────────────────────────────────
+# All generated per-run state: repo clones/checkouts, cache, Docker build/eval
+# logs and reports, and the harness's own output. The harness CODE
+# (generate_predictions.py, README.md) stays tracked; everything it produces
+# at run time does not — same treatment as memory/, anet_files/, .anet/ above.
+.swebench_work/
+.swebench_cache/
+/logs/
+/anet-code_agent.*.json
+tests/SWE_bench/predictions.jsonl
+tests/SWE_bench/predictions.errors.jsonl

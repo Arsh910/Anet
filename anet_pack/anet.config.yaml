@@ -28,21 +28,21 @@ manager:
 #     mcp: [codegraph]
 agents:
   research_agent:
-    model: openai/gpt-5.4-mini
+    model: google/gemma-4-26b-a4b-it
     provider: openrouter
 
   computer_agent:
-    model: openai/gpt-5.4-mini
+    model: openai/gpt-oss-20b:free
     provider: openrouter
 
   checker_agent:
-    model: z-ai/glm-5.2
+    model: google/gemma-4-26b-a4b-it
     provider: openrouter
 
   code_agent:
-    model: anthropic/claude-haiku-4.5
+    model: tencent/hy3:free
     provider: openrouter
-    mcp: [ponytail, playwright, gentleman-book,open-design]   # playwright moved here (file_agent retired)
+    mcp: [ponytail, playwright, gentleman-book, open-design]  # playwright moved here (file_agent retired)
     task_types:
     - "ponytail mcp"
     - "playwright mcp"
@@ -129,6 +129,7 @@ persona:
 # when you want to (e.g. a cheap model for decomposition to cut cost). All keys are
 # optional; uncomment what you need.
 # orchestration:
+#   engine: adaptorch  # or: qweenbee (A/B fork under anet.QweenBee) — default: adaptorch
 #   # Per-stage models (each defaults to the manager model if omitted):
 #   decomposer: { model: nex-agi/nex-n2-pro:free,     provider: openrouter }  # Phase 1
 #   merger:     { model: anthropic/claude-sonnet-4.6, provider: anthropic }   # Phase 5 — combine agreeing outputs
@@ -138,3 +139,10 @@ persona:
 #   # theta_gamma: 0.6   # coupling above this prefers hierarchical
 #   # theta_delta: 5     # min subtasks for hierarchical
 #   # theta_cs:    0.7   # synthesis consistency threshold (merge vs. arbiter)
+#   # QweenBee planner (engine: qweenbee only) — temporal communication DAG:
+#   # planner: { model: nex-agi/nex-n2-pro:free, provider: openrouter }  # defaults to manager model
+#   # t_max: 4            # max communication rounds in a generated graph
+#   # m_max: 16           # max total message edges
+#   # beta: 3             # max inbound edges to one node in one round
+orchestration:
+  engine: adaptorch

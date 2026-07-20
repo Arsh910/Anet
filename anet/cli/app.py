@@ -1497,6 +1497,84 @@ async def _cmd_theme(arg: str) -> None:
         console.print("  [dim]cancelled.[/dim]\n")
 
 
+_ENGINES = [
+    ("adaptorch", "AdaptOrch  — router (Algorithm 1) + fixed executors + synthesis dispatcher"),
+    ("qweenbee",  "QweenBee   — LLM planner (temporal DAG) + temporal executor + skill bank"),
+]
+
+
+def _active_engine() -> str:
+    """orchestration.engine for the CURRENT pack — same resolution _make_engine uses."""
+    try:
+        from anet.core.config_loader import load
+        name = ((load() or {}).get("orchestration") or {}).get("engine", "adaptorch")
+        name = str(name).lower()
+        return name if name in ("adaptorch", "qweenbee") else "adaptorch"
+    except Exception:
+        return "adaptorch"
+
+
+def _set_active_engine(name: str) -> bool:
+    """Persist orchestration.engine into the active pack's anet.config.yaml
+    (comments preserved via ruamel). The block ships fully commented out, so
+    this creates it if it isn't there yet. Returns False on an unknown name
+    or if the config can't be written."""
+    if name not in ("adaptorch", "qweenbee"):
+        return False
+    p = _anet_paths.config_path()
+    if p is None or not p.exists():
+        return False
+    try:
+        import io
+        from ruamel.yaml import YAML
+        y = YAML()
+        y.preserve_quotes = True
+        data = y.load(p.read_text(encoding="utf-8")) or {}
+        orch = data.get("orchestration")
+        if orch is None:
+            orch = {}
+            data["orchestration"] = orch
+        orch["engine"] = name
+        buf = io.StringIO()
+        y.dump(data, buf)
+        p.write_text(buf.getvalue(), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+async def _cmd_engine(arg: str) -> None:
+    """Pick the orchestration engine from an arrow-key menu (or /engine <name> directly)."""
+    name = (arg or "").strip().lower()
+    valid = {v for v, _ in _ENGINES}
+    if name in valid:
+        _apply_engine(name); return
+    current = _active_engine()
+    options = [
+        (v, f"{label}{'   ← current' if v == current else ''}")
+        for v, label in _ENGINES
+    ]
+    chosen = await _select_menu("Orchestration engine", options, current=current,
+                                subtitle="Select which engine handles turns.")
+    if chosen:
+        _apply_engine(chosen)
+    else:
+        console.print("  [dim]cancelled.[/dim]\n")
+
+
+def _apply_engine(name: str) -> None:
+    """Save the engine choice into this pack's anet.config.yaml and flag a
+    rebuild — the new engine takes over on the next turn, no restart needed."""
+    if name not in {v for v, _ in _ENGINES}:
+        console.print(f"  [yellow]Unknown engine '{name}'.[/yellow]\n"); return
+    saved = _set_active_engine(name)
+    where = "saved to this pack" if saved else "applied for this session only (couldn't write the pack config)"
+    if saved:
+        _apply_config_change()
+    console.print(f"\n  [accent]●[/accent] engine set to [bold accent]{name}[/bold accent] "
+                  f"[dim]— {where}; takes effect on your next message.[/dim]\n")
+
+
 async def _cmd_settings(arg: str) -> None:
     """One entry point for configuration — an arrow-key menu. Folds in the old /keys,
     /editpack, /editagent commands plus theme selection."""
@@ -1507,6 +1585,7 @@ async def _cmd_settings(arg: str) -> None:
         ("agent",  "An agent's prompt     (ExAgents/<name>/prompt.md)"),
         ("soul",   "Persona               (SOUL.md)"),
         ("theme",  "Theme & colors"),
+        ("engine", "Orchestration engine  (AdaptOrch / QweenBee)"),
     ]
     valid = {v for v, _ in options}
     choice = (arg or "").strip().lower()
@@ -1533,6 +1612,8 @@ async def _cmd_settings(arg: str) -> None:
             console.print("  [green]SOUL.md updated[/green] — applied on your next message.\n")
     elif choice == "theme":
         await _cmd_theme("")
+    elif choice == "engine":
+        await _cmd_engine("")
 
 
 async def _pick_and_edit_agent() -> None:
@@ -2724,8 +2805,17 @@ async def main() -> None:
             return all_agents, combined_tools, manager_tools, len(ex_agents)
 
         def _make_engine(agents, tools, manager_tools):
-            """Build the orchestration engine (currently AdaptOrch — the task-adaptive
-            5-phase pipeline)."""
+            """Build the orchestration engine, selected by orchestration.engine in
+            anet.config.yaml: 'adaptorch' (default, the task-adaptive 5-phase
+            pipeline) or 'qweenbee' (the A/B fork under anet.QweenBee)."""
+            try:
+                from anet.core.config_loader import load
+                name = ((load() or {}).get("orchestration") or {}).get("engine", "adaptorch")
+            except Exception:
+                name = "adaptorch"
+            if str(name).lower() == "qweenbee":
+                from anet.QweenBee.coordinator import QweenBeeEngine
+                return QweenBeeEngine(agents, tools, manager_tools=manager_tools)
             from anet.core.AdaptOrch.coordinator import AdaptOrchEngine
             return AdaptOrchEngine(agents, tools, manager_tools=manager_tools)
 
