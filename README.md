@@ -18,7 +18,8 @@ Use any model, per agent. Claude for code, Gemini for research, GPT for planning
 
 <table>
 <tr><td><b>Multi-agent, multi-model</b></td><td>Four built-in agents (research, code, computer, checker) plus your own. Each picks its own model + provider in <code>anet.config.yaml</code>. The manager plans a DAG and runs independent steps in parallel.</td></tr>
-<tr><td><b>Task-adaptive orchestration <em>(AdaptOrch)</em></b></td><td>ANet's orchestration engine decomposes each request into a subtask dependency graph, measures its shape (parallelism ω, depth δ, coupling γ), and routes it to the right topology — <b>parallel</b>, <b>sequential</b>, <b>hierarchical</b>, or <b>hybrid</b> — runs it, then synthesizes the outputs with the operator that fits the join: <b>compose</b> (distinct parts), <b>aggregate</b> (research findings), <b>vote</b>, <b>rank</b>, or <b>resolve</b> (contradiction → arbiter + re-route). The thinking panel shows each phase live and streams the answer; the footer shows tokens used. Based on the <a href="references/AdaptOrch%20Task-Adaptive%20Multi%20Agent%20Orchestration.pdf">AdaptOrch</a> framework.</td></tr>
+<tr><td><b>Task-adaptive orchestration <em>(AdaptOrch)</em></b></td><td>ANet's default orchestration engine decomposes each request into a subtask dependency graph, measures its shape (parallelism ω, depth δ, coupling γ), and routes it to the right topology — <b>parallel</b>, <b>sequential</b>, <b>hierarchical</b>, or <b>hybrid</b> — runs it, then synthesizes the outputs with the operator that fits the join: <b>compose</b> (distinct parts), <b>aggregate</b> (research findings), <b>vote</b>, <b>rank</b>, or <b>resolve</b> (contradiction → arbiter + re-route). The thinking panel shows each phase live and streams the answer; the footer shows tokens used. Based on the <a href="references/AdaptOrch%20Task-Adaptive%20Multi%20Agent%20Orchestration.pdf">AdaptOrch</a> framework.</td></tr>
+<tr><td><b>Alternative engine <em>(QweenBee)</em></b></td><td>A second, swappable orchestration engine: instead of routing to a fixed topology, an LLM planner generates a <b>temporal communication graph</b> per task — who messages whom, in which round — and a temporal executor runs it directly. A skill bank distills Preserve/Modify/Avoid design rules from prior runs (conservative credit + a held-out acceptance gate before anything's trusted), and a built-in bench harness (<code>python -m anet.QweenBee.bench</code>) A/B-tests it against AdaptOrch on identical tasks. Pick it per pack with <b><code>/settings</code> → orchestration engine</b>, or <code>orchestration.engine: qweenbee</code> in <code>anet.config.yaml</code>.</td></tr>
 <tr><td><b>Builds its own integrations</b></td><td>The <b>ToolSmith</b> (<code>/newtool</code>), <b>MCPSmith</b> (<code>/addmcp</code>), and <b>AgentSmith</b> (<code>/newagent</code>) scaffold a new tool, MCP server, or agent from your code/description, validate it, then wire it into the agents you pick — editing only <code>exanet.config.yaml</code>, never the core.</td></tr>
 <tr><td><b>Shareable packs</b></td><td>Your whole setup — tools, agents, skills, MCP wiring, persona, <b>and its color theme</b> — is one folder. <b>PackSmith</b> (<code>/packsmith share</code>) bundles it into a zip (secrets stripped, README written); anyone runs <code>/packsmith add</code> + <code>/changepack</code> to get your exact setup. Switch between packs anytime.</td></tr>
 <tr><td><b>Themed, per pack</b></td><td>Pick a color theme with <code>/theme</code> (cyan · emerald · amber · violet · crimson · matrix · mono). The theme is stored <em>in the pack</em>, so different packs wear different colors — you can tell which workspace you're in at a glance, and the theme ships when you share the pack.</td></tr>
@@ -38,10 +39,10 @@ Use any model, per agent. Claude for code, Gemini for research, GPT for planning
 **Recommended — global `anet` command via [pipx](https://pipx.pypa.io):**
 
 ```bash
-pipx install https://github.com/Arsh910/Anet/releases/latest/download/anet-0.0.1-py3-none-any.whl
+pipx install https://github.com/Arsh910/Anet/releases/latest/download/anet-0.0.2-py3-none-any.whl
 ```
 
-<sub>(or install straight from a tag without a release upload: `pipx install git+https://github.com/Arsh910/Anet.git@v0.0.1` — `pip install …` works too if you prefer.)</sub>
+<sub>(or install straight from a tag without a release upload: `pipx install git+https://github.com/Arsh910/Anet.git@v0.0.2` — `pip install …` works too if you prefer.)</sub>
 
 ```bash
 anet
@@ -108,7 +109,7 @@ labelled prompt when it needs a path/description. Typing the argument inline sti
 | Command | What it does |
 |---|---|
 | `/agents` · `/tools` · `/mcps` | Show loaded agents / tools / MCP servers |
-| `/settings` | Config menu → keys · models/providers · tools/agents · an agent's prompt · persona · theme |
+| `/settings` | Config menu → keys · models/providers · tools/agents · an agent's prompt · persona · theme · orchestration engine |
 | `/theme` | Pick a color theme (per-pack — see below); `/theme <name>` to set directly |
 | `/keys` | Shortcut straight to your API keys |
 | `/skills` | List saved skills with usage counts |

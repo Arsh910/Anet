@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "anet"
-version = "0.0.1"
+version = "0.0.2"
 description = "A local, multi-agent AI assistant — run a different model per agent, with self-built tools, MCP, memory, and shareable packs."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -86,4 +86,10 @@ exclude = [
     "references",
     "dist",
     "anet-ui",
+    # SWE-bench harness scratch state (tests/SWE_bench/) — repo clones, a venv
+    # with non-Windows-readable symlinks, and Docker build/eval logs.
+    ".venv-swebench",
+    ".swebench_work",
+    ".swebench_cache",
+    "logs",
 ]
