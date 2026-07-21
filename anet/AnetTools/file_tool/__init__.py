@@ -20,7 +20,49 @@ except ImportError:
     _HAS_S2T = False
 
 
+# Read cap. An uncapped read_file is the single biggest source of context
+# bloat: the whole file lands in the trajectory and is then resent to the model
+# on EVERY subsequent step of the task. Reading anet/cli/app.py alone put ~30k
+# tokens into context in a measured run. Capping at ingestion beats trimming
+# afterwards — the bulk never gets paid for even once, and (unlike rewriting
+# history) it doesn't invalidate the prompt cache. The model is told exactly
+# how to page for the rest, so nothing is unreachable.
+_MAX_READ_LINES = 2000
+_MAX_READ_CHARS = 40_000
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _cap_read(text: str, path: str) -> tuple[str, dict]:
+    """Trim an over-long file read to the cap, appending a note telling the
+    model how to reach the rest. Returns (text, extra_result_fields)."""
+    lines = text.splitlines()
+    total = len(lines)
+
+    kept, reason = lines, ""
+    if total > _MAX_READ_LINES:
+        kept = lines[:_MAX_READ_LINES]
+        reason = f"first {_MAX_READ_LINES} of {total} lines"
+
+    out = "\n".join(kept)
+    if len(out) > _MAX_READ_CHARS:
+        out = out[:_MAX_READ_CHARS]
+        shown = out.count("\n") + 1
+        reason = f"first {shown} of {total} lines ({_MAX_READ_CHARS} char limit)"
+        kept = out.splitlines()
+
+    if not reason:
+        return text, {}
+
+    shown = len(kept)
+    note = (
+        f"\n\n[... truncated — showing {reason}. "
+        f"To read further, call read_lines on {path} with "
+        f"start_line={shown + 1} (and end_line as needed). "
+        f"Only read more if this portion did not contain what you needed. ...]"
+    )
+    return out + note, {"truncated": True, "total_lines": total, "lines_shown": shown}
+
 
 def _anet_files_dir() -> Path:
     """Sandbox base for agent-written relative paths — <home>/anet_files/."""
@@ -31,23 +73,41 @@ def _anet_files_dir() -> Path:
         return Path(__file__).parents[3] / "anet_files"
 
 
-def _resolve_safe_path(path: str, agent: str) -> Path:
+# Actions that only look at a file. Reads resolve differently from writes —
+# see _resolve_safe_path.
+_READ_ACTIONS = {
+    "read_file", "read_lines", "get_file_info", "list_directory",
+    "search_files", "parse_csv", "parse_json",
+}
+
+
+def _resolve_safe_path(path: str, agent: str, *, for_read: bool = False) -> Path:
     """
     Redirect relative paths or bare filenames to anet_files/<agent>/
     to keep the Anet codebase clean. Absolute paths are used as-is.
+
+    Reads are the exception: if a relative path names a file that actually
+    exists in the working directory, read it there. Sandboxing reads meant a
+    repo-relative path like "anet/cli/app.py" silently resolved into an empty
+    sandbox and failed — so the agent fell back to globbing to rediscover a
+    path it had just been handed, spending an extra model call and a directory
+    listing (which then sat in its context) per file. Writes still sandbox
+    unconditionally, so scratch output never lands in the repo.
     """
     p = Path(path)
     if p.is_absolute():
         return p
-    
-    # If it's a relative path starting with . or just a filename, redirect.
-    # We only do this if it's NOT the code_agent (which needs to work in the repo).
-    if agent != "code_agent":
-        safe_base = _anet_files_dir() / agent
-        safe_base.mkdir(parents=True, exist_ok=True)
-        return safe_base / p
-    
-    return p
+
+    # code_agent works inside the repo by design.
+    if agent == "code_agent":
+        return p
+
+    if for_read and p.exists():
+        return p
+
+    safe_base = _anet_files_dir() / agent
+    safe_base.mkdir(parents=True, exist_ok=True)
+    return safe_base / p
 
 
 def _fmt_size(n: int) -> str:
@@ -85,7 +145,8 @@ def _read_file(params: dict) -> dict:
                 text = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
             except json.JSONDecodeError:
                 pass
-        return {"result": text, "path": str(p), "size": _fmt_size(p.stat().st_size)}
+        text, extra = _cap_read(text, str(p))
+        return {"result": text, "path": str(p), "size": _fmt_size(p.stat().st_size), **extra}
     except Exception as exc:
         return {"error": f"read_file failed — {exc}"}
 
@@ -287,9 +348,14 @@ def _parse_json(params: dict) -> dict:
 
 
 def _read_lines(params: dict) -> dict:
-    path  = params.get("path", "")
-    start = int(params.get("start", 1))
-    end   = int(params.get("end", 50))
+    path = params.get("path", "")
+    # The schema advertises start_line/end_line, so that is what models send;
+    # the bare start/end spellings are kept as a fallback. Reading only the
+    # latter meant every call silently returned the default first 50 lines,
+    # whatever range was requested — which made paging through a large file
+    # impossible without any visible error.
+    start = int(params.get("start_line", params.get("start", 1)) or 1)
+    end   = int(params.get("end_line", params.get("end", 50)) or 50)
     p = Path(path)
     if not p.exists():
         return {"error": f"read_lines failed — path not found: {path}"}
@@ -385,13 +451,15 @@ async def run(params: dict) -> dict:
         return {"error": "action is required"}
 
     # Pre-resolve common path parameters to keep agent files out of the Anet root
+    _for_read = action in _READ_ACTIONS
     for key in ["path", "src", "dst", "root", "output_zip", "zip_path", "extract_to"]:
         if key in params and isinstance(params[key], str) and params[key].strip():
-            params[key] = str(_resolve_safe_path(params[key], agent))
+            params[key] = str(_resolve_safe_path(params[key], agent, for_read=_for_read))
 
-    # zip_files uses a list of paths
+    # zip_files uses a list of paths — these are sources being read into the zip
     if "paths" in params and isinstance(params["paths"], list):
-        params["paths"] = [str(_resolve_safe_path(p, agent)) for p in params["paths"]]
+        params["paths"] = [str(_resolve_safe_path(p, agent, for_read=True))
+                           for p in params["paths"]]
 
     handler = _DISPATCH.get(action)
     if handler is None:
@@ -414,7 +482,10 @@ SCHEMA = {
         "description": (
             "OS-level file system operations: read, write, copy, move, delete, rename, "
             "list, search, get info, parse CSV/JSON, read line ranges, zip and unzip. "
-            "Always use action= to specify the operation."
+            "Always use action= to specify the operation. "
+            "read_file returns at most 2000 lines and says so when it truncates — "
+            "use read_lines (start_line/end_line) to page through a large file, and "
+            "grep_tool to find the part you want instead of reading the whole thing."
         ),
         "parameters": {
             "type": "object",

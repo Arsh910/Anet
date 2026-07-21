@@ -25,7 +25,9 @@ import json
 import os
 import sys
 
-from openai import AsyncOpenAI, APITimeoutError, InternalServerError, RateLimitError
+from openai import (
+    AsyncOpenAI, APITimeoutError, BadRequestError, InternalServerError, RateLimitError,
+)
 from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall,
@@ -145,13 +147,95 @@ def _build_openai_client(provider: str) -> AsyncOpenAI:
 
 def _supports_anthropic_cache(provider: str, model: str) -> bool:
     """True if the (provider, model) pair accepts Anthropic-style cache_control
-    markers — native Anthropic, or Claude routed through OpenRouter/Vertex."""
+    markers — native Anthropic, or Claude routed through OpenRouter/Vertex.
+
+    This is now only the *known-good* list, used by the native Anthropic path.
+    Everything served over an OpenAI-compatible endpoint goes through
+    _create_with_cache_fallback, which ATTEMPTS caching regardless of model and
+    learns from the response — see there for why.
+    """
     if provider in ("anthropic", "claude", "vertex_anthropic", "vertex_claude"):
         return True
     if provider == "openrouter":
         m = (model or "").lower()
         return "claude" in m or m.startswith("anthropic/")
     return False
+
+
+# Models that answered a cache-marked request with a 400. Populated at runtime,
+# per process; a model lands here at most once per session.
+_CACHE_UNSUPPORTED: set[str] = set()
+
+
+async def _create_with_cache_fallback(
+    client,
+    *,
+    provider: str,
+    model: str,
+    messages: list[dict],
+    tool_schemas: list[dict],
+    agent: dict,
+    label: str = "",
+):
+    """Run one completion, attempting prompt-cache markers for ANY model.
+
+    Caching used to be gated on a hardcoded "is this Claude?" check, so every
+    other model paid full price for a prefix (system prompt + tool schemas +
+    the whole trajectory) that is identical on every step of an agent loop.
+    That is the single largest avoidable cost in a long task, so the default is
+    now to always try.
+
+    The catch: the markers don't just add a field, they restructure `content`
+    from a string into a block list. A provider that doesn't understand that
+    REJECTS the request (400) rather than ignoring it. So the first time a
+    given model 400s on a marked request we retry it once unmarked and record
+    the model as unsupported — every later call for that model skips the
+    markers outright. Cost of discovery: one failed request per model per
+    process. A 400 for any other reason fails the unmarked retry too and
+    propagates normally.
+    """
+    key = f"{provider}:{model}"
+    use_cache = key not in _CACHE_UNSUPPORTED
+
+    def _build(with_cache: bool) -> dict:
+        msgs, tools = messages, tool_schemas
+        if with_cache:
+            msgs = _cache_system_message(msgs)
+            msgs = _cache_last_message(msgs)
+            tools = _cache_last_tool(tools)
+        kwargs: dict = {"model": model, "messages": msgs}
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        return kwargs
+
+    where = f" ({label})" if label else ""
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return await client.chat.completions.create(**_build(use_cache))
+        except BadRequestError:
+            if not use_cache:
+                raise          # not about the markers — a real bad request
+            _CACHE_UNSUPPORTED.add(key)
+            use_cache = False
+            attempt -= 1       # probing for cache support isn't a failed try
+            print(
+                f"[agent_runner] '{model}'{where} rejected prompt-cache markers — "
+                f"continuing without caching for this model.",
+                file=sys.stderr,
+            )
+        except _RETRYABLE as exc:
+            if attempt >= _RETRY_ATTEMPTS:
+                raise
+            delay = _RETRY_DELAY * attempt
+            print(
+                f"[agent_runner] {type(exc).__name__} on '{model}'{where}, "
+                f"retrying in {delay}s (attempt {attempt}/{_RETRY_ATTEMPTS})...",
+                file=sys.stderr,
+            )
+            await asyncio.sleep(delay)
 
 
 _CACHE_CONTROL = {"type": "ephemeral"}
@@ -433,31 +517,13 @@ async def run(
     if provider in ("vertex_google", "vertex_anthropic", "vertex_claude"):
         client = build_vertex_client()
         model  = agent.get("model") or _DEFAULT_MODEL
-        if _supports_anthropic_cache(provider, model):
-            messages     = _cache_system_message(messages)
-            messages     = _cache_last_message(messages)
-            tool_schemas = _cache_last_tool(tool_schemas)
-        call_kwargs: dict = {"model": model, "messages": messages}
-        if tool_schemas:
-            call_kwargs["tools"]       = tool_schemas
-            call_kwargs["tool_choice"] = "auto"
-        for attempt in range(1, _RETRY_ATTEMPTS + 1):
-            try:
-                response = await client.chat.completions.create(**call_kwargs)
-                from anet.core import tokens as _tok
-                _tok.record(response, stage=agent.get("name"))
-                return _message_from_response(response, call_kwargs["model"])
-            except _RETRYABLE as exc:
-                if attempt < _RETRY_ATTEMPTS:
-                    delay = _RETRY_DELAY * attempt
-                    print(
-                        f"[agent_runner] {type(exc).__name__} on '{agent['model']}' (vertex), "
-                        f"retrying in {delay}s (attempt {attempt}/{_RETRY_ATTEMPTS})...",
-                        file=sys.stderr,
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    raise
+        response = await _create_with_cache_fallback(
+            client, provider=provider, model=model, messages=messages,
+            tool_schemas=tool_schemas, agent=agent, label="vertex",
+        )
+        from anet.core import tokens as _tok
+        _tok.record(response, stage=agent.get("name"))
+        return _message_from_response(response, model)
 
     # All other providers: OpenAI-compatible
     if provider not in _PROVIDERS:
@@ -471,35 +537,12 @@ async def run(
     client = _build_openai_client(provider)
     model  = agent.get("model") or _DEFAULT_MODEL
 
-    # Prompt caching for Anthropic models served via OpenAI-compatible endpoints
-    # (OpenRouter, Vertex). Adds cache_control markers the upstream propagates.
-    if _supports_anthropic_cache(provider, model):
-        messages     = _cache_system_message(messages)
-        messages     = _cache_last_message(messages)
-        tool_schemas = _cache_last_tool(tool_schemas)
-
-    call_kwargs: dict = {
-        "model":    model,
-        "messages": messages,
-    }
-    if tool_schemas:
-        call_kwargs["tools"]       = tool_schemas
-        call_kwargs["tool_choice"] = "auto"
-
-    for attempt in range(1, _RETRY_ATTEMPTS + 1):
-        try:
-            response = await client.chat.completions.create(**call_kwargs)
-            from anet.core import tokens as _tok
-            _tok.record(response, stage=agent.get("name"))
-            return _message_from_response(response, call_kwargs["model"])
-        except _RETRYABLE as exc:
-            if attempt < _RETRY_ATTEMPTS:
-                delay = _RETRY_DELAY * attempt  # 5s, 10s, 15s
-                print(
-                    f"[agent_runner] {type(exc).__name__} on '{agent['model']}', "
-                    f"retrying in {delay}s (attempt {attempt}/{_RETRY_ATTEMPTS})...",
-                    file=sys.stderr,
-                )
-                await asyncio.sleep(delay)
-            else:
-                raise
+    # Prompt caching is attempted for every model here, not just Claude — the
+    # helper probes once and remembers if an upstream rejects the markers.
+    response = await _create_with_cache_fallback(
+        client, provider=provider, model=model, messages=messages,
+        tool_schemas=tool_schemas, agent=agent,
+    )
+    from anet.core import tokens as _tok
+    _tok.record(response, stage=agent.get("name"))
+    return _message_from_response(response, model)

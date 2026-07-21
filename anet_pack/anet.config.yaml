@@ -12,7 +12,7 @@ theme: amber
 # Default is a free OpenRouter model so a single free key works out of the box.
 # Swap for a stronger model (e.g. anthropic/claude-sonnet-4.6) once you've added a key.
 manager:
-  model: anthropic/claude-sonnet-4.6
+  model: nvidia/nemotron-3-super-120b-a12b:free
   provider: openrouter
 
 # Per-agent overrides. Each agent uses the free default below; give any agent a
@@ -36,11 +36,11 @@ agents:
     provider: openrouter
 
   checker_agent:
-    model: google/gemma-4-26b-a4b-it
+    model: deepseek/deepseek-v4-flash
     provider: openrouter
 
   code_agent:
-    model: tencent/hy3:free
+    model: deepseek/deepseek-v4-flash
     provider: openrouter
     mcp: [ponytail, playwright, gentleman-book, open-design]  # playwright moved here (file_agent retired)
     task_types:
@@ -122,6 +122,23 @@ persona:
   soul_file: SOUL.md
   enabled: true
 
+# Trajectory reduction (AgentDiet, arXiv:2509.23586) — applies to EVERY engine.
+# Once a tool result lands in an agent's history it is resent on every later
+# step, so one big file read early in a long task is billed dozens of times.
+# When enabled, a cheap model rewrites one earlier step after each agent step,
+# replacing stale/verbose content with a short note. Reported ~40% fewer input
+# tokens on long coding tasks with no loss in task success.
+# Costs one extra (cheap) model call per long step — so it only pays off on
+# multi-step tool work, not short chats. Off by default; usage shows up under
+# the `diet` stage in the token footer.
+#diet:
+#  enabled: true
+#  model: openai/gpt-5.4-nano      # a CHEAP model — defaults to the manager model
+#  provider: openrouter
+#  theta: 500   # min tokens in a step before reducing it (and min saving to accept)
+#  a: 2         # reduce the step this far back — never the ones still in play
+#  b: 1         # steps of surrounding context given to the reducer
+
 # Orchestration (AdaptOrch) — task-adaptive multi-agent topology. The decomposer
 # breaks a request into a subtask DAG; later stages route it to a topology
 # (parallel / sequential / hierarchical / hybrid) by the DAG's shape, execute, and
@@ -129,7 +146,11 @@ persona:
 # when you want to (e.g. a cheap model for decomposition to cut cost). All keys are
 # optional; uncomment what you need.
 # orchestration:
-#   engine: adaptorch  # or: qweenbee (A/B fork under anet.QweenBee) — default: adaptorch
+#   engine: adaptorch  # or: qweenbee (A/B fork) · solo (single generalist agent, no decomposition — lowest per-turn token cost) — default: adaptorch
+#   # Solo engine (engine: solo only) — one agent, no decomposer/router/synthesis:
+#   # solo: { model: anthropic/claude-sonnet-4.6, provider: openrouter, max_steps: 60 }  # defaults to the manager model
+#   # solo.toolsets: [filesystem, shell, web, code_intel]  # default — add desktop, verify, or an mcp-backed toolset to opt in; [] = COMMON baseline only
+#   # solo.tools: [checker]                                 # extra individual tools beyond the toolsets above
 #   # Per-stage models (each defaults to the manager model if omitted):
 #   decomposer: { model: nex-agi/nex-n2-pro:free,     provider: openrouter }  # Phase 1
 #   merger:     { model: anthropic/claude-sonnet-4.6, provider: anthropic }   # Phase 5 — combine agreeing outputs
@@ -145,4 +166,4 @@ persona:
 #   # m_max: 16           # max total message edges
 #   # beta: 3             # max inbound edges to one node in one round
 orchestration:
-  engine: adaptorch
+  engine: solo

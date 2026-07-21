@@ -254,6 +254,14 @@ async def run(
     messages.extend(history)
     messages.append({"role": "user", "content": user_message})
 
+    # Trajectory reduction (AgentDiet). Everything up to here — system prompt,
+    # history, the task itself — is the fixed base and is never reduced; only
+    # the tool results the loop appends below are eligible. Off unless a
+    # `diet:` block enables it in anet.config.yaml.
+    from anet.core import diet as _diet
+    _diet_cfg = _diet.config()
+    _diet_base_len = len(messages)
+
     last_text: str = ""
     last_tool_result: str = ""
     offloaded: dict | None = None
@@ -429,6 +437,15 @@ async def run(
 
         if _stuck or _cancelled:
             break
+
+        # ── Trajectory reduction ──────────────────────────────────────────
+        # Rewrite one EARLIER step (s-a) now that the agent has moved past it,
+        # so its bulk stops being resent on every remaining step. Best-effort:
+        # returns 0 and changes nothing if disabled or if anything goes wrong.
+        if _diet_cfg["enabled"]:
+            await _diet.maybe_reduce(
+                messages, _diet_base_len, user_message, on_status, _diet_cfg
+            )
     else:
         # Safety cap hit — model never stopped calling tools
         on_status(f"[warning] safety cap reached ({cap} steps) — stopping")

@@ -1500,6 +1500,7 @@ async def _cmd_theme(arg: str) -> None:
 _ENGINES = [
     ("adaptorch", "AdaptOrch  — router (Algorithm 1) + fixed executors + synthesis dispatcher"),
     ("qweenbee",  "QweenBee   — LLM planner (temporal DAG) + temporal executor + skill bank"),
+    ("solo",      "Solo       — single generalist agent, no orchestration (lowest token cost)"),
 ]
 
 
@@ -1509,7 +1510,7 @@ def _active_engine() -> str:
         from anet.core.config_loader import load
         name = ((load() or {}).get("orchestration") or {}).get("engine", "adaptorch")
         name = str(name).lower()
-        return name if name in ("adaptorch", "qweenbee") else "adaptorch"
+        return name if name in ("adaptorch", "qweenbee", "solo") else "adaptorch"
     except Exception:
         return "adaptorch"
 
@@ -1519,7 +1520,7 @@ def _set_active_engine(name: str) -> bool:
     (comments preserved via ruamel). The block ships fully commented out, so
     this creates it if it isn't there yet. Returns False on an unknown name
     or if the config can't be written."""
-    if name not in ("adaptorch", "qweenbee"):
+    if name not in ("adaptorch", "qweenbee", "solo"):
         return False
     p = _anet_paths.config_path()
     if p is None or not p.exists():
@@ -2354,7 +2355,12 @@ async def _chat_turn(
 
     response = result.reply or "Done."
 
-    if result.step_results and live_status.log:
+    # Show the thinking panel whenever real work happened. `step_results` alone
+    # isn't the test — Solo does its work in one agent loop and returns none, so
+    # gating on it hid every status line (tool calls, diet trims) in that engine.
+    # A single log entry means the turn answered straight away (a trivial reply);
+    # anything more means there were steps worth showing.
+    if len(live_status.log) > 1:
         console.print(Padding(_thinking_panel(live_status.log), (0, 0, 1, 0)))
 
     console.print(Panel(
@@ -2366,9 +2372,18 @@ async def _chat_turn(
     # Per-turn token usage footer. When prompt caching is active, also surface
     # cache_read (cheap input replayed from the cache) and cache_creation (new
     # cache writes — billed at ~1.25× input) so the savings are visible.
+    #
+    # `net` is the part actually billed at full rate: fresh input (everything
+    # the cache did NOT serve) plus output. It's the closest single number to
+    # "what this turn really cost", since a large `in` sitting mostly on cache
+    # hits is far cheaper than the same number paid fresh. Trajectory trimming
+    # needs no subtracting here — trimmed tokens were never sent, so the saving
+    # already shows up as a smaller `in`; what `diet` reports is its own cost.
     if _usage and _usage.total:
+        fresh = max(_usage.prompt - _usage.cache_read, 0)
+        net = fresh + _usage.completion
         line = (
-            f"  [dim]Tokens: {_tokens.fmt(_usage.total)} "
+            f"  [dim]Tokens: {_tokens.fmt(_usage.total)} · net {_tokens.fmt(net)} "
             f"(in {_tokens.fmt(_usage.prompt)} · out {_tokens.fmt(_usage.completion)} · "
             f"{_usage.calls} calls"
         )
@@ -2376,6 +2391,9 @@ async def _chat_turn(
             line += f" · cache: {_tokens.fmt(_usage.cache_read)} hit"
             if _usage.cache_creation:
                 line += f", {_tokens.fmt(_usage.cache_creation)} write"
+        _diet_used = _usage.by_stage.get("diet", 0)
+        if _diet_used:
+            line += f" · diet: {_tokens.fmt(_diet_used)}"
         line += ")[/dim]"
         console.print(line)
     console.print()
@@ -2807,15 +2825,20 @@ async def main() -> None:
         def _make_engine(agents, tools, manager_tools):
             """Build the orchestration engine, selected by orchestration.engine in
             anet.config.yaml: 'adaptorch' (default, the task-adaptive 5-phase
-            pipeline) or 'qweenbee' (the A/B fork under anet.QweenBee)."""
+            pipeline), 'qweenbee' (the A/B fork under anet.QweenBee), or 'solo'
+            (single generalist agent, no decomposition — lowest per-turn cost)."""
             try:
                 from anet.core.config_loader import load
                 name = ((load() or {}).get("orchestration") or {}).get("engine", "adaptorch")
             except Exception:
                 name = "adaptorch"
-            if str(name).lower() == "qweenbee":
+            name = str(name).lower()
+            if name == "qweenbee":
                 from anet.QweenBee.coordinator import QweenBeeEngine
                 return QweenBeeEngine(agents, tools, manager_tools=manager_tools)
+            if name == "solo":
+                from anet.core.solo import SoloEngine
+                return SoloEngine(agents, tools, manager_tools=manager_tools)
             from anet.core.AdaptOrch.coordinator import AdaptOrchEngine
             return AdaptOrchEngine(agents, tools, manager_tools=manager_tools)
 
