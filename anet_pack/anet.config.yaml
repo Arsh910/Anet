@@ -6,7 +6,7 @@
 # Color theme for this pack — set it interactively with /theme, or by hand here.
 # It travels with the pack, so different packs can look different (handy for telling
 # them apart). Options: cyan · emerald · amber · violet · crimson · matrix · mono
-theme: amber
+theme: mono
 
 # Extra providers (optional) — any OpenAI-compatible /v1 endpoint. Built-ins
 # (openrouter · google · openai · anthropic · vertex_*) always work without
