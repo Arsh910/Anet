@@ -231,7 +231,14 @@ async def run(
     history     : flat conversation history (role/content dicts)
     on_status   : callback for status strings (printed by the caller)
     """
-    date_ctx = f"Current date and time: {datetime.now().strftime('%A, %B %d, %Y  %H:%M')} (local)."
+    # Date only — no clock time. This string opens the system prompt, which is
+    # the head of the cached prefix, so anything that changes here invalidates
+    # the whole cached block (system prompt + tool schemas) for that request.
+    # With HH:MM in it the prefix changed every 60 seconds, so in a real
+    # multi-turn session most turns started from a cold cache. Day granularity
+    # keeps the prefix stable for a whole session while still telling the model
+    # what today is; an agent that needs the actual time can call a tool.
+    date_ctx = f"Current date: {datetime.now().strftime('%A, %B %d, %Y')} (local)."
 
     # Inject relevant skills into the system prompt (fast file-based search, no model call)
     try:

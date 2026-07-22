@@ -123,14 +123,14 @@ def test_solo_config_explicit_override_wins():
     import anet.core.config_loader as cl
     saved = cl.load
     cl.load = lambda: {
-        "orchestration": {"solo": {"model": "m1", "provider": "p1", "max_steps": "20"}},
+        "orchestration": {"solo": {"model": "m1", "provider": "p1", "max_steps": "45"}},
         "manager": {"model": "m2", "provider": "p2"},
     }
     try:
         cfg = solo._solo_config()
     finally:
         cl.load = saved
-    assert cfg == {"model": "m1", "provider": "p1", "max_steps": 20}
+    assert cfg == {"model": "m1", "provider": "p1", "max_steps": 45}
 
 
 def test_solo_config_falls_back_to_manager():
@@ -141,7 +141,7 @@ def test_solo_config_falls_back_to_manager():
         cfg = solo._solo_config()
     finally:
         cl.load = saved
-    assert cfg == {"model": "m2", "provider": "p2", "max_steps": 60}
+    assert cfg == {"model": "m2", "provider": "p2", "max_steps": 20}
 
 
 def test_solo_config_defaults_when_nothing_set():
@@ -152,7 +152,7 @@ def test_solo_config_defaults_when_nothing_set():
         cfg = solo._solo_config()
     finally:
         cl.load = saved
-    assert cfg == {"model": "gemini-2.5-flash", "provider": "openrouter", "max_steps": 60}
+    assert cfg == {"model": "gemini-2.5-flash", "provider": "openrouter", "max_steps": 20}
 
 
 # ── 3. run_turn happy path ────────────────────────────────────────────────────

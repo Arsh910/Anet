@@ -33,12 +33,24 @@ _ROLE = (
     "You are {name}, a capable general assistant with tools for web "
     "research, file operations, shell commands, and code intelligence. "
     "Answer directly when you can; use tools when the task needs them. "
-    "Prefer the fewest tool calls that finish the job. For a large task "
-    "with independent parts, you may delegate a part to a specialist "
-    "agent via spawn_tool."
+    "Prefer the fewest tool calls that finish the job — for an open-ended "
+    "question, gather enough to answer well and then stop rather than "
+    "exhaustively searching. For a large task with independent parts, you "
+    "may delegate a part to a specialist agent via spawn_tool."
 )
 
 _DEFAULT_TOOLSETS = ["filesystem", "shell", "web", "code_intel"]
+
+# Step budget. Deliberately well below code_agent's 60: that cap exists for
+# grinding through a repo, where every step is aimed at a concrete goal. A
+# generalist answering an open-ended question ("what's the news?") has no such
+# stopping point, and each extra tool result is resent on every later step —
+# so a loose cap compounds. Measured: Solo took 13 steps (9 searches + 2
+# fetches, 214.6k input) on a news query that a specialist with max_steps=10
+# finished in 3 steps. Orchestrated engines get this ceiling for free by
+# routing to a bounded specialist; Solo has to set it explicitly.
+# Raise via orchestration.solo.max_steps for genuinely long solo work.
+_DEFAULT_MAX_STEPS = 20
 
 
 def _solo_config() -> dict:
@@ -52,7 +64,7 @@ def _solo_config() -> dict:
     return {
         "model":     solo.get("model")    or mgr.get("model")    or "gemini-2.5-flash",
         "provider":  solo.get("provider") or mgr.get("provider") or "openrouter",
-        "max_steps": int(solo.get("max_steps") or 60),
+        "max_steps": int(solo.get("max_steps") or _DEFAULT_MAX_STEPS),
     }
 
 

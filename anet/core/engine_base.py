@@ -23,13 +23,6 @@ from anet.core.context import on_status as _status_var
 
 # ── Manager model config (shared across engines — summary call, etc.) ─────────
 
-_MANAGER_PROVIDERS = {
-    "google":     ("https://generativelanguage.googleapis.com/v1beta/openai/", "GOOGLE_API_KEY"),
-    "openrouter": ("https://openrouter.ai/api/v1",                             "OPENROUTER_API_KEY"),
-    "openai":     ("https://api.openai.com/v1",                                "OPENAI_API_KEY"),
-}
-
-
 def _manager_cfg() -> tuple[str, str]:
     try:
         from anet.core.config_loader import manager_config
@@ -40,15 +33,24 @@ def _manager_cfg() -> tuple[str, str]:
 
 
 def _manager_client() -> tuple[AsyncOpenAI, str]:
+    """Client for the manager-model calls (rolling summary, etc.).
+
+    Reads agent_runner's provider registry rather than keeping its own copy —
+    otherwise a custom `providers:` entry would work for agents but fail here,
+    silently falling back to google for every summary call.
+    """
     model, provider = _manager_cfg()
     if provider in ("vertex_google", "vertex_anthropic", "vertex_claude"):
         from anet.core.agent_runner import build_vertex_client
         return build_vertex_client(), model
-    base_url, env_key = _MANAGER_PROVIDERS.get(provider, _MANAGER_PROVIDERS["google"])
-    api_key = os.getenv(env_key)
-    if not api_key:
+
+    from anet.core.agent_runner import _PROVIDERS, _DEFAULT_PROVIDER
+    cfg = _PROVIDERS.get(provider) or _PROVIDERS[_DEFAULT_PROVIDER]
+    env_key = cfg.get("env_key") or ""
+    api_key = os.getenv(env_key) if env_key else None
+    if env_key and not api_key:
         raise RuntimeError(f"{env_key} not set (needed for manager provider='{provider}')")
-    return AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=120), model
+    return AsyncOpenAI(api_key=api_key or "missing", base_url=cfg["base_url"], timeout=120), model
 
 
 def _context_settings() -> tuple[int, int]:

@@ -24,6 +24,7 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import Mapping
 
 from openai import (
     AsyncOpenAI, APITimeoutError, BadRequestError, InternalServerError, RateLimitError,
@@ -44,7 +45,7 @@ _RETRYABLE = (RateLimitError, InternalServerError, APITimeoutError)
 
 # ── OpenAI-compatible provider registry ──────────────────────────────────────
 
-_PROVIDERS: dict[str, dict] = {
+_BUILTIN_PROVIDERS: dict[str, dict] = {
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "env_key":  "OPENROUTER_API_KEY",
@@ -58,6 +59,65 @@ _PROVIDERS: dict[str, dict] = {
         "env_key":  "OPENAI_API_KEY",
     },
 }
+
+
+def _config_providers() -> dict[str, dict]:
+    """Extra OpenAI-compatible providers declared under `providers:` in
+    anet.config.yaml — a local gateway (OmniRoute, LiteLLM), a local model
+    server (ollama, LM Studio, vLLM), or any other /v1 endpoint.
+
+        providers:
+          ollama:
+            base_url: http://localhost:11434/v1
+            env_key: OLLAMA_API_KEY     # optional — omit if no auth is needed
+
+    Entries without a usable base_url are ignored rather than allowed to
+    produce a client that would fail confusingly at call time.
+    """
+    try:
+        from anet.core.config_loader import load
+        raw = (load() or {}).get("providers") or {}
+    except Exception:
+        return {}
+    out: dict[str, dict] = {}
+    if not isinstance(raw, dict):
+        return out
+    for name, cfg in raw.items():
+        if not isinstance(cfg, dict):
+            continue
+        base_url = str(cfg.get("base_url") or "").strip()
+        if not base_url:
+            continue
+        out[str(name).strip().lower()] = {
+            "base_url": base_url,
+            "env_key":  str(cfg.get("env_key") or "").strip(),
+        }
+    return out
+
+
+class _ProviderRegistry(Mapping):
+    """Built-in providers overlaid with anything from `providers:` in config.
+
+    Resolved on every access rather than at import, so a config edit or a
+    /changepack takes effect on the next turn without a restart. Presented as
+    a Mapping so the existing `provider in _PROVIDERS` / `_PROVIDERS[name]`
+    call sites across the codebase keep working unchanged — and so custom
+    providers reach ALL of them (agents, per-stage models, diet, skills,
+    memory), not just the agent path.
+    """
+
+    def _merged(self) -> dict[str, dict]:
+        merged = dict(_BUILTIN_PROVIDERS)
+        merged.update(_config_providers())   # config may also override a built-in
+        return merged
+
+    def __getitem__(self, key):  return self._merged()[key]
+    def __iter__(self):          return iter(self._merged())
+    def __len__(self):           return len(self._merged())
+    def __contains__(self, key): return key in self._merged()
+
+
+_PROVIDERS = _ProviderRegistry()
 
 _DEFAULT_PROVIDER = "openrouter"
 _DEFAULT_MODEL    = "gemini-2.5-flash"
@@ -113,10 +173,14 @@ def build_vertex_client() -> AsyncOpenAI:
 
 def _build_openai_client(provider: str) -> AsyncOpenAI:
     cfg     = _PROVIDERS[provider]
-    api_key = os.getenv(cfg["env_key"])
-    if not api_key:
+    env_key = cfg.get("env_key") or ""
+    api_key = os.getenv(env_key) if env_key else None
+    # A custom provider may declare no env_key at all — local servers (ollama,
+    # LM Studio, vLLM) accept any string. Only warn when a key was named but
+    # isn't set, which is a genuine misconfiguration.
+    if env_key and not api_key:
         print(
-            f"[agent_runner] WARNING: env var '{cfg['env_key']}' is not set "
+            f"[agent_runner] WARNING: env var '{env_key}' is not set "
             f"for provider '{provider}'.",
             file=sys.stderr,
         )
@@ -166,6 +230,45 @@ def _supports_anthropic_cache(provider: str, model: str) -> bool:
 # per process; a model lands here at most once per session.
 _CACHE_UNSUPPORTED: set[str] = set()
 
+# caching.attempt_all_models — resolved once per process.
+_CACHE_FORCE_ALL: bool | None = None
+
+
+def _attempt_cache_for(provider: str, model: str) -> bool:
+    """Whether to send cache_control markers for this (provider, model).
+
+    Markers are attempted for EVERY model by default. An agent loop resends
+    the same prefix (system prompt + tool schemas + trajectory) on every step,
+    so caching it is the single biggest saving available, and gating that on a
+    hardcoded "is this Claude?" check left every other model paying full price.
+
+    Two guards make this safe to do blind:
+      • a model that REJECTS the marker format (400) is retried once unmarked
+        and remembered — see _create_with_cache_fallback;
+      • `caching: {attempt_all_models: false}` in anet.config.yaml restricts it
+        back to the known-good list.
+
+    The case worth knowing about: a provider can ACCEPT the markers and still
+    cache worse, because they restructure `content` from a string into a block
+    list and some upstreams key their own implicit prefix cache on the plain
+    shape. Measured once on nemotron via OpenRouter (cache hits ~23% -> ~16%).
+    There is no error to catch there, so if a model's cache-hit rate drops
+    after an upgrade, set attempt_all_models: false and compare.
+    """
+    global _CACHE_FORCE_ALL
+    if f"{provider}:{model}" in _CACHE_UNSUPPORTED:
+        return False
+    if _supports_anthropic_cache(provider, model):
+        return True
+    if _CACHE_FORCE_ALL is None:
+        try:
+            from anet.core.config_loader import load
+            _CACHE_FORCE_ALL = bool(
+                ((load() or {}).get("caching") or {}).get("attempt_all_models", True))
+        except Exception:
+            _CACHE_FORCE_ALL = True
+    return _CACHE_FORCE_ALL
+
 
 async def _create_with_cache_fallback(
     client,
@@ -177,25 +280,21 @@ async def _create_with_cache_fallback(
     agent: dict,
     label: str = "",
 ):
-    """Run one completion, attempting prompt-cache markers for ANY model.
+    """Run one completion, applying prompt-cache markers when appropriate.
 
-    Caching used to be gated on a hardcoded "is this Claude?" check, so every
-    other model paid full price for a prefix (system prompt + tool schemas +
-    the whole trajectory) that is identical on every step of an agent loop.
-    That is the single largest avoidable cost in a long task, so the default is
-    now to always try.
+    Whether markers are sent is decided by _attempt_cache_for (known-good
+    models, plus anything opted in via caching.attempt_all_models).
 
-    The catch: the markers don't just add a field, they restructure `content`
-    from a string into a block list. A provider that doesn't understand that
-    REJECTS the request (400) rather than ignoring it. So the first time a
-    given model 400s on a marked request we retry it once unmarked and record
-    the model as unsupported — every later call for that model skips the
-    markers outright. Cost of discovery: one failed request per model per
-    process. A 400 for any other reason fails the unmarked retry too and
-    propagates normally.
+    The markers don't just add a field — they restructure `content` from a
+    string into a block list. A provider that doesn't understand that REJECTS
+    the request (400) rather than ignoring it. So the first time a given model
+    400s on a marked request we retry it once unmarked and record the model as
+    unsupported; every later call for that model skips the markers outright.
+    Cost of discovery: one failed request per model per process. A 400 for any
+    other reason fails the unmarked retry too and propagates normally.
     """
     key = f"{provider}:{model}"
-    use_cache = key not in _CACHE_UNSUPPORTED
+    use_cache = _attempt_cache_for(provider, model)
 
     def _build(with_cache: bool) -> dict:
         msgs, tools = messages, tool_schemas

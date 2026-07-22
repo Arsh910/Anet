@@ -8,11 +8,25 @@
 # them apart). Options: cyan · emerald · amber · violet · crimson · matrix · mono
 theme: amber
 
+# Extra providers (optional) — any OpenAI-compatible /v1 endpoint. Built-ins
+# (openrouter · google · openai · anthropic · vertex_*) always work without
+# this block; add one only if you run a local model server or a gateway.
+# `provider:` on the manager or any agent can then name it.
+#   env_key is optional — omit it for a local server that needs no auth.
+# providers:
+#   ollama:
+#     base_url: http://localhost:11434/v1
+#   lmstudio:
+#     base_url: http://localhost:1234/v1
+#   omniroute:                        # multi-provider gateway w/ quota fallback
+#     base_url: http://localhost:20128/v1
+#     env_key: OMNIROUTE_API_KEY
+
 # Manager — plans and coordinates every request.
 # Default is a free OpenRouter model so a single free key works out of the box.
 # Swap for a stronger model (e.g. anthropic/claude-sonnet-4.6) once you've added a key.
 manager:
-  model: nvidia/nemotron-3-super-120b-a12b:free
+  model: nvidia/nemotron-3-ultra-550b-a55b:free
   provider: openrouter
 
 # Per-agent overrides. Each agent uses the free default below; give any agent a
@@ -122,6 +136,20 @@ persona:
   soul_file: SOUL.md
   enabled: true
 
+# Prompt caching — ON for every agent, model and engine by default.
+# An agent loop resends the same prefix (system prompt + tool schemas + the
+# whole trajectory) on every step, so caching it is the biggest single saving
+# available. Anthropic-style cache_control markers are attempted everywhere; a
+# provider that rejects the format is detected on its first 400, retried once
+# without markers, and skipped from then on — so this is safe to leave on.
+# The one case to know about: a provider can ACCEPT the markers and still cache
+# worse, because they turn message content from a plain string into a block
+# list and some upstreams key their implicit cache on the plain shape (seen
+# once on a non-Claude model: cache hits 23%->16%). If you see a cache-hit drop
+# in the token footer, set this to false and compare.
+# caching:
+#   attempt_all_models: true
+
 # Trajectory reduction (AgentDiet, arXiv:2509.23586) — applies to EVERY engine.
 # Once a tool result lands in an agent's history it is resent on every later
 # step, so one big file read early in a long task is billed dozens of times.
@@ -131,13 +159,13 @@ persona:
 # Costs one extra (cheap) model call per long step — so it only pays off on
 # multi-step tool work, not short chats. Off by default; usage shows up under
 # the `diet` stage in the token footer.
-#diet:
-#  enabled: true
-#  model: openai/gpt-5.4-nano      # a CHEAP model — defaults to the manager model
-#  provider: openrouter
-#  theta: 500   # min tokens in a step before reducing it (and min saving to accept)
-#  a: 2         # reduce the step this far back — never the ones still in play
-#  b: 1         # steps of surrounding context given to the reducer
+# diet:
+#   enabled: true
+#   model: openai/gpt-5.4-nano      # a CHEAP model — defaults to the manager model
+#   provider: openrouter
+#   theta: 500   # min tokens in a step before reducing it (and min saving to accept)
+#   a: 2         # reduce the step this far back — never the ones still in play
+#   b: 1         # steps of surrounding context given to the reducer
 
 # Orchestration (AdaptOrch) — task-adaptive multi-agent topology. The decomposer
 # breaks a request into a subtask DAG; later stages route it to a topology
@@ -166,4 +194,4 @@ persona:
 #   # m_max: 16           # max total message edges
 #   # beta: 3             # max inbound edges to one node in one round
 orchestration:
-  engine: solo
+  engine: qweenbee

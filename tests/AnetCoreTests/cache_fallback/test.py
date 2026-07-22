@@ -64,7 +64,7 @@ def _tools():
     return [{"type": "function", "function": {"name": "t", "parameters": {}}}]
 
 
-def _call(client, provider="openrouter", model="some/model"):
+def _call(client, provider="openrouter", model="anthropic/claude-test"):
     return asyncio.run(ar._create_with_cache_fallback(
         client, provider=provider, model=model,
         messages=_messages(), tool_schemas=_tools(), agent={"name": "test"},
@@ -73,20 +73,40 @@ def _call(client, provider="openrouter", model="some/model"):
 
 def setup_function():
     ar._CACHE_UNSUPPORTED.clear()
+    ar._CACHE_FORCE_ALL = True         # default: attempt markers everywhere
 
 
-# ── Caching is attempted for everyone ────────────────────────────────────────
+# ── Who gets markers ─────────────────────────────────────────────────────────
 
-def test_cache_markers_sent_for_a_non_claude_model():
+def test_claude_model_is_marked():
     c = FakeClient()
-    assert _call(c, model="nvidia/nemotron-3-super-120b-a12b:free") == "OK_RESPONSE"
-    assert len(c.calls) == 1
-    assert FakeClient._is_marked(c.calls[0]), "markers should be attempted for any model"
+    assert _call(c, model="anthropic/claude-haiku-4.5") == "OK_RESPONSE"
+    assert FakeClient._is_marked(c.calls[0])
+
+
+def test_unknown_model_is_marked_by_default():
+    # Caching is attempted for every model — an agent loop resends the same
+    # prefix each step, so this is the biggest saving available. The 400
+    # fallback covers providers that reject the format.
+    c = FakeClient()
+    _call(c, model="nvidia/nemotron-3-super-120b-a12b:free")
+    assert FakeClient._is_marked(c.calls[0])
+
+
+def test_attempt_all_models_can_be_turned_off():
+    ar._CACHE_FORCE_ALL = False
+    c = FakeClient()
+    _call(c, model="nvidia/nemotron-3-super-120b-a12b:free")
+    assert not FakeClient._is_marked(c.calls[0])
+    # known-good models keep their markers regardless
+    c2 = FakeClient()
+    _call(c2, model="anthropic/claude-haiku-4.5")
+    assert FakeClient._is_marked(c2.calls[0])
 
 
 def test_system_prompt_and_last_tool_both_marked():
     c = FakeClient()
-    _call(c)
+    _call(c, model="anthropic/claude-haiku-4.5")
     kw = c.calls[0]
     sys_block = kw["messages"][0]["content"]
     assert isinstance(sys_block, list) and "cache_control" in sys_block[0]
@@ -105,20 +125,20 @@ def test_falls_back_once_then_succeeds_unmarked():
 
 def test_unsupported_model_is_remembered_for_the_session():
     c = FakeClient(reject_cache_markers=True)
-    _call(c, model="picky/model")
-    assert "openrouter:picky/model" in ar._CACHE_UNSUPPORTED
+    _call(c, model="anthropic/claude-picky")
+    assert "openrouter:anthropic/claude-picky" in ar._CACHE_UNSUPPORTED
 
     c2 = FakeClient(reject_cache_markers=True)
-    _call(c2, model="picky/model")
+    _call(c2, model="anthropic/claude-picky")
     assert len(c2.calls) == 1, "should not re-probe a model already known to reject"
     assert not FakeClient._is_marked(c2.calls[0])
 
 
 def test_other_models_unaffected_by_one_models_rejection():
     c = FakeClient(reject_cache_markers=True)
-    _call(c, model="picky/model")
+    _call(c, model="anthropic/claude-picky")
     c2 = FakeClient()
-    _call(c2, model="fine/model")
+    _call(c2, model="anthropic/claude-fine")
     assert FakeClient._is_marked(c2.calls[0])
 
 
@@ -127,7 +147,7 @@ def test_other_models_unaffected_by_one_models_rejection():
 def test_unrelated_400_propagates_and_is_not_mistaken_for_cache_rejection():
     c = FakeClient(always_400=True)
     try:
-        _call(c, model="broken/model")
+        _call(c, model="anthropic/claude-broken")
         assert False, "expected BadRequestError to propagate"
     except BadRequestError:
         pass
@@ -135,7 +155,7 @@ def test_unrelated_400_propagates_and_is_not_mistaken_for_cache_rejection():
     # It DOES get marked unsupported — the cost of not being able to tell the
     # two kinds of 400 apart. Harmless: worst case is losing caching on a model
     # whose requests were failing anyway.
-    assert "openrouter:broken/model" in ar._CACHE_UNSUPPORTED
+    assert "openrouter:anthropic/claude-broken" in ar._CACHE_UNSUPPORTED
 
 
 # ── Retry behaviour preserved ────────────────────────────────────────────────
