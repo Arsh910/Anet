@@ -57,6 +57,9 @@ for _w in ("chromadb", "fastembed", "huggingface_hub", "onnxruntime", "posthog")
 # UserWarning we replace with our own clean one-line tip at startup.
 warnings.filterwarnings("ignore", message=r".*unauthenticated requests.*")
 warnings.filterwarnings("ignore", message=r".*HF_TOKEN.*")
+# Self-conflict: we just disabled HF progress bars above, then some path in the
+# embedding stack tries to re-enable them for a download and HF warns it can't.
+warnings.filterwarnings("ignore", message=r".*Cannot enable progress bars.*")
 for _noisy in ("mem0", "chromadb", "httpx", "httpcore", "posthog", "opentelemetry",
                "huggingface_hub", "fastembed", "urllib3", "filelock"):
     logging.getLogger(_noisy).setLevel(logging.ERROR)

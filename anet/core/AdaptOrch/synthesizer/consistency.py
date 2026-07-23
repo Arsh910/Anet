@@ -41,6 +41,14 @@ def lexical_vectors(texts: list[str]) -> list[list[float]]:
 def _fastembed_vectors(texts: list[str]) -> list[list[float]]:
     global _FE_MODEL
     if _FE_MODEL is None:
+        # memory_store sets HF_HUB_DISABLE_PROGRESS_BARS + silences the resulting
+        # "can't enable progress bars" warning, but this module loads fastembed
+        # independently (no dependency on memory_store) and fires before that
+        # guard ever runs — so it needs its own copy.
+        import os
+        import warnings
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+        warnings.filterwarnings("ignore", message=r".*Cannot enable progress bars.*")
         from fastembed import TextEmbedding
         _FE_MODEL = TextEmbedding()
     return [list(v) for v in _FE_MODEL.embed(list(texts))]

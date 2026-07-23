@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
+from rich.box import HORIZONTALS
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
@@ -616,8 +617,10 @@ _CANCEL = object()       # returned by a cancellable prompt when the user presse
 _esc_cancels = False     # toggled per-prompt by _read_input(cancellable=True)
 
 
-def _make_prompt_session():
-    """Build a prompt_toolkit session with context-aware ESC + slash autocomplete."""
+def _make_prompt_session(erase_when_done: bool = False):
+    """Build a prompt_toolkit session with context-aware ESC + slash autocomplete.
+    `erase_when_done` wipes the raw input line once Enter is hit, so the caller can
+    reprint it however it likes (used for the main chat prompt's boxed echo)."""
     kb = KeyBindings()
 
     @kb.add("escape", eager=True)
@@ -634,26 +637,47 @@ def _make_prompt_session():
         completer=_SlashCompleter(),
         complete_while_typing=True,
         enable_open_in_editor=False,
+        erase_when_done=erase_when_done,
     )
 
 
-_pt_session: "PromptSession | None" = None
+_pt_session:      "PromptSession | None" = None
+_pt_chat_session:  "PromptSession | None" = None
 
 
-async def _read_input(prompt_text: str, cancellable: bool = False) -> str:
+async def _read_input(prompt_text: str, cancellable: bool = False, framed: bool = False) -> str:
     """Read one line of input. `cancellable=True` makes Esc abort the prompt and
     return "" (used by guided sub-prompts so Esc goes back); otherwise Esc clears the
-    line. Paste-safe when prompt_toolkit is available."""
-    global _pt_session, _esc_cancels
+    line. `framed=True` erases the raw input line on submit and reprints it inside a
+    content-fitting box, mirroring the boxed reply panel — used for the main chat
+    prompt only, not one-off guided sub-prompts (a persistent plain line there is
+    more useful than a box per short answer).
+    Paste-safe when prompt_toolkit is available."""
+    global _pt_session, _pt_chat_session, _esc_cancels
     if _HAS_PT:
-        if _pt_session is None:
-            _pt_session = _make_prompt_session()
+        if framed:
+            if _pt_chat_session is None:
+                _pt_chat_session = _make_prompt_session(erase_when_done=True)
+            session = _pt_chat_session
+        else:
+            if _pt_session is None:
+                _pt_session = _make_prompt_session()
+            session = _pt_session
         _esc_cancels = cancellable
+        # `framed`: no live box while typing — prompt_toolkit has no region that's both
+        # anchored to the input line AND height-bounded (show_frame fills the rest of
+        # the terminal; bottom_toolbar pins to the bottom of the whole viewport). Once
+        # Enter is hit, the raw line is erased and reprinted as a full boxed panel.
         try:
-            result = await _pt_session.prompt_async(prompt_text)
+            result = await session.prompt_async(prompt_text)
         finally:
             _esc_cancels = False
-        return "" if result is _CANCEL else result
+        if result is _CANCEL:
+            return ""
+        if framed and result.strip():
+            console.print(Panel(result, title="[bold]You[/bold]", title_align="left",
+                                border_style="dim", padding=(0, 1), box=HORIZONTALS))
+        return result
     # fallback: plain input() in executor
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, input, prompt_text)
@@ -1938,6 +1962,7 @@ async def _handle_slash(
 
     elif command == "/mcptest":
         name = arg.split()[0] if arg.strip() else ""
+        cached_result = None
         if not name:
             servers = []
             try:
@@ -1948,11 +1973,26 @@ async def _handle_slash(
             if not servers:
                 console.print("\n  [dim]No MCP servers configured in this pack (mcps/).[/dim]\n")
             else:
-                name = await _select_menu("Test an MCP server",
-                                          [(s, s) for s in servers],
-                                          subtitle="Select a server to connect-test.")
+                console.print("\n  [dim]checking servers...[/dim]")
+                from anet.core.mcp_doctor import diagnose
+                results = await asyncio.gather(
+                    *(diagnose(s) for s in servers), return_exceptions=True
+                )
+                status = dict(zip(servers, results))
+                options = []
+                for s in servers:
+                    r = status[s]
+                    ok = isinstance(r, dict) and r.get("ok")
+                    mark = "✓" if ok else "✗"
+                    options.append((s, f"{mark} {s}"))
+                name = await _select_menu(
+                    "Test an MCP server", options,
+                    subtitle="✓ connects now · ✗ not working. Select one for full detail.",
+                )
+                if name and isinstance(status.get(name), dict):
+                    cached_result = status[name]
         if name:
-            await _run_mcp_doctor(name)
+            await _run_mcp_doctor(name, cached_result)
 
     elif command == "/packsmith":
         sub_parts = arg.split(None, 1)
@@ -2193,16 +2233,23 @@ async def _run_packsmith(mode: str, arg: str, tool_map: dict) -> None:
     )
 
 
-async def _run_mcp_doctor(name: str) -> None:
-    """Connect-test an existing MCP server config (the /mcptest command)."""
-    from anet.core.mcp_doctor import diagnose
+async def _run_mcp_doctor(name: str, cached_result: dict | None = None) -> None:
+    """Connect-test an existing MCP server config (the /mcptest command).
+
+    `cached_result` skips the relaunch when the picker menu already diagnosed
+    every server to decide which ones to tick.
+    """
     console.print()
     console.print(f"  [bold accent]mcp doctor[/bold accent] [dim]testing[/dim] {name}\n")
-    try:
-        res = await diagnose(name)
-    except Exception as exc:
-        console.print(f"  [red]mcp doctor error: {exc}[/red]\n")
-        return
+    if cached_result is not None:
+        res = cached_result
+    else:
+        from anet.core.mcp_doctor import diagnose
+        try:
+            res = await diagnose(name)
+        except Exception as exc:
+            console.print(f"  [red]mcp doctor error: {exc}[/red]\n")
+            return
     for line in res["messages"]:
         style = "red" if line.startswith("FAIL") else ("green" if line.startswith("OK") else "dim")
         console.print(f"  [{style}]{line}[/{style}]")
@@ -2222,7 +2269,7 @@ async def _chat_turn(
 ) -> bool:
     """Run one input → response cycle. Returns True when the user wants to exit."""
     try:
-        user_input = await _read_input("You: ")
+        user_input = await _read_input("You: ", framed=True)
     except (EOFError, KeyboardInterrupt):
         console.print("\n[dim]Goodbye![/dim]")
         return True
@@ -2366,8 +2413,10 @@ async def _chat_turn(
     console.print(Panel(
         Markdown(response),
         title=f"[bold]{_ASSISTANT_NAME}[/bold]",
+        title_align="left",
         border_style="assistant",
         padding=(1, 2),
+        box=HORIZONTALS,
     ))
     # Per-turn token usage footer. When prompt caching is active, also surface
     # cache_read (cheap input replayed from the cache) and cache_creation (new
@@ -2912,7 +2961,13 @@ async def main() -> None:
                         _update_user_profile(store, thread_id),
                         timeout=15.0,
                     )
-                except (asyncio.TimeoutError, Exception):
+                # KeyboardInterrupt/CancelledError are BaseExceptions, so a plain
+                # `except Exception` lets a second Ctrl+C (impatient user during the
+                # save) escape here and skip the MCP teardown below — leaving stdio
+                # transports to be GC'd after the loop closes, which is what spews
+                # "I/O operation on closed pipe" on Windows. Swallow them too: we're
+                # already exiting, and the profile is best-effort.
+                except (Exception, KeyboardInterrupt, asyncio.CancelledError):
                     pass
         finally:
             # Tear down MCP subprocesses cleanly BEFORE the loop closes, so their
@@ -2920,14 +2975,19 @@ async def main() -> None:
             try:
                 from anet.core import mcp_loader
                 await mcp_loader.disconnect_all()
-            except Exception:
+            except (Exception, KeyboardInterrupt, asyncio.CancelledError):
                 pass
 
 
 def run_cli() -> None:
     """Synchronous console entry point (used by the `anet` command and the root
     main.py dev shim). Wraps the async main() in asyncio.run."""
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Ctrl+C during shutdown itself — main() already ran its cleanup in a
+        # finally block. A bare traceback here just looks like a crash on exit.
+        console.print("[dim]Goodbye![/dim]")
 
 
 if __name__ == "__main__":

@@ -10,5 +10,5 @@ writes real skills automatically after complex, self-corrected tasks, and inject
 relevant ones into future tasks. You can hand-author skills too — keep `## <name>`
 as the first line and `**Applies to:**` as a one-line trigger. Safe to delete.
 **Created:** 2026-01-01
-**Used:** 0
+**Used:** 3
 **Last improved:** 2026-01-01

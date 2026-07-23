@@ -17,8 +17,8 @@ tools:
 #   to let an agent delegate to other agents, add `spawn_tool` to its tools
 agents:
   - name: tele_agent
-    model: openai/gpt-oss-20b:free
-    provider: openrouter
+    model: agentrouter/deepseek-v3.2
+    provider: opminroute
     enabled: true                # needs creds in ExAgents/tele_agent/.env
     prompt_file: ExAgents/tele_agent/prompt.md
     tools: [tele_tool]

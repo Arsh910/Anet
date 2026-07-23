@@ -1,34 +1,21 @@
-# anet.config.yaml — models, memory, and per-agent settings for this pack.
-# Edit with /settings. Only the keys you set here override the built-in defaults.
-# API keys live in ~/.anet/.env (set them with /keys).
 # Providers: openrouter · google · openai · anthropic · vertex_google · vertex_anthropic
 
 # Color theme for this pack — set it interactively with /theme, or by hand here.
-# It travels with the pack, so different packs can look different (handy for telling
-# them apart). Options: cyan · emerald · amber · violet · crimson · matrix · mono
 theme: mono
 
 # Extra providers (optional) — any OpenAI-compatible /v1 endpoint. Built-ins
-# (openrouter · google · openai · anthropic · vertex_*) always work without
-# this block; add one only if you run a local model server or a gateway.
-# `provider:` on the manager or any agent can then name it.
-#   env_key is optional — omit it for a local server that needs no auth.
-# providers:
+providers:
 #   ollama:
 #     base_url: http://localhost:11434/v1
 #   lmstudio:
 #     base_url: http://localhost:1234/v1
-#   omniroute:                        # multi-provider gateway w/ quota fallback
-#     base_url: http://localhost:20128/v1
-#     env_key: OMNIROUTE_API_KEY
+  omniroute:                        # multi-provider gateway w/ quota fallback
+    base_url: http://localhost:20128/v1
+    env_key: OMNIROUTE_API_KEY
 
 # Manager — plans and coordinates every request.
 # Default is a free OpenRouter model so a single free key works out of the box.
 # Swap for a stronger model (e.g. anthropic/claude-sonnet-4.6) once you've added a key.
-manager:
-  model: nvidia/nemotron-3-ultra-550b-a55b:free
-  provider: openrouter
-
 # Per-agent overrides. Each agent uses the free default below; give any agent a
 # stronger model/provider as you like. Omit an agent entirely to use the manager's.
 #   max_steps        — tool-call cap (defaults: research 10, file 25, computer 20, checker 8, code 60)
@@ -40,29 +27,36 @@ manager:
 #     model: anthropic/claude-sonnet-4.6
 #     provider: anthropic
 #     mcp: [codegraph]
+
+manager:
+  model: nvidia/nvidia/nemotron-3-ultra-550b-a55b
+  provider: omniroute
+
 agents:
   research_agent:
-    model: google/gemma-4-26b-a4b-it
-    provider: openrouter
+    model: nvidia/google/gemma-4-31b-it
+    provider: omniroute
 
   computer_agent:
-    model: openai/gpt-oss-20b:free
-    provider: openrouter
+    model: nvidia/qwen/qwen3.5-397b-a17b
+    provider: omniroute
 
   checker_agent:
-    model: deepseek/deepseek-v4-flash
-    provider: openrouter
+    model: nvidia/nvidia/nemotron-3-super-120b-a12b
+    provider: omniroute
 
   code_agent:
-    model: deepseek/deepseek-v4-flash
-    provider: openrouter
+    model: siliconflow/moonshotai/Kimi-K2.6
+    provider: omniroute
     mcp: [ponytail, playwright, gentleman-book, open-design]  # playwright moved here (file_agent retired)
     task_types:
     - "ponytail mcp"
     - "playwright mcp"
     - "gentleman-book"
     - "open-design"
+
 # Self-improving skills — written after complex tasks, injected into relevant ones.
+
 skills:
   enabled: true
   creation_threshold: 6        # min tool calls before a skill is considered
@@ -71,17 +65,7 @@ skills:
   stale_after_days: 30         # Curator archives agent-made skills unused this long
   curator_interval_hours: 12   # Curator won't re-run more often than this
 
-# Memory — long-term, cross-session memory (local Chroma vector store + on-device
-# fastembed embeddings + your LLM). Stored under ~/.anet/memory/. Two backends:
-#   recmem (default) → native 3-tier recurrence memory (subconscious→episodic→
-#                      semantic); the LLM is invoked only when an interaction
-#                      RECURS, so most turns cost zero memory tokens. Data lives
-#                      under ~/.anet/memory/recmem/.
-#   mem0             → mem0-backed flat store (LLM fact-extraction per pass).
-#                      Data lives under ~/.anet/memory/chroma/.
-# The memory LLM defaults to the manager's model; override just for memory below.
-#   model: nex-agi/nex-n2-pro:free
-#   provider: openrouter
+
 memory:
   backend: recmem              # recmem | mem0  (switch takes effect on next start)
   user_profile_enabled: true   # run a memory-extraction pass on session exit
@@ -90,8 +74,6 @@ memory:
   incremental_interval: 5      # turns between background memory extractions (0 = off)
 
   # RecMem tuning (backend: recmem). Consolidation fires when an incoming
-  # interaction finds >= recurrence_threshold similar snippets (cosine >=
-  # sim_threshold) already buffered; dedup_threshold skips near-identical facts.
   recurrence_threshold: 2
   sim_threshold: 0.72
   dedup_threshold: 0.92
@@ -104,10 +86,6 @@ memory:
     chatter.
 
   # Categories an explicit save is classified into BY THE LLM (no hardcoded tags).
-  # always_inject: true  → reaches its applies_to agents every task, even when it
-  #                        shares no keywords (how standing preferences get applied).
-  # always_inject: false → retrieved only when relevant to the task.
-  # Edit freely: add your own (e.g. a 'security_rule' that always reaches code_agent).
   categories:
   - {name: preference, always_inject: true, description: "A standing instruction or
       style to apply automatically — naming conventions, tone, output format, coding
@@ -122,8 +100,6 @@ memory:
       that doesn't fit the above."}
 
 # Context (short-term memory) — every turn the model sees a rolling summary of
-# older turns plus as many recent turns as fit a token budget. The summary updates
-# automatically when turns overflow the budget (one extra LLM call, only then).
 context:
   enabled: true
   recent_tokens: 3000          # tokens of recent turns kept verbatim before summarising
@@ -136,29 +112,11 @@ persona:
   soul_file: SOUL.md
   enabled: true
 
-# Prompt caching — ON for every agent, model and engine by default.
-# An agent loop resends the same prefix (system prompt + tool schemas + the
-# whole trajectory) on every step, so caching it is the biggest single saving
-# available. Anthropic-style cache_control markers are attempted everywhere; a
-# provider that rejects the format is detected on its first 400, retried once
-# without markers, and skipped from then on — so this is safe to leave on.
-# The one case to know about: a provider can ACCEPT the markers and still cache
-# worse, because they turn message content from a plain string into a block
-# list and some upstreams key their implicit cache on the plain shape (seen
-# once on a non-Claude model: cache hits 23%->16%). If you see a cache-hit drop
-# in the token footer, set this to false and compare.
-# caching:
-#   attempt_all_models: true
+# Prompt caching — ON for every agent, model and engine by default. (make sure for this, models are from anthropic)
+caching:
+  attempt_all_models: false
 
 # Trajectory reduction (AgentDiet, arXiv:2509.23586) — applies to EVERY engine.
-# Once a tool result lands in an agent's history it is resent on every later
-# step, so one big file read early in a long task is billed dozens of times.
-# When enabled, a cheap model rewrites one earlier step after each agent step,
-# replacing stale/verbose content with a short note. Reported ~40% fewer input
-# tokens on long coding tasks with no loss in task success.
-# Costs one extra (cheap) model call per long step — so it only pays off on
-# multi-step tool work, not short chats. Off by default; usage shows up under
-# the `diet` stage in the token footer.
 # diet:
 #   enabled: true
 #   model: openai/gpt-5.4-nano      # a CHEAP model — defaults to the manager model
@@ -167,31 +125,17 @@ persona:
 #   a: 2         # reduce the step this far back — never the ones still in play
 #   b: 1         # steps of surrounding context given to the reducer
 
-# Orchestration (AdaptOrch) — task-adaptive multi-agent topology. The decomposer
-# breaks a request into a subtask DAG; later stages route it to a topology
-# (parallel / sequential / hierarchical / hybrid) by the DAG's shape, execute, and
-# synthesize. Per-stage models default to the manager model — override a stage only
-# when you want to (e.g. a cheap model for decomposition to cut cost). All keys are
-# optional; uncomment what you need.
 # orchestration:
-#   engine: adaptorch  # or: qweenbee (A/B fork) · solo (single generalist agent, no decomposition — lowest per-turn token cost) — default: adaptorch
-#   # Solo engine (engine: solo only) — one agent, no decomposer/router/synthesis:
-#   # solo: { model: anthropic/claude-sonnet-4.6, provider: openrouter, max_steps: 60 }  # defaults to the manager model
-#   # solo.toolsets: [filesystem, shell, web, code_intel]  # default — add desktop, verify, or an mcp-backed toolset to opt in; [] = COMMON baseline only
-#   # solo.tools: [checker]                                 # extra individual tools beyond the toolsets above
-#   # Per-stage models (each defaults to the manager model if omitted):
-#   decomposer: { model: nex-agi/nex-n2-pro:free,     provider: openrouter }  # Phase 1
-#   merger:     { model: anthropic/claude-sonnet-4.6, provider: anthropic }   # Phase 5 — combine agreeing outputs
-#   arbiter:    { model: anthropic/claude-sonnet-4.6, provider: anthropic }   # Phase 5 — resolve conflicts
-#   # Router thresholds (paper-calibrated defaults; tune per pack):
-#   # theta_omega: 0.5   # min parallelism ratio to prefer the parallel topology
-#   # theta_gamma: 0.6   # coupling above this prefers hierarchical
-#   # theta_delta: 5     # min subtasks for hierarchical
-#   # theta_cs:    0.7   # synthesis consistency threshold (merge vs. arbiter)
-#   # QweenBee planner (engine: qweenbee only) — temporal communication DAG:
-#   # planner: { model: nex-agi/nex-n2-pro:free, provider: openrouter }  # defaults to manager model
-#   # t_max: 4            # max communication rounds in a generated graph
-#   # m_max: 16           # max total message edges
-#   # beta: 3             # max inbound edges to one node in one round
+  # AdaptOrch
+    # theta_omega: 0.5   # min parallelism ratio to prefer the parallel topology
+    # theta_gamma: 0.6   # coupling above this prefers hierarchical
+    # theta_delta: 5     # min subtasks for hierarchical
+    # theta_cs:    0.7   # synthesis consistency threshold (merge vs. arbiter)
+
+  # QweenBee planner (engine: qweenbee only) — temporal communication DAG:
+    # t_max: 4            # max communication rounds in a generated graph
+    # m_max: 16           # max total message edges
+    # beta: 3             # max inbound edges to one node in one round
+
 orchestration:
   engine: qweenbee
