@@ -210,6 +210,92 @@ def _memory_block(agent: dict, task: str) -> str:
     )
 
 
+# ── Graceful budget exhaustion ──────────────────────────────────────────────────
+# When an agent hits its step cap or gets stuck, don't dump raw trajectory JSON as
+# the result. Make ONE tools-disabled call so the model turns what it has into a
+# coherent best-effort answer — structured for partial work, honest about gaps.
+
+_FINAL_ANSWER_INSTRUCTION = (
+    "You have reached your step budget and can no longer call tools. Do NOT attempt any "
+    "tool call. Using ONLY the work already done above, give your best final answer now.\n\n"
+    "If the task is essentially complete, state the answer/result directly.\n"
+    "If it is partial, structure your reply:\n"
+    "- Done: what was actually accomplished (concrete — files, commands, results).\n"
+    "- Result: the answer or deliverable produced so far.\n"
+    "- Incomplete: what still remains, and the single most useful next step.\n\n"
+    "Report ONLY what the work above actually supports. Never invent results, success, "
+    "commands, or output that is not present above."
+)
+
+
+def _seal_dangling_tool_calls(msgs: list[dict]) -> list[dict]:
+    """Stub any tool_calls in the trailing assistant message that never got a
+    result (the stuck case breaks mid-loop), so appending a user message doesn't
+    violate provider role-alternation."""
+    out = list(msgs)
+    last_asst = next(
+        (i for i in range(len(out) - 1, -1, -1)
+         if out[i].get("role") == "assistant" and out[i].get("tool_calls")),
+        None,
+    )
+    if last_asst is None:
+        return out
+    answered = {m.get("tool_call_id") for m in out[last_asst + 1:] if m.get("role") == "tool"}
+    for tc in out[last_asst]["tool_calls"]:
+        tcid = tc.get("id")
+        if tcid and tcid not in answered:
+            out.append({"role": "tool", "tool_call_id": tcid,
+                        "content": json.dumps({"error": "skipped — step limit reached"})})
+    return out
+
+
+async def _final_answer(agent: dict, messages: list[dict], on_status: Callable) -> str:
+    """One tools-disabled model call to salvage a coherent answer from an exhausted
+    or stuck loop. Empty tool_map → no schemas offered → the model must reply in text."""
+    on_status(f"{agent.get('name', 'agent')}: wrapping up...")
+    msgs = _seal_dangling_tool_calls(messages) + [
+        {"role": "user", "content": _FINAL_ANSWER_INSTRUCTION}
+    ]
+    try:
+        resp = await agent_runner.run(agent, {}, msgs)
+        return (resp.content or "").strip()
+    except Exception as exc:
+        print(f"[orchestrator] final-answer call failed: {exc}", file=sys.stderr)
+        return ""
+
+
+# ── Cheap trajectory prune (no LLM) ──────────────────────────────────────────────
+# A bulky tool result is resent to the model on EVERY later step. This replaces
+# old, large tool-result content with a short placeholder — no model call (unlike
+# diet.py's reflect, which is why this can be always-on). Self-limiting: a no-op
+# until a task accumulates more than the protected tail of tool messages.
+# ponytail: heuristic tail-protect; if it ever prunes something still needed, the
+# placeholder tells the model to re-run the tool, and it can be config-gated later.
+_PRUNE_MIN_CHARS = 800      # only bulky results are worth pruning
+_PRUNE_PROTECT_TAIL = 6     # keep this many most-recent tool results intact
+_PRUNE_PLACEHOLDER = json.dumps(
+    {"pruned": "old tool output cleared to save context — re-run the tool if you still need it"}
+)
+
+
+def prune_old_tool_results(messages: list[dict], base_len: int) -> int:
+    """Replace bulky OLD tool-result content (past the base, before the protected
+    tail) with a placeholder. Returns chars saved. Never touches the base
+    (system + history + task) or the most-recent tool results still in use."""
+    tool_idxs = [i for i in range(base_len, len(messages))
+                 if messages[i].get("role") == "tool"]
+    if len(tool_idxs) <= _PRUNE_PROTECT_TAIL:
+        return 0
+    saved = 0
+    for i in tool_idxs[:-_PRUNE_PROTECT_TAIL]:
+        content = messages[i].get("content") or ""
+        if len(content) <= _PRUNE_MIN_CHARS or content == _PRUNE_PLACEHOLDER:
+            continue
+        saved += len(content) - len(_PRUNE_PLACEHOLDER)
+        messages[i]["content"] = _PRUNE_PLACEHOLDER
+    return saved
+
+
 # ── Main loop ──────────────────────────────────────────────────────────────────
 
 async def run(
@@ -247,19 +333,26 @@ async def run(
     except Exception:
         _skill_block = ""
 
+    # Cached-vs-ephemeral split (Hermes lesson): keep the system prompt BYTE-STABLE
+    # across a session so the provider-side cache_control'd system block keeps
+    # hitting. Per-turn relevance (skills, memory) depends on the current message,
+    # so it rides on the USER message instead of mutating the cached system prompt
+    # every turn. (date_ctx is day-granular, so the system prompt is stable per day.)
     _sys_content = f"{date_ctx}\n\n{agent['system_prompt']}"
-    if _skill_block:
-        _sys_content += f"\n\n{_skill_block}"
 
-    # Inject relevant memory (facts + preferences) so it reaches agents that don't
-    # carry the memory_tool, scoped to relevance so memory-free tasks stay clean.
+    # Relevant memory (facts + preferences) reaches agents that don't carry the
+    # memory_tool; scoped to relevance so memory-free tasks stay clean.
     _mem_block = _memory_block(agent, user_message)
+
+    _turn_ctx = ""
+    if _skill_block:
+        _turn_ctx += f"{_skill_block}\n\n"
     if _mem_block:
-        _sys_content += f"\n\n{_mem_block}"
+        _turn_ctx += f"{_mem_block}\n\n"
 
     messages: list[dict] = [{"role": "system", "content": _sys_content}]
     messages.extend(history)
-    messages.append({"role": "user", "content": user_message})
+    messages.append({"role": "user", "content": _turn_ctx + user_message})
 
     # Trajectory reduction (AgentDiet). Everything up to here — system prompt,
     # history, the task itself — is the fixed base and is never reduced; only
@@ -446,17 +539,21 @@ async def run(
             break
 
         # ── Trajectory reduction ──────────────────────────────────────────
-        # Rewrite one EARLIER step (s-a) now that the agent has moved past it,
-        # so its bulk stops being resent on every remaining step. Best-effort:
-        # returns 0 and changes nothing if disabled or if anything goes wrong.
+        # Cheap no-LLM pass first: clear stale bulky tool outputs so they stop
+        # being resent every step. Always on, self-limiting, protects the tail.
+        prune_old_tool_results(messages, _diet_base_len)
+        # Then the LLM reflect (diet) rewrites one EARLIER step for a smarter
+        # takeaway. Best-effort: no-op if disabled or if anything goes wrong.
         if _diet_cfg["enabled"]:
             await _diet.maybe_reduce(
                 messages, _diet_base_len, user_message, on_status, _diet_cfg
             )
     else:
-        # Safety cap hit — model never stopped calling tools
-        on_status(f"[warning] safety cap reached ({cap} steps) — stopping")
-        text = (
+        # Safety cap hit — model never stopped calling tools. Salvage a coherent
+        # answer instead of dumping raw trajectory.
+        on_status(f"[warning] safety cap reached ({cap} steps) — wrapping up")
+        final = await _final_answer(agent, messages, on_status)
+        text = final or (
             f"[INCOMPLETE — safety cap of {cap} steps reached]\n\n"
             + (last_tool_result or last_text or "")
         )
@@ -468,7 +565,8 @@ async def run(
         }
 
     if _stuck:
-        text = (
+        final = await _final_answer(agent, messages, on_status)
+        text = final or (
             f"[INCOMPLETE — stuck in loop, same tool called {_CYCLE_REPEAT}× with identical args]\n\n"
             + (last_tool_result or last_text or "")
         )
