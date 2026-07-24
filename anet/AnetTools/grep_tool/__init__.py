@@ -126,16 +126,25 @@ def _python_search(
     if root.is_file():
         files = [root]
     else:
-        for p in sorted(root.rglob("*")):
-            if not p.is_file():
-                continue
-            if any(part in _EXCLUDE_DIRS for part in p.parts):
-                continue
-            if glob_pat and not p.match(glob_pat):
-                continue
-            if p.stat().st_size > _MAX_FILE_BYTES:
-                continue
-            files.append(p)
+        # os.walk with onerror lets us SKIP unreadable dirs (Windows reparse
+        # points / dangling symlinks raise WinError 1920, permission-denied, etc.)
+        # instead of aborting the whole search — rglob() raises mid-iteration on
+        # those and takes the entire grep down with it.
+        import os
+        for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _e: None):
+            # Prune excluded dirs in place so os.walk never descends into them.
+            dirnames[:] = [d for d in dirnames if d not in _EXCLUDE_DIRS]
+            for fn in filenames:
+                p = Path(dirpath) / fn
+                if glob_pat and not p.match(glob_pat):
+                    continue
+                try:
+                    if not p.is_file() or p.stat().st_size > _MAX_FILE_BYTES:
+                        continue
+                except OSError:
+                    continue   # broken symlink / inaccessible entry — skip it
+                files.append(p)
+        files.sort()
 
     truncated = False
     for fpath in files:

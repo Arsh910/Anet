@@ -1,0 +1,296 @@
+URL: https://www.google.com/
+
+url: https://www.google.com/
+title: Google
+viewport: 1151x683
+---
+<body />
+  <div />
+    <div role=navigation />
+      [1]<a href=https://about.google/?fg=1&utm_source=google-IN&utm_medium=referral&utm_campaign=hp-header>About</a>
+      [2]<a href=https://store.google.com/IN?utm_source=hp_header&utm_medium=google_ooo&utm_campaign=GS100042&hl=en-IN>Store</a>
+      <div />
+        <div />
+          <div />
+            <header id=gb role=none />
+              <div />
+                <div />
+                  [3]<a aria-label=Gmail href=https://mail.google.com/mail/?authuser=0&ogbl>Gmail</a>
+                <div />
+                  [4]<a aria-label=Search for Images href=/imghp?hl=en&authuser=0&ogbl>Images</a>
+              <div id=gbwa />
+                <div />
+                  [6]<a aria-label=Google apps href=https://www.google.co.in/intl/en/about/products aria-expanded=false role=button tabindex=0 />
+                    [5]<svg />
+              <div />
+                [11]<a aria-label=Google Account: Arshdeep Palial  
+(arshdeeppalial@gmail.com) href=https://accounts.google.com/SignOutOptions?hl=en&continue=https://www.google.com/&ec=futura_exp_og_si_72776762_e aria-expanded=false aria-haspopup=true role=button tabindex=0 />
+                  [8]<div />
+                    [7]<svg />
+                  [10]<div />
+                    [9]<svg />
+                <div />
+                  |iframe|[F0]<iframe role=presentation name=app src=https://ogs.google.com/u/0/widget/app?eom=1&awwd=1&gpa=3&em=2&dpi=89978449&origin=https%3A%2F%2Fwww.… /> (cross-origin, use: opencli browser frames + browser eval --frame <index>)
+          <g-snackbar id=ow15 />
+            <div />
+              <div />
+                <div />
+                  <span>Something went wrong. Your history wasn't deleted.</span>
+    <div id=LS8OJ />
+      <div />
+        <svg aria-label=Google role=img />
+    <div />
+      <dialog id=spch-dlg />
+        <div id=spch />
+          [14]<button id=spchx aria-label=close />
+            [13]<span />
+              [12]<svg />
+          <div id=rs1SNc />
+            <div />
+              <div />
+                [20]<span id=DfEdTb />
+                  [19]<div />
+                    [15]<span />
+                    [18]<div />
+                      [16]<span />
+                      [17]<span />
+              <div />
+                <svg />
+      <form action=/search autocomplete=off method=GET role=search />
+        <div />
+          <div />
+            <div />
+              <div />
+                [24]<button aria-label=Remove file attachment tabindex=0 />
+                  <div tabindex=-1 />
+                    <div />
+                      <svg />
+                    [23]<div />
+                      [22]<span />
+                        [21]<svg />
+              <div />
+                <div />
+                  <div />
+                    <div />
+                      <span />
+                        [26]<button aria-label=Add files, tools, and select a model aria-haspopup=menu tabindex=0 />
+                          <span />
+                            [25]<svg />
+                    <div />
+                      <ul role=menu />
+                        <li role=presentation />
+                          [32]<button role=menuitem tabindex=0 />
+                            [28]<span />
+                              [27]<svg />
+                            [29]<span>Upload image</span>
+                            [31]<span />
+                              [30]<svg />
+                        <li role=presentation />
+                          [38]<button role=menuitem tabindex=0 />
+                            [34]<span />
+                              [33]<svg />
+                            [35]<span>Upload file</span>
+                            [37]<span />
+                              [36]<svg />
+                        <div>Tools</div>
+                        <li />
+                          <ul aria-label=Tools role=group />
+                            <li role=presentation />
+                              [43]<button role=menuitemradio tabindex=0 />
+                                [39]<span>🍌</span>
+                                [40]<span>Create images</span>
+                                [42]<span />
+                                  [41]<svg />
+                        <div>Gemini 3 models</div>
+                        <li />
+                          <ul aria-label=Gemini 3 models role=group />
+                            <li role=presentation />
+                              [49]<button role=menuitemradio tabindex=0 />
+                                [45]<span />
+                                  [44]<svg />
+                                [46]<span>Auto</span>
+                                [48]<span />
+                                  [47]<svg />
+                            <li role=presentation />
+                              [55]<button role=menuitemradio tabindex=0 />
+                                [51]<span />
+                                  [50]<svg />
+                                [52]<span>Pro</span>
+                                [54]<span />
+                                  [53]<svg />
+                      [56]<input accept=image/avif,image/bmp,image/jpeg,image/png,image/webp,image/heif,image/heic type=file />
+                      [57]<input accept=application/pdf,image/avif,image/bmp,image/jpeg,image/png,image/webp,image/heif,image/heic type=file />
+                <div />
+                  [58]<textarea title=Search aria-label=Search aria-expanded=false aria-haspopup=false autocomplete=off id=APjFqb maxlength=2048 name=q role=combobox />
+                <div />
+                  <div />
+                    <div />
+                      <span />
+                        [60]<div aria-label=Search by voice role=button tabindex=0 />
+                          [59]<svg />
+                    <div />
+                      <span />
+                        [62]<div aria-label=Search by image role=button tabindex=0 />
+                          [61]<svg />
+                  [64]<button tabindex=0 role=link />
+                    <div />
+                      <span />
+                        [63]<svg />
+                      <span>AI Mode</span>
+                  [67]<button aria-label=Send tabindex=0 type=submit />
+                    [66]<span />
+                      [65]<svg />
+              <div />
+                <div />
+                  [73]<button tabindex=0 />
+                    [68]<span>🍌</span>
+                    [69]<span id=sb-tool-label-4>Create</span>
+                    [71]<span />
+                      [70]<svg />
+                    [72]<span id=sb-accessible-label-4>Remove Create Images</span>
+            <div />
+              [74]<div />
+              <div aria-label=Choose what you’re giving feedback on role=dialog tabindex=-1 />
+                <div id=_ByNjapSLF6ySseMPuJmpsQs_7 />
+                  [75]<span aria-label=Close Choose what you’re giving feedback on role=button tabindex=0 />
+                    <svg />
+                  <div role=heading>Choose what you’re giving feedback on</div>
+              <div />
+                <li id=YMXe role=presentation />
+                  <div />
+                    <div />
+                      <svg />
+                    <div />
+                      [76]<div role=option />
+                      [82]<div aria-label=See more role=button tabindex=0 />
+                        [77]<hr />
+                        [81]<div />
+                          [78]<span>See more</span>
+                          [80]<span />
+                            [79]<svg />
+                    [83]<div role=button />
+                      <div role=presentation>Delete</div>
+                <li id=d6ItKb role=presentation />
+                  <div />
+                    <div id=fU0xAb role=presentation />
+                      <div />
+                        [84]<div role=option />
+                        [87]<div aria-label=Word pronunciation role=button />
+                          [86]<span />
+                            [85]<svg />
+                <li id=TN4rFf role=presentation />
+                  <div />
+                    <div role=presentation />
+                      [88]<div role=option />
+                <div />
+                  <center />
+                    [89]<input value=Google Search aria-label=Google Search name=btnK role=button tabindex=0 type=submit />
+                    [90]<input value=I'm Feeling Lucky aria-label=I'm Feeling Lucky name=btnI type=submit />
+              <div />
+                [92]<div role=button tabindex=0 />
+                  [91]<div>Report inappropriate predictions</div>
+              <div id=TWnylf />
+                <g-dropdown-menu />
+                  <g-popup id=ow18 />
+                    [96]<div aria-expanded=false aria-haspopup=true role=button tabindex=0 aria-label=See more />
+                      [95]<div />
+                        [94]<span />
+                          [93]<svg />
+                    <div />
+                      <g-menu role=menu tabindex=-1 />
+                        [97]<g-menu-item role=menuitem tabindex=0 />
+                          <div>Dismiss</div>
+              [99]<div id=dh215c role=presentation />
+                [98]<div role=option tabindex=0 />
+            <div />
+              <center />
+                [100]<input value=Google Search aria-label=Google Search name=btnK role=button tabindex=0 type=submit />
+                [101]<input value=I'm Feeling Lucky aria-label=I'm Feeling Lucky name=btnI type=submit />
+            <g-snackbar id=ow14 />
+              <div aria-live=polite />
+                <div />
+                  <div />
+                    <div />
+                      <span />
+                        <span />
+                          [105]<div aria-label=Close role=button tabindex=0 />
+                            [104]<div />
+                              [103]<span />
+                                [102]<svg />
+        <div id=tophf />
+          [106]<input name=sca_esv value=0412e53d4c33cd42 type=hidden />
+          [107]<input name=sxsrf value=APpeQnuT5683gswbYK2Qa4MaOk1pwNJKgQ:1784881927421 type=hidden />
+          [108]<input name=source type=hidden value=hp />
+          [109]<input value=ByNjapSLF6ySseMPuJmpsQs name=ei type=hidden />
+          [110]<input value=ABILxe8AAAAAamMxF7Q4pmkmhN-L60BE5TdRTI_HZ_QA name=iflsig type=hidden />
+    <div />
+      <div id=gws-output-pages-elements-homepage_additional_languages__als />
+        <div id=SIvCob />
+          Google offered in:
+          [111]<a href=/setprefs?sig=0_Ia5Ak-jCKxoDf0Hlgiei8vSrLfs%3D&hl=hi&source=homepage&sa=X&ved=%E2%80%A6>हिन्दी</a>
+          [112]<a href=/setprefs?sig=0_Ia5Ak-jCKxoDf0Hlgiei8vSrLfs%3D&hl=bn&source=homepage&sa=X&ved=%E2%80%A6>বাংলা</a>
+          [113]<a href=/setprefs?sig=0_Ia5Ak-jCKxoDf0Hlgiei8vSrLfs%3D&hl=te&source=homepage&sa=X&ved=%E2%80%A6>తెలుగు</a>
+          [114]<a href=/setprefs?sig=0_Ia5Ak-jCKxoDf0Hlgiei8vSrLfs%3D&hl=mr&source=homepage&sa=X&ved=%E2%80%A6>मराठी</a>
+          [115]<a href=/setprefs?sig=0_Ia5Ak-jCKxoDf0Hlgiei8vSrLfs%3D&hl=ta&source=homepage&sa=X&ved=%E2%80%A6>தமிழ்</a>
+          [116]<a href=/setprefs?sig=0_Ia5Ak-jCKxoDf0Hlgiei8vSrLfs%3D&hl=gu&source=homepage&sa=X&ved=%E2%80%A6>ગુજરાતી</a>
+          [117]<a href=/setprefs?sig=0_Ia5Ak-jCKxoDf0Hlgiei8vSrLfs%3D&hl=kn&source=homepage&sa=X&ved=%E2%80%A6>ಕನ್ನಡ</a>
+          [118]<a href=/setprefs?sig=0_Ia5Ak-jCKxoDf0Hlgiei8vSrLfs%3D&hl=ml&source=homepage&sa=X&ved=%E2%80%A6>മലയാളം</a>
+          [119]<a href=/setprefs?sig=0_Ia5Ak-jCKxoDf0Hlgiei8vSrLfs%3D&hl=pa&source=homepage&sa=X&ved=%E2%80%A6>ਪੰਜਾਬੀ</a>
+    <div />
+      <div role=contentinfo />
+        <div>India</div>
+        <div />
+          <div />
+            [120]<a href=/intl/en_in/ads/?subid=ww-ww-et-g-awa-a-g_hpafoot1_1!o2&utm_source=google.com&%E2%80%A6>Advertising</a>
+            [121]<a href=/services/?subid=ww-ww-et-g-awa-a-g_hpbfoot1_1!o2&utm_source=google.com&utm_me%E2%80%A6>Business</a>
+            [122]<a href=https://google.com/search/howsearchworks/?fg=1>How Search works</a>
+          <div />
+            [123]<a href=https://policies.google.com/privacy?hl=en-IN&fg=1>Privacy</a>
+            [124]<a href=https://policies.google.com/terms?hl=en-IN&fg=1>Terms</a>
+            <span />
+              <span />
+                <g-popup />
+                  [125]<div aria-expanded=false aria-haspopup=true role=button tabindex=0 />
+                    <div aria-haspopup=true>Settings</div>
+                  <div />
+                    <g-menu role=menu tabindex=-1 />
+                      <g-menu-item role=none />
+                        <div role=none />
+                          [126]<a href=/preferences?hl=en-IN&fg=1 role=menuitem tabindex=-1>Search settings</a>
+                      <g-menu-item role=none />
+                        <div role=none />
+                          [127]<a href=/advanced_search?hl=en-IN&fg=1 role=menuitem tabindex=-1>Advanced search</a>
+                      <g-menu-item role=none />
+                        <div role=none />
+                          [128]<a href=https://myactivity.google.com/privacyadvisor/search?utm_source=googlemenu&fg=1 role=menuitem tabindex=-1>Your data in Search</a>
+                      <g-menu-item role=none />
+                        <div role=none />
+                          [129]<a href=https://myactivity.google.com/product/search?utm_source=google&hl=en-IN&fg=1 role=menuitem tabindex=-1>Search history</a>
+                      <g-menu-item role=none />
+                        <div role=none />
+                          [130]<a href=https://support.google.com/websearch/?p=ws_results_help&hl=en-IN&fg=1 role=menuitem tabindex=-1>Search help</a>
+                      <g-menu-item role=none />
+                        <div role=none />
+                          [131]<span role=menuitem tabindex=-1>Send feedback</span>
+                      <g-menu-item role=none />
+                        <div role=none />
+                          [136]<div id=YUIDDb role=menuitem tabindex=-1 />
+                            [135]<div role=link tabindex=0 />
+                              Dark theme: On
+                              [134]<div />
+                                [133]<span />
+                                  [132]<svg />
+  [137]<textarea name=csi />
+  <div>Google apps</div>
+  <div />
+    <div />
+      <div>Google Account</div>
+      <div>Arshdeep Palial</div>
+      <div>arshdeeppalial@gmail.com</div>
+  |iframe|[F1]<iframe id=hfcr src=https://accounts.google.com/RotateCookiesPage?og_pid=538&rot=3&origin=https%3A%2F%2Fwww.google.com&exp_id=0 /> (cross-origin, use: opencli browser frames + browser eval --frame <index>)
+---
+compounds (2):
+  [56] {"control":"file","multiple":false,"current":[],"accept":"image/avif,image/bmp,image/jpeg,image/png,image/webp,image/heif,image/heic"}
+  [57] {"control":"file","multiple":false,"current":[],"accept":"application/pdf,image/avif,image/bmp,image/jpeg,image/png,image/webp,image/heif,image/heic"}
+---
+interactive: 137 | iframes: 0

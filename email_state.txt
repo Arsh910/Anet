@@ -1,0 +1,931 @@
+URL: https://mail.google.com/mail/u/0/#inbox/FMfcgzQhVXBmxhtLQvcqLclDxBMmhZTq
+
+url: https://mail.google.com/mail/u/0/#inbox/FMfcgzQhVXBmxhtLQvcqLclDxBMmhZTq
+title: Fable 5 has moved to usage credits - arshdeeppalial@gmail.com - Gmail
+viewport: 1266x750
+---
+<body />
+  |iframe|<iframe tabindex=-1 />
+  <div id=loading />
+    <div id=stb-msg />
+      If you're having trouble loading, visit the .
+      [1]<a href=https://support.google.com/mail?p=fix-gmail-loading&authuser=0>Gmail Help Centre</a>
+    <div id=loadingError />
+      <p />
+        This is taking longer than usual. .
+        [3]<a href=/mail/u/0/ id=reloadurl />
+          [2]<b>Try reloading the page</b>
+      <div />
+        If that doesn't work, you can:
+        <ol />
+          <li />
+            <form id=undefined action=?ui=html&zy=d method=post />
+              If you're on a slow connection, try .
+              [4]<input type=hidden name=at value=null />
+              [5]<input type=submit value=basic HTML view />
+          <li />
+            For more troubleshooting tips, visit the .
+            [6]<a href=https://support.google.com/mail/answer/8767?src=sl&hl=en-GB>Help Centre</a>
+  [7]<input type=text name=hist_state id=hist_state value=inbox/FMfcgzQhVXBmxhtLQvcqLclDxBMmhZTq />
+  <div />
+    [8]<div tabindex=0 />
+    <div />
+      <div />
+        <div />
+          <div />
+            <div id=:d />
+              <h1 />
+                <header id=gb role=banner />
+                  <div />
+                    <div />
+                      [10]<div aria-expanded=false aria-label=Main menu role=button tabindex=0 />
+                        [9]<svg />
+                      [12]<div aria-label=Go back title=Go back role=button tabindex=0 />
+                        [11]<svg />
+                      [14]<div aria-label=Close role=button tabindex=0 />
+                        [13]<svg />
+                      <div />
+                        <div />
+                          [15]<a aria-label=Gmail href=/#inbox />
+                    <div />
+                      <div />
+                        <form method=get role=search id=aso_search_form_anchor />
+                          [17]<button aria-label=Close search />
+                            [16]<svg />
+                          <div />
+                            |table|
+                            | tab | tab |
+                            | --- | --- |
+                            | tab |     |
+                          |table|
+                          |     |     |
+                          | --- | --- |
+                          |     |     |
+                          |     |     |
+                          [19]<button role=button aria-label=Advanced search options />
+                            [18]<svg />
+                          [21]<button aria-label=Search mail role=button aria-disabled=true />
+                            [20]<svg />
+                      <div />
+                        <div />
+                          [23]<a role=button id=lZwQje tabindex=0 aria-label=Support aria-expanded=false aria-haspopup=true />
+                            [22]<svg />
+                        [27]<div id=M842Cd role=menu tabindex=0 />
+                          [24]<div aria-label=Help tabindex=-1 role=menuitem>Help</div>
+                          [25]<div aria-label=Training tabindex=-1 role=menuitem>Training</div>
+                          [26]<div aria-label=Send feedback to Google tabindex=-1 role=menuitem>Send feedback to Google</div>
+                        <div />
+                          [29]<a role=button tabindex=0 aria-label=Settings aria-expanded=false aria-haspopup=true />
+                            [28]<svg />
+                        <div />
+                          [33]<div id=gsc-gab-17 role=button aria-label=Studio aria-disabled=false tabindex=0 />
+                            [30]<svg />
+                            [32]<div />
+                              [31]<div>0</div>
+                        <div />
+                          <span />
+                            [38]<button aria-label=Ask Gemini />
+                              [34]<span />
+                              <span />
+                                [36]<span />
+                                  [35]<svg />
+                              [37]<div />
+                    <div />
+                      <div />
+                        <div />
+                          <div id=gbwa />
+                            <div />
+                              [40]<a aria-label=Google apps href=https://www.google.co.in/intl/en-GB/about/products?tab=mh aria-expanded=false role=button tabindex=0 />
+                                [39]<svg />
+                        <div />
+                          <div />
+                            [44]<a aria-expanded=false aria-label=Google Account: Arshdeep Palial  
+(arshdeeppalial@gmail.com) href=https://accounts.google.com/SignOutOptions?hl=en-GB&continue=https://mail.google.com/mail/&service=mail&ec=GBRAFw tabindex=0 role=button />
+                              <div />
+                                [41]<svg />
+                              [43]<div />
+                                [42]<svg />
+                      <div />
+                        |iframe|[F0]<iframe role=presentation name=app src=https://ogs.google.com/u/0/widget/app?awwd=1&gpa=3&em=2&dpi=70251319&origin=https%3A%2F%2Fmail.googl… /> (cross-origin, use: opencli browser frames + browser eval --frame <index>)
+            <div />
+              <div id=:j />
+                <div />
+                  <div />
+                    <nobr />
+                      [45]<div id=:12 tabindex=0 role=button aria-label=Close />
+        <div />
+          <div role=navigation />
+            <div />
+              <div />
+                [46]<div role=button tabindex=0>Compose</div>
+            <div />
+              <div />
+                <div />
+                  <div />
+                    <div id=:l2 />
+                      <div />
+                        <div />
+                          <div />
+                            <div />
+                              <div id=:l3 />
+                                <div />
+                                  <div />
+                                    <div />
+                                      <div id=:li />
+                                        <div />
+                                          <div />
+                                            <div>8,021</div>
+                                    <div />
+                                      <div id=:lp />
+                                        <div />
+                                          <div />
+                                            <div>16</div>
+                                <div />
+                                  <div />
+                                    <div />
+                                      <div id=:lu />
+                                        <div />
+                                          <div />
+                                            <div>323</div>
+                                          <div />
+                                            [49]<div tabindex=0 aria-haspopup=true />
+                                              [48]<div />
+                                                [47]<div>▼</div>
+                              <div />
+                                [51]<span role=button id=:lb aria-label=More labels tabindex=0 />
+                                  [50]<span />
+                        <div />
+                          <span role=heading>Labels</span>
+                          [52]<div aria-label=Create new label role=button tabindex=0 type=button />
+                        <div />
+                          <div />
+                            <div />
+                              <div />
+                                [56]<span role=button id=:lc aria-label=More labels tabindex=0 />
+                                  [53]<span>More</span>
+                                  [55]<span />
+                                    [54]<div />
+          <div />
+            <div />
+              <div />
+                <div />
+                  <div id=:4 />
+                    <div />
+                      <div />
+                        <div />
+                          <div />
+                            <div />
+                              <div />
+                                [62]<div id=:21 role=button tabindex=0 aria-haspopup=true aria-expanded=false aria-label=Select />
+                                  [60]<div />
+                                    [58]<span aria-checked=false role=checkbox />
+                                      [57]<div role=presentation />
+                                    [59]<div />
+                                  [61]<div />
+                              <div />
+                                [65]<div role=button aria-label=Archive aria-disabled=true />
+                                  [64]<div />
+                                    [63]<div />
+                                [68]<div role=button tabindex=0 aria-label=Report spam />
+                                  [67]<div />
+                                    [66]<div />
+                                [71]<div role=button tabindex=0 aria-label=Delete />
+                                  [70]<div />
+                                    [69]<div />
+                              <div />
+                                [74]<div role=button tabindex=0 aria-label=Mark as read />
+                                  [73]<div />
+                                    [72]<div />
+                                [77]<div role=button tabindex=0 aria-label=Mark as unread />
+                                  [76]<div />
+                                    [75]<svg />
+                                [81]<div id=:22 role=button tabindex=0 aria-haspopup=false aria-expanded=false aria-label=Move to />
+                                  [79]<div />
+                                    [78]<div />
+                                  [80]<div />
+                              <div />
+                                [84]<div role=button tabindex=0 aria-label=Refresh />
+                                  [83]<div />
+                                    [82]<div />
+                              <div />
+                                <div>Fetching mail...</div>
+                              <div />
+                                [88]<div id=:23 role=button tabindex=0 aria-label=More email options aria-haspopup=false aria-expanded=false />
+                                  [86]<div />
+                                    [85]<div />
+                                  [87]<div />
+                              <div role=menu aria-haspopup=true />
+                                <div />
+                                  [90]<div role=menuitem id=:k8 />
+                                    [89]<div>All</div>
+                                  [92]<div role=menuitem id=:k9 />
+                                    [91]<div>None</div>
+                                  [94]<div role=menuitem id=:ka />
+                                    [93]<div>Read</div>
+                                  [96]<div role=menuitem id=:kb />
+                                    [95]<div>Unread</div>
+                                  [98]<div role=menuitem id=:kc />
+                                    [97]<div>Starred</div>
+                                  [100]<div role=menuitem id=:kd />
+                                    [99]<div>Unstarred</div>
+                        <div />
+                          <div />
+                            <span />
+                              [106]<div id=:km role=button aria-expanded=false tabindex=0 aria-haspopup=false aria-label=Show more messages />
+                                [105]<span />
+                                  of
+                                  [103]<span />
+                                    –
+                                    [101]<span>1</span>
+                                    [102]<span>50</span>
+                                  [104]<span>9,768</span>
+                              [107]<div id=:ko role=button aria-disabled=true aria-label=Newer />
+                              [110]<div id=:kp role=button tabindex=0 aria-label=Older />
+                                [108]<span />
+                                [109]<img src=images/cleardot.gif />
+                    <div />
+                      <div />
+                        <div />
+                          <div />
+                            [111]<div title=Back to Inbox role=button tabindex=0 />
+                          <div />
+                            [112]<div title=Archive role=button tabindex=0 />
+                            [113]<div title=Report spam role=button tabindex=0 />
+                            [114]<div title=Delete role=button tabindex=0 />
+                          <div />
+                            [116]<div title=Mark as unread role=button tabindex=0 />
+                              <div />
+                                [115]<svg />
+                            [118]<div id=:ox title=Move to role=button tabindex=0 aria-haspopup=true aria-expanded=false />
+                              [117]<div />
+                          <div />
+                            [120]<div id=:oy title=More role=button tabindex=0 aria-label=More email options aria-haspopup=true aria-expanded=false />
+                              [119]<div />
+                      <div />
+                        <div />
+                          <div />
+                            <span id=:oz />
+                              of
+                              <span>1</span>
+                              <span>9,768</span>
+                            [121]<div id=:p0 role=button aria-label=Newer aria-disabled=true />
+                            [123]<div id=:p1 role=button tabindex=0 aria-label=Older />
+                              [122]<span />
+                  <div />
+                    |scroll|<div id=:3 /> (0↑ 0.5↓)
+                      <div id=:1 />
+                        <div />
+                          <div />
+                            <div />
+                              <h2 tabindex=-1>Conversations</h2>
+                            <div />
+                              |table|
+                              | Primary | 50 newPromotionsMia Bennett – All Unlimited: every top model — until July 25 | 50 newSocialLinkedIn – 👤 Arshdeep, add Gouri Singh Rawat | 50 newUpdatesnse_alerts – Funds/Securities Balance |     |     |
+                              | ------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | --- | --- |
+                              |         |                                          |                                          |                                          |     |     |
+                            <div />
+                              <div />
+                                <div id=:1o role=tabpanel />
+                                  <div />
+                                    <div />
+                                      <div />
+                                        [128]<h3 id=:18 tabindex=0 role=button />
+                                          [124]<img src=//ssl.gstatic.com/ui/v1/icons/mail/images/cleardot.gif id=:1b />
+                                          [127]<div id=:19 />
+                                            [125]<span id=:1a title=Person-to-person conversations and messages that don't appear in other tabs.>Primary</span>
+                                            [126]<span id=s />
+                                        [135]<div aria-label=Show more messages tabindex=0 role=button />
+                                          <span />
+                                            [134]<div id=:kh />
+                                              [133]<span />
+                                                of
+                                                [131]<span />
+                                                  –
+                                                  [129]<span>1</span>
+                                                  [130]<span>50</span>
+                                                [132]<span>9,768</span>
+                                      <div />
+                                        [138]<div aria-label=Inbox section options role=button aria-expanded=false tabindex=0 aria-haspopup=false />
+                                          [136]<div />
+                                          [137]<div />
+                                    <div />
+                                      <div />
+                                        <div />
+                                          <div>Your Primary tab is empty.</div>
+                                          <p>Personal messages and messages that don't appear in other tabs will be shown here.</p>
+                                          <p />
+                                            To add or remove tabs, click .
+                                            [139]<span id=:kf tabindex=0>inbox settings</span>
+                                  <div />
+                                    <div />
+                                      |table|
+                                      |     |     |     | unread, Claude Team, Fable 5 has moved to usage credits, 13:09, Claim your one-time usage credit before August 2. ͏ ­ ͏ … | Fable 5 has moved to usage credits - Claim your one-time usage credit before August 2. ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏… |     |     | 13:09  |     |     |
+                                      | --- | --- | --- | ---------------------------------------- | ---------------------------------------- | --- | --- | ------ | --- | --- |
+                                      |     |     |     | unread, Naukri Campus Jobs, naukri campus : Last few days to enroll for Quiz, 11:19, Quiz Will you accept this challenge… | naukri campus : Last few days to enroll for Quiz - Quiz Will you accept this challenge? naukri campus presents Bizquezt … |     |     | 11:19  |     |     |
+                                      |     |     |     | unread, Baseten, GLM 5.2 Model API added to your workspace, 23 Jul, GLM 5.2 Model API added to your workspace GLM 5.2 is… | GLM 5.2 Model API added to your workspace - GLM 5.2 Model API added to your workspace GLM 5.2 is now active in your work… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Baseten, Kimi K2.7 Code Model API added to your workspace, 23 Jul, Kimi K2.7 Code Model API added to your worksp… | Kimi K2.7 Code Model API added to your workspace - Kimi K2.7 Code Model API added to your workspace Kimi K2.7 Code is no… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Baseten, Kimi K2.6 Model API added to your workspace, 23 Jul, Kimi K2.6 Model API added to your workspace Kimi K… | Kimi K2.6 Model API added to your workspace - Kimi K2.6 Model API added to your workspace Kimi K2.6 is now active in you… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Baseten, GLM 5 Model API added to your workspace, 23 Jul, GLM 5 Model API added to your workspace GLM 5 is now a… | GLM 5 Model API added to your workspace - GLM 5 Model API added to your workspace GLM 5 is now active in your workspace … |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with Baseten, 23 Jul, Keep track of your Google Account data arshdee… | You shared some Google Account data with Baseten - Keep track of your Google Account data arshdeeppalial@gmail.com You'r… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with fireworks.auth.us-west-2.amazoncognito.com, 23 Jul, Keep track … | You shared some Google Account data with fireworks.auth.us-west-2.amazoncognito.com - Keep track of your Google Account … |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Cerebras Systems, Welcome to Cerebras: Let's Get Started!, 23 Jul, Hi Arshdeep, Thanks so much for signing up fo… | Welcome to Cerebras: Let's Get Started! - Hi Arshdeep, Thanks so much for signing up for the Cerebras API! We're proud t… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with cerebras.ai, 23 Jul, Keep track of your Google Account data ars… | You shared some Google Account data with cerebras.ai - Keep track of your Google Account data arshdeeppalial@gmail.com Y… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with api.airforce, 23 Jul, Keep track of your Google Account data ar… | You shared some Google Account data with api.airforce - Keep track of your Google Account data arshdeeppalial@gmail.com … |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with qwen.ai, 23 Jul, Keep track of your Google Account data arshdee… | You shared some Google Account data with qwen.ai - Keep track of your Google Account data arshdeeppalial@gmail.com You'r… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, huggingface, New login to your Hugging Face account, 23 Jul, Hi Arshdeep Palial (@apalial), We noticed a new log… | New login to your Hugging Face account - Hi Arshdeep Palial (@apalial), We noticed a new login to your HF account. Here … |     |     | 23 Jul |     |     |
+                                      |     |     |     | huggingface, [Hugging Face] Password reset, 23 Jul, We received a password reset request for your account. To reset your… | [Hugging Face] Password reset - We received a password reset request for your account. To reset your password, just clic… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Naukri Campus Jobs, naukri campus : Last few days to enroll for Quiz, 23 Jul, naukri.com Quiz Will you accept th… | naukri campus : Last few days to enroll for Quiz - naukri.com Quiz Will you accept this challenge? naukri campus present… |     |     | 23 Jul |     |     |
+                                      |     |     |     | NVIDIA Accounts 2, Authenticate Your Email Address, 23 Jul, NVIDIA Hello, Your account just logged in using a(n) Windows… | Authenticate Your Email Address - NVIDIA Hello, Your account just logged in using a(n) Windows device we haven't seen yo… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Google, Security alert for senna1aryton@gmail.com, 23 Jul, This is a copy of a security alert sent to senna1aryt… | Security alert for senna1aryton@gmail.com - This is a copy of a security alert sent to senna1aryton@gmail.com. arshdeepp… |     |     | 23 Jul |     |     |
+                                      |     |     |     | noreply-cloud-accou. 3, Welcome to NVIDIA Cloud Account!, 23 Jul, Welcome to NVIDIA Cloud Account! NVIDIA NVIDIA Welcome… | Welcome to NVIDIA Cloud Account! - Welcome to NVIDIA Cloud Account! NVIDIA NVIDIA Welcome to NVIDIA Cloud Account! Hi De… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with NVIDIA, 23 Jul, Keep track of your Google Account data arshdeep… | You shared some Google Account data with NVIDIA - Keep track of your Google Account data arshdeeppalial@gmail.com You're… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with platform.deepseek.com, 23 Jul, Keep track of your Google Accoun… | You shared some Google Account data with platform.deepseek.com - Keep track of your Google Account data arshdeeppalial@g… |     |     | 23 Jul |     |     |
+                                      |     |     |     | Google, Security alert for arshdeeppalial209@gmail.com, 23 Jul, This is a copy of a security alert sent to arshdeeppalia… | Security alert for arshdeeppalial209@gmail.com - This is a copy of a security alert sent to arshdeeppalial209@gmail.com.… |     |     | 23 Jul |     |     |
+                                      |     |     |     | unread, IIT Bombay ePG Dipl., Transform Your Career with CSE IIT Bombay, 22 Jul, Designed for freshers & professionals a… | Transform Your Career with CSE IIT Bombay - Designed for freshers & professionals alike ͏ ‌ ͏ ‌ ͏ ‌ ͏ ‌ ͏ ‌ ͏ ‌ ͏ ‌ ͏ ‌ … |     |     | 22 Jul |     |     |
+                                      |     |     |     | unread, Netlify, [Netlify] Action needed: arshdeeppalial’s team has used all available credits — upgrade to restore full… | [Netlify] Action needed: arshdeeppalial’s team has used all available credits — upgrade to restore full service - Your t… |     |     | 22 Jul |     |     |
+                                      |     |     |     | cs.jswenergy, JSW ENERGY LIMITED - Intimation for payment of Dividend for FY 2025-26, 21 Jul, CIN : L74999MH1994PLC07704… | JSW ENERGY LIMITED - Intimation for payment of Dividend for FY 2025-26 - CIN : L74999MH1994PLC077041 Registered Office: … |     |     | 21 Jul |     |     |
+                                      |     |     |     | unread, Amazon Web Services, We have not received payment for June-2026, 21 Jul, AWS logo Dear Amazon Web Services Custo… | We have not received payment for June-2026 - AWS logo Dear Amazon Web Services Customer, There is a billing problem with… |     |     | 21 Jul |     |     |
+                                      |     |     |     | unread, Mike from Refero, have you tried flows?, 21 Jul, Hi Arshdeep, I wanted to check in and see if you've had a chanc… | have you tried flows? - Hi Arshdeep, I wanted to check in and see if you've had a chance to try our Flows yet. If not, i… |     |     | 21 Jul |     |     |
+                                      |     |     |     | unread, Naukri Campus Jobs, Certificate + LOR awaits. Join now!, 21 Jul, Your certificate is waiting. Build your resume … | Certificate + LOR awaits. Join now! - Your certificate is waiting. Build your resume this summer. Invite friends, earn S… |     |     | 21 Jul |     |     |
+                                      |     |     |     | High Scalability, Complete your sign up to High Scalability!, 21 Jul, Complete signup for High Scalability! Hey there! T… | Complete your sign up to High Scalability! - Complete signup for High Scalability! Hey there! Tap the link below to comp… |     |     | 21 Jul |     |     |
+                                      |     |     |     | unread, Naukri Campus Jobs, Arshdeep, recruiters can’t see you!!, 21 Jul, ```html Upload your resume for increased visib… | Arshdeep, recruiters can’t see you!! - ```html Upload your resume for increased visibility. Naukri Campus Get App »»» Ta… |     |     | 21 Jul |     |     |
+                                      |     |     |     | unread, Netlify, [Netlify] You've used 75% of your credits on arshdeeppalial’s team, 21 Jul, You're using your credits! … | [Netlify] You've used 75% of your credits on arshdeeppalial’s team - You're using your credits! Your credit usage on tea… |     |     | 21 Jul |     |     |
+                                      |     |     |     | unread, Chloe Williams, Arshdeep, Welcome to Zilliz Cloud – Let’s Get Started , 21 Jul, Jumpstart your AI projects with … | Arshdeep, Welcome to Zilliz Cloud – Let’s Get Started - Jumpstart your AI projects with Zilliz Cloud! Get started by exp… |     |     | 21 Jul |     |     |
+                                      |     |     |     | unread, Naukri Campus, Arshdeep, planning study abroad?, 21 Jul, Check English speaking level in 15 mins. ‌ ‌ ‌ ‌ ‌ ‌ ‌ … | Arshdeep, planning study abroad? - Check English speaking level in 15 mins. ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ Arshdeep, assess Y… |     |     | 21 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with zilliz.com, 20 Jul, Keep track of your Google Account data arsh… | You shared some Google Account data with zilliz.com - Keep track of your Google Account data arshdeeppalial@gmail.com Yo… |     |     | 20 Jul |     |     |
+                                      |     |     |     | account, Action required: Verify your email to complete Zilliz Cloud registration, 20 Jul, Hi , Thanks for signing up fo… | Action required: Verify your email to complete Zilliz Cloud registration - Hi , Thanks for signing up for Zilliz Cloud. … |     |     | 20 Jul |     |     |
+                                      |     |     |     | Google, You shared some Google Account data with pinecone.io, 20 Jul, Keep track of your Google Account data arshdeeppal… | You shared some Google Account data with pinecone.io - Keep track of your Google Account data arshdeeppalial@gmail.com Y… |     |     | 20 Jul |     |     |
+                                      |     |     |     | unread, Netlify, [Netlify] You've used 50% of your credits on arshdeeppalial’s team, 20 Jul, You're using your credits! … | [Netlify] You've used 50% of your credits on arshdeeppalial’s team - You're using your credits! Your credit usage on tea… |     |     | 20 Jul |     |     |
+                                      |     |     |     | unread, Quora Digest, SSC CGL RESULT 2025, 20 Jul, Secured AIR-3686 in the SSC CGLE-2025. Got SECTION HEAD in DGFT . Thi… | SSC CGL RESULT 2025 - Secured AIR-3686 in the SSC CGLE-2025. Got SECTION HEAD in DGFT . This is my second attempt and se… |     |     | 20 Jul |     |     |
+                                      |     |     |     | unread, Claude Team, Your guide to Claude Code on mobile, 20 Jul, Start a session, ship a fix, review a PR—all from your… | Your guide to Claude Code on mobile - Start a session, ship a fix, review a PR—all from your phone. ͏ ͏ ͏ ͏ ͏ ͏ ͏ ͏ ͏ ͏ … |     |     | 20 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with higgsfield.ai, 19 Jul, Keep track of your Google Account data a… | You shared some Google Account data with higgsfield.ai - Keep track of your Google Account data arshdeeppalial@gmail.com… |     |     | 19 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with 21st.dev, 19 Jul, Keep track of your Google Account data arshde… | You shared some Google Account data with 21st.dev - Keep track of your Google Account data arshdeeppalial@gmail.com You'… |     |     | 19 Jul |     |     |
+                                      |     |     |     | Google, You shared some Google Account data with NetMirror, 18 Jul, Keep track of your Google Account data arshdeeppalia… | You shared some Google Account data with NetMirror - Keep track of your Google Account data arshdeeppalial@gmail.com You… |     |     | 18 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with Refero, 18 Jul, Keep track of your Google Account data arshdeep… | You shared some Google Account data with Refero - Keep track of your Google Account data arshdeeppalial@gmail.com You're… |     |     | 18 Jul |     |     |
+                                      |     |     |     | unread, Google, New Android backup storage policy and controls, 18 Jul, ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ … | New Android backup storage policy and controls - ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌… |     |     | 18 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with postman.com, 17 Jul, Keep track of your Google Account data ars… | You shared some Google Account data with postman.com - Keep track of your Google Account data arshdeeppalial@gmail.com Y… |     |     | 17 Jul |     |     |
+                                      |     |     |     | unread, Google, Security alert for arshdeep.palial@ikarus3d.com, 17 Jul, This is a copy of a security alert sent to arsh… | Security alert for arshdeep.palial@ikarus3d.com - This is a copy of a security alert sent to arshdeep.palial@ikarus3d.co… |     |     | 17 Jul |     |     |
+                                      |     |     |     | unread, Naukri Campus Jobs, How to Make a Fresher Resume That Recruiters Notice, 17 Jul, Arshdeep, 2 minute read curated… | How to Make a Fresher Resume That Recruiters Notice - Arshdeep, 2 minute read curated for you. Naukri Campus Read Blogs … |     |     | 17 Jul |     |     |
+                                      |     |     |     | unread, Amazon Web Services, We have not received payment for June-2026, 17 Jul, AWS logo Dear Amazon Web Services Custo… | We have not received payment for June-2026 - AWS logo Dear Amazon Web Services Customer, There is a billing problem with… |     |     | 17 Jul |     |     |
+                                      |     |     |     | unread, Naukri Campus Jobs, naukri campus : Last few days to enroll for Coding Contest, 17 Jul, naukri.com Coding Contes… | naukri campus : Last few days to enroll for Coding Contest - naukri.com Coding Contest Will you accept this challenge? n… |     |     | 17 Jul |     |     |
+                                      |     |     |     | unread, Google 2, Security alert, 17 Jul, App password created to sign in to your account arshdeeppalial@gmail.com If yo… | Security alert - App password created to sign in to your account arshdeeppalial@gmail.com If you didn't generate this pa… |     |     | 17 Jul |     |     |
+                                      |     |     |     | unread, Google, You shared some Google Account data with Claude, 17 Jul, Keep track of your Google Account data arshdeep… | You shared some Google Account data with Claude - Keep track of your Google Account data arshdeeppalial@gmail.com You're… |     |     | 17 Jul |     |     |
+                                <div id=:1p role=tabpanel />
+                                  <div />
+                                    <span>Your top discounts</span>
+                                  <div />
+                                    <div />
+                                      <div />
+                                        [144]<h3 id=:1c tabindex=0 role=button />
+                                          [140]<img src=//ssl.gstatic.com/ui/v1/icons/mail/images/cleardot.gif id=:1f />
+                                          [143]<div id=:1d />
+                                            [141]<span id=:1e title=Marketing, interests, social and political causes, and other promotional emails.>Promotions</span>
+                                            [142]<span id=s />
+                                      <div />
+                                        [147]<div aria-label=Inbox section options role=button aria-expanded=false tabindex=0 aria-haspopup=false />
+                                          [145]<div />
+                                          [146]<div />
+                                    <div />
+                                      <div />
+                                        <div />
+                                          <div>Your Promotions tab is empty.</div>
+                                          <p>Marketing, interests, social and political causes, and other promotional emails will be shown here.</p>
+                                          <p />
+                                            To add or remove tabs, click .
+                                            [148]<span id=:lz tabindex=0>inbox settings</span>
+                                  <div />
+                                    <span>Remaining Promotions emails</span>
+                                <div id=:1q role=tabpanel />
+                                  <div />
+                                    <div />
+                                      <div />
+                                        [153]<h3 id=:1g tabindex=0 role=button />
+                                          [149]<img src=//ssl.gstatic.com/ui/v1/icons/mail/images/cleardot.gif id=:1j />
+                                          [152]<div id=:1h />
+                                            [150]<span id=:1i title=Messages from social networks, media-sharing sites, online dating services and other social websites.>Social</span>
+                                            [151]<span id=s />
+                                      <div />
+                                        [156]<div aria-label=Inbox section options role=button aria-expanded=false tabindex=0 aria-haspopup=false />
+                                          [154]<div />
+                                          [155]<div />
+                                    <div />
+                                      <div />
+                                        <div />
+                                          <div>Your Social tab is empty.</div>
+                                          <p>Emails from social networks, media-sharing sites, dating services and other social sites will be shown here.</p>
+                                          <p />
+                                            To add or remove tabs, click .
+                                            [157]<span id=:m1 tabindex=0>inbox settings</span>
+                                <div id=:1r role=tabpanel />
+                                  <div />
+                                    <div />
+                                      <div />
+                                        [161]<h3 id=:1k tabindex=0 role=button />
+                                          [158]<img src=//ssl.gstatic.com/ui/v1/icons/mail/images/cleardot.gif id=:1n />
+                                          [160]<div id=:1l />
+                                            [159]<span id=:1m title=Personal, auto-generated updates including confirmations, receipts, bills and statements.>Updates</span>
+                                      <div />
+                                        [164]<div aria-label=Inbox section options role=button aria-expanded=false tabindex=0 aria-haspopup=false />
+                                          [162]<div />
+                                          [163]<div />
+                                    <div />
+                                      <div />
+                                        <div />
+                                          <div>Your Updates tab is empty.</div>
+                                          <p />
+                                            Automated messages that may not need immediate attention will be shown here. These can include confirmations, notificati…
+                                            [165]<a href=https://support.google.com/mail?p=inboxcategories-updates>Learn more</a>
+                                          <p />
+                                            To add or remove tabs, click .
+                                            [166]<span id=:m3 tabindex=0>inbox settings</span>
+                          <div role=main />
+                            <div />
+                              <div />
+                                <div />
+                                  <div />
+                                    <div />
+                                      <div />
+                                        <span />
+                                          [170]<button aria-label=Print all />
+                                            [167]<span />
+                                            <span />
+                                              <span />
+                                                [168]<svg />
+                                            [169]<div />
+                                        <span />
+                                          [174]<button aria-label=In new window />
+                                            [171]<span />
+                                            <span />
+                                              <span />
+                                                [172]<svg />
+                                            [173]<div />
+                                    <div />
+                                      <div />
+                                        <h2 tabindex=-1 id=avWBGd-0>Fable 5 has moved to usage credits</h2>
+                                        <span />
+                                          [181]<div />
+                                            [177]<span id=elptr_9 />
+                                              [176]<div id=elptr_8 />
+                                                [175]<div role=button tabindex=0 aria-label=Search for all messages with label Inbox id=avWBGd-26>Inbox</div>
+                                            [180]<span id=elptr_11 />
+                                              [179]<div id=elptr_10 />
+                                                [178]<div role=button tabindex=0 aria-label=Remove label Inbox from this conversation id=avWBGd-27 />
+                                <div />
+                                  <div />
+                                    <div role=list />
+                                      <div role=listitem aria-expanded=true tabindex=-1 />
+                                        <div />
+                                          <div />
+                                            <div />
+                                              <div id=avWBGd-3 />
+                                                <div id=avWBGd-4 />
+                                                  <div />
+                                                    <div />
+                                                      <div />
+                                                        |table|
+                                                        | Claude Team <no-reply@email.claude.com> | Claude Team <no-reply@email.claude.com> | 13:09 (2 hours ago) |     | Add reactionReplyMore |
+                                                        | --------------------------------------- | --------------------------------------- | ------------------- | --- | --------------------- |
+                                                        | Claude Team <no-reply@email.claude.com> |                                         |                     |     |                       |
+                                                        | to me                                   | to me                                   |                     |     |                       |
+                                                        | to me                                   |                                         |                     |     |                       |
+                                                      <div />
+                                                        <div id=:p9 />
+                                                          <div id=:p8 />
+                                                            <div id=avWBGd-20 />
+                                                              <div />
+                                                                <span>Claim your one-time usage credit before August 2.</span>
+                                                                <div />
+                                                                  <div>͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ ͏ ­ …</div>
+                                                                |table|
+                                                                | Hi Arshdeep, Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usag… | Hi Arshdeep, Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usag… |                                          |                                          | Hi Arshdeep, Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usag… | Hi Arshdeep,                             | [Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usage credits and…](https://links.email.claude.com/s/c/TkQ9UxzL9-u_ZnGXhGSNvBwRPVEaIVIKy5RKyTaOrqOIlWuVbiwfzPx0xgVyW76UMiXYaz5URL1_yhh3180P6MnqvT7NVnjTs49AKtugSFLrLkTlDTry6F0IiA63tvtCfuB1oqL8kIoeP-C1ESIwvl7ADTkoqdYrwgcP1G2Itp97BmwshPTiZwSd6UkKrzFbQIQCt7TSIc8R5GEW57uMgoY50v4XKLr_wKREVBRMG3tSfg9pdScrafExkkIH1mPNP51E0HPZGdKZxlwadOZkk25YnB03F_GbOtUBHh4s6JCkSEa4aS1ECHtZGWlTQNw1JveAj52JP7KqelLrASThlOr6IjI5kONLT1kdLqJdEQ9Xz1HZHwEqDAsLA6CyEWzfllJDjOVIChT9weYpFymSFqCPwBXysuBsMZd7Wsq9NQJK3LCs1pYjmZ1byEAxvZVG_EU-2Es1EQms8QBqU8zHe777bbs41Nbzaxt54y7-lH0J-LSYWCBMw3Vp9c9dnMWADeDer8Vy8x1RwvFLgofybyqrI9PyogNgK6RbmDHG9CyI6tQ9tBHl6yHMR_3jw5sW8V3DQsMwgb_AfVKG6bVok8JWg7djJZcacMv3eDmEt5PUI3s6z4gMOJ7YgWvvoLp4G8bsObKQh9FM9LPBne_hmcjeQDodmoGeDg6ZMi8fhdkjmvGo046RH84QKsuGYqDgMOMYbAV3ApgklEz4CHb0nCoSgUi-Skjn_7_ozNdJ70FcuDWJh3TAg_7A9ggm0RDSJ1rZS7Gmw03ujZLQuj9Nc_nCX_yY_rSFn65mDWCM4dUQX1cpkglBSODIun9qCeM0/eE8qMFTvDkwJXXWC3JX107bWkkWrAYUM/23) | To make the switch easier, you get a one-time $100 USD usage credit. | [It’s a standard usage credit, so it works on any model, including Fable 5. Claim it in Settings by August 2 at 11:59 pm …](https://links.email.claude.com/s/c/v8miu_GmeZe-AqDAEFfjwd-JnFF5GEkEhKaH0qSAQP5D6DH_lHqAeQioqq2nJpTVf14pUqlU86eBhoMGyaqjBL32ozbsoNjD0UChm9aoGZNLIdRhmxeboxnNONhFYu_JxFwm4EqN80P3rNKitRzox_EXUN-3FVuWhO_lAcT-bo-bPhJiddo8PprLLTZwZC8xLrYvDb7LqgycbgGpd2wGERhVr1C6P-PJYpJBMILsd_Y7wLnBFXhyIynItco_sRhEEWPh5chtTZJr1_TwhZUUlmkgi2PJuUpE-DxR6IV7TvkMBv0o-czXPboTrdXCUpoqiZMBe3ZS-hNpWJRo_MAjQjM9FupU1OSRv3cn_3ZpxMKXHGxfKMLGmcD8KXxN81NaPamwZUwP2L_x7CIHeAqrLjeIN36CicEeITTywEZWKWDFg5eaTP4N_Gj3Uc0WPFOHfEumJx_7_IeEKn8RJqOojcb3RlyOwbb4mLF3Uz_VmrAWZkz8VgPmgMQ6i0nZ8tAnHPoK8-uT0ICapNq1SFxBo6OEuLy_3AQLlP296GNtyTHMpjHfEoPKW38vnz0toxTRQFlUMqT7Fs5NPd21xwm4ww3AUPkcm5C6sOapqVOzxPgmSwc_VQkLwB0nZMcOxVEuzWeOaTvtrfkYyYBowSzEJwg3miuWK9z1RE9JynoYlJhM46gQ/rNGoEOvE8Umaqn7JILYYc_2Dci6sXudi/23) | [Your credit expires September 17 at 11:59 pm PT. Any unused balance can’t be refunded. Terms apply.](https://links.email.claude.com/s/c/rdcqFwNAPVl3mF7gX7SK0ymt9xdjAtr3wZ3RFhFUDSfoSNCkgj0g-W-xJNSoXMKccHgLJfuW-1oUQ0vBR3bVhU3bAL_GeDhpl5jJnMieLPRJy5skaFNHcEnA0PlqF8VXQlJk8HDJEUnD1coFqhkq3Jh8iVB1E74UYdcjuDyYAz_7weETZCSQsORmVAx5G090yDHjul0xBVcMYgeTG66h_h27rM68GvFCnFoCgbVlUnGa8IlDx-1WSy1xVmlS8HZg-N0Ti2Zu-MElDebKKT5U8EFAAKQox8NvcLzwCvLY76dxIFHUutc-4yqvOPyyFo39ujgzlxy_KDlSjc9LrtHRAGEDTSMzEmucNvIRiRUNm9rDeZSFT7sDASaqzasPTsAGWmQtLwWOTKxDIOT5xR6OzOjTw7gtCc5iOyOTHTZCmFbVB5w9a9BKsKQAsUujfira_U3NmmLmnlNKhywXfiEInv6MMy0tJtBmBrPH2b0N0e_4L8atjK9hl2RhMgfDs3TVY9nT6xqwBwBQm0MpmmgCzi5owosb1TifdD_OhR3avMg637tulnU44MLfG36tBClIrptLNSsyKeItda9phathILVsPMn5hpIDYpvZ-sruXYh9TNlAjEjox48WjXrmbAXfBUERuQ8USNR4BMamPUBuhVDg82uAPAMa34maVPiZU00-7c9OjXsBMFfRju2lEzdBMZuR_x3iQXQkVA/GxcYM-ZzD-irvvS-2xJpDMB4Ou_jFUO-/23) | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 This … |                                          |                                          | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 This … |     |     |     |     |     |     |                                          | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 | [This email was sent to arshdeeppalial@gmail.com.](mailto:arshdeeppalial@gmail.com) |
+                                                                | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- | --- | --- | --- | --- | --- | --- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- |
+                                                                | Hi Arshdeep, Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usag… |                                          |                                          | Hi Arshdeep, Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usag… | Hi Arshdeep,                             | [Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usage credits and…](https://links.email.claude.com/s/c/TkQ9UxzL9-u_ZnGXhGSNvBwRPVEaIVIKy5RKyTaOrqOIlWuVbiwfzPx0xgVyW76UMiXYaz5URL1_yhh3180P6MnqvT7NVnjTs49AKtugSFLrLkTlDTry6F0IiA63tvtCfuB1oqL8kIoeP-C1ESIwvl7ADTkoqdYrwgcP1G2Itp97BmwshPTiZwSd6UkKrzFbQIQCt7TSIc8R5GEW57uMgoY50v4XKLr_wKREVBRMG3tSfg9pdScrafExkkIH1mPNP51E0HPZGdKZxlwadOZkk25YnB03F_GbOtUBHh4s6JCkSEa4aS1ECHtZGWlTQNw1JveAj52JP7KqelLrASThlOr6IjI5kONLT1kdLqJdEQ9Xz1HZHwEqDAsLA6CyEWzfllJDjOVIChT9weYpFymSFqCPwBXysuBsMZd7Wsq9NQJK3LCs1pYjmZ1byEAxvZVG_EU-2Es1EQms8QBqU8zHe777bbs41Nbzaxt54y7-lH0J-LSYWCBMw3Vp9c9dnMWADeDer8Vy8x1RwvFLgofybyqrI9PyogNgK6RbmDHG9CyI6tQ9tBHl6yHMR_3jw5sW8V3DQsMwgb_AfVKG6bVok8JWg7djJZcacMv3eDmEt5PUI3s6z4gMOJ7YgWvvoLp4G8bsObKQh9FM9LPBne_hmcjeQDodmoGeDg6ZMi8fhdkjmvGo046RH84QKsuGYqDgMOMYbAV3ApgklEz4CHb0nCoSgUi-Skjn_7_ozNdJ70FcuDWJh3TAg_7A9ggm0RDSJ1rZS7Gmw03ujZLQuj9Nc_nCX_yY_rSFn65mDWCM4dUQX1cpkglBSODIun9qCeM0/eE8qMFTvDkwJXXWC3JX107bWkkWrAYUM/23) | To make the switch easier, you get a one-time $100 USD usage credit. | [It’s a standard usage credit, so it works on any model, including Fable 5. Claim it in Settings by August 2 at 11:59 pm …](https://links.email.claude.com/s/c/v8miu_GmeZe-AqDAEFfjwd-JnFF5GEkEhKaH0qSAQP5D6DH_lHqAeQioqq2nJpTVf14pUqlU86eBhoMGyaqjBL32ozbsoNjD0UChm9aoGZNLIdRhmxeboxnNONhFYu_JxFwm4EqN80P3rNKitRzox_EXUN-3FVuWhO_lAcT-bo-bPhJiddo8PprLLTZwZC8xLrYvDb7LqgycbgGpd2wGERhVr1C6P-PJYpJBMILsd_Y7wLnBFXhyIynItco_sRhEEWPh5chtTZJr1_TwhZUUlmkgi2PJuUpE-DxR6IV7TvkMBv0o-czXPboTrdXCUpoqiZMBe3ZS-hNpWJRo_MAjQjM9FupU1OSRv3cn_3ZpxMKXHGxfKMLGmcD8KXxN81NaPamwZUwP2L_x7CIHeAqrLjeIN36CicEeITTywEZWKWDFg5eaTP4N_Gj3Uc0WPFOHfEumJx_7_IeEKn8RJqOojcb3RlyOwbb4mLF3Uz_VmrAWZkz8VgPmgMQ6i0nZ8tAnHPoK8-uT0ICapNq1SFxBo6OEuLy_3AQLlP296GNtyTHMpjHfEoPKW38vnz0toxTRQFlUMqT7Fs5NPd21xwm4ww3AUPkcm5C6sOapqVOzxPgmSwc_VQkLwB0nZMcOxVEuzWeOaTvtrfkYyYBowSzEJwg3miuWK9z1RE9JynoYlJhM46gQ/rNGoEOvE8Umaqn7JILYYc_2Dci6sXudi/23) | [Your credit expires September 17 at 11:59 pm PT. Any unused balance can’t be refunded. Terms apply.](https://links.email.claude.com/s/c/rdcqFwNAPVl3mF7gX7SK0ymt9xdjAtr3wZ3RFhFUDSfoSNCkgj0g-W-xJNSoXMKccHgLJfuW-1oUQ0vBR3bVhU3bAL_GeDhpl5jJnMieLPRJy5skaFNHcEnA0PlqF8VXQlJk8HDJEUnD1coFqhkq3Jh8iVB1E74UYdcjuDyYAz_7weETZCSQsORmVAx5G090yDHjul0xBVcMYgeTG66h_h27rM68GvFCnFoCgbVlUnGa8IlDx-1WSy1xVmlS8HZg-N0Ti2Zu-MElDebKKT5U8EFAAKQox8NvcLzwCvLY76dxIFHUutc-4yqvOPyyFo39ujgzlxy_KDlSjc9LrtHRAGEDTSMzEmucNvIRiRUNm9rDeZSFT7sDASaqzasPTsAGWmQtLwWOTKxDIOT5xR6OzOjTw7gtCc5iOyOTHTZCmFbVB5w9a9BKsKQAsUujfira_U3NmmLmnlNKhywXfiEInv6MMy0tJtBmBrPH2b0N0e_4L8atjK9hl2RhMgfDs3TVY9nT6xqwBwBQm0MpmmgCzi5owosb1TifdD_OhR3avMg637tulnU44MLfG36tBClIrptLNSsyKeItda9phathILVsPMn5hpIDYpvZ-sruXYh9TNlAjEjox48WjXrmbAXfBUERuQ8USNR4BMamPUBuhVDg82uAPAMa34maVPiZU00-7c9OjXsBMFfRju2lEzdBMZuR_x3iQXQkVA/GxcYM-ZzD-irvvS-2xJpDMB4Ou_jFUO-/23) | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 This … |                                          |                                          | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 This … |                                          |     |     |     |     |     |     | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 | [This email was sent to arshdeeppalial@gmail.com.](mailto:arshdeeppalial@gmail.com) |                                          |
+                                                                |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                | Hi Arshdeep, Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usag… | Hi Arshdeep,                             | [Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usage credits and…](https://links.email.claude.com/s/c/TkQ9UxzL9-u_ZnGXhGSNvBwRPVEaIVIKy5RKyTaOrqOIlWuVbiwfzPx0xgVyW76UMiXYaz5URL1_yhh3180P6MnqvT7NVnjTs49AKtugSFLrLkTlDTry6F0IiA63tvtCfuB1oqL8kIoeP-C1ESIwvl7ADTkoqdYrwgcP1G2Itp97BmwshPTiZwSd6UkKrzFbQIQCt7TSIc8R5GEW57uMgoY50v4XKLr_wKREVBRMG3tSfg9pdScrafExkkIH1mPNP51E0HPZGdKZxlwadOZkk25YnB03F_GbOtUBHh4s6JCkSEa4aS1ECHtZGWlTQNw1JveAj52JP7KqelLrASThlOr6IjI5kONLT1kdLqJdEQ9Xz1HZHwEqDAsLA6CyEWzfllJDjOVIChT9weYpFymSFqCPwBXysuBsMZd7Wsq9NQJK3LCs1pYjmZ1byEAxvZVG_EU-2Es1EQms8QBqU8zHe777bbs41Nbzaxt54y7-lH0J-LSYWCBMw3Vp9c9dnMWADeDer8Vy8x1RwvFLgofybyqrI9PyogNgK6RbmDHG9CyI6tQ9tBHl6yHMR_3jw5sW8V3DQsMwgb_AfVKG6bVok8JWg7djJZcacMv3eDmEt5PUI3s6z4gMOJ7YgWvvoLp4G8bsObKQh9FM9LPBne_hmcjeQDodmoGeDg6ZMi8fhdkjmvGo046RH84QKsuGYqDgMOMYbAV3ApgklEz4CHb0nCoSgUi-Skjn_7_ozNdJ70FcuDWJh3TAg_7A9ggm0RDSJ1rZS7Gmw03ujZLQuj9Nc_nCX_yY_rSFn65mDWCM4dUQX1cpkglBSODIun9qCeM0/eE8qMFTvDkwJXXWC3JX107bWkkWrAYUM/23) | To make the switch easier, you get a one-time $100 USD usage credit. | [It’s a standard usage credit, so it works on any model, including Fable 5. Claim it in Settings by August 2 at 11:59 pm …](https://links.email.claude.com/s/c/v8miu_GmeZe-AqDAEFfjwd-JnFF5GEkEhKaH0qSAQP5D6DH_lHqAeQioqq2nJpTVf14pUqlU86eBhoMGyaqjBL32ozbsoNjD0UChm9aoGZNLIdRhmxeboxnNONhFYu_JxFwm4EqN80P3rNKitRzox_EXUN-3FVuWhO_lAcT-bo-bPhJiddo8PprLLTZwZC8xLrYvDb7LqgycbgGpd2wGERhVr1C6P-PJYpJBMILsd_Y7wLnBFXhyIynItco_sRhEEWPh5chtTZJr1_TwhZUUlmkgi2PJuUpE-DxR6IV7TvkMBv0o-czXPboTrdXCUpoqiZMBe3ZS-hNpWJRo_MAjQjM9FupU1OSRv3cn_3ZpxMKXHGxfKMLGmcD8KXxN81NaPamwZUwP2L_x7CIHeAqrLjeIN36CicEeITTywEZWKWDFg5eaTP4N_Gj3Uc0WPFOHfEumJx_7_IeEKn8RJqOojcb3RlyOwbb4mLF3Uz_VmrAWZkz8VgPmgMQ6i0nZ8tAnHPoK8-uT0ICapNq1SFxBo6OEuLy_3AQLlP296GNtyTHMpjHfEoPKW38vnz0toxTRQFlUMqT7Fs5NPd21xwm4ww3AUPkcm5C6sOapqVOzxPgmSwc_VQkLwB0nZMcOxVEuzWeOaTvtrfkYyYBowSzEJwg3miuWK9z1RE9JynoYlJhM46gQ/rNGoEOvE8Umaqn7JILYYc_2Dci6sXudi/23) | [Your credit expires September 17 at 11:59 pm PT. Any unused balance can’t be refunded. Terms apply.](https://links.email.claude.com/s/c/rdcqFwNAPVl3mF7gX7SK0ymt9xdjAtr3wZ3RFhFUDSfoSNCkgj0g-W-xJNSoXMKccHgLJfuW-1oUQ0vBR3bVhU3bAL_GeDhpl5jJnMieLPRJy5skaFNHcEnA0PlqF8VXQlJk8HDJEUnD1coFqhkq3Jh8iVB1E74UYdcjuDyYAz_7weETZCSQsORmVAx5G090yDHjul0xBVcMYgeTG66h_h27rM68GvFCnFoCgbVlUnGa8IlDx-1WSy1xVmlS8HZg-N0Ti2Zu-MElDebKKT5U8EFAAKQox8NvcLzwCvLY76dxIFHUutc-4yqvOPyyFo39ujgzlxy_KDlSjc9LrtHRAGEDTSMzEmucNvIRiRUNm9rDeZSFT7sDASaqzasPTsAGWmQtLwWOTKxDIOT5xR6OzOjTw7gtCc5iOyOTHTZCmFbVB5w9a9BKsKQAsUujfira_U3NmmLmnlNKhywXfiEInv6MMy0tJtBmBrPH2b0N0e_4L8atjK9hl2RhMgfDs3TVY9nT6xqwBwBQm0MpmmgCzi5owosb1TifdD_OhR3avMg637tulnU44MLfG36tBClIrptLNSsyKeItda9phathILVsPMn5hpIDYpvZ-sruXYh9TNlAjEjox48WjXrmbAXfBUERuQ8USNR4BMamPUBuhVDg82uAPAMa34maVPiZU00-7c9OjXsBMFfRju2lEzdBMZuR_x3iQXQkVA/GxcYM-ZzD-irvvS-2xJpDMB4Ou_jFUO-/23) |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                | Hi Arshdeep,                             |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                | [Fable 5 moved to usage credits on July 20. It is still available to you, but it requires pay-as-you-go usage credits and…](https://links.email.claude.com/s/c/TkQ9UxzL9-u_ZnGXhGSNvBwRPVEaIVIKy5RKyTaOrqOIlWuVbiwfzPx0xgVyW76UMiXYaz5URL1_yhh3180P6MnqvT7NVnjTs49AKtugSFLrLkTlDTry6F0IiA63tvtCfuB1oqL8kIoeP-C1ESIwvl7ADTkoqdYrwgcP1G2Itp97BmwshPTiZwSd6UkKrzFbQIQCt7TSIc8R5GEW57uMgoY50v4XKLr_wKREVBRMG3tSfg9pdScrafExkkIH1mPNP51E0HPZGdKZxlwadOZkk25YnB03F_GbOtUBHh4s6JCkSEa4aS1ECHtZGWlTQNw1JveAj52JP7KqelLrASThlOr6IjI5kONLT1kdLqJdEQ9Xz1HZHwEqDAsLA6CyEWzfllJDjOVIChT9weYpFymSFqCPwBXysuBsMZd7Wsq9NQJK3LCs1pYjmZ1byEAxvZVG_EU-2Es1EQms8QBqU8zHe777bbs41Nbzaxt54y7-lH0J-LSYWCBMw3Vp9c9dnMWADeDer8Vy8x1RwvFLgofybyqrI9PyogNgK6RbmDHG9CyI6tQ9tBHl6yHMR_3jw5sW8V3DQsMwgb_AfVKG6bVok8JWg7djJZcacMv3eDmEt5PUI3s6z4gMOJ7YgWvvoLp4G8bsObKQh9FM9LPBne_hmcjeQDodmoGeDg6ZMi8fhdkjmvGo046RH84QKsuGYqDgMOMYbAV3ApgklEz4CHb0nCoSgUi-Skjn_7_ozNdJ70FcuDWJh3TAg_7A9ggm0RDSJ1rZS7Gmw03ujZLQuj9Nc_nCX_yY_rSFn65mDWCM4dUQX1cpkglBSODIun9qCeM0/eE8qMFTvDkwJXXWC3JX107bWkkWrAYUM/23) |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                | To make the switch easier, you get a one-time $100 USD usage credit. |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                | [It’s a standard usage credit, so it works on any model, including Fable 5. Claim it in Settings by August 2 at 11:59 pm …](https://links.email.claude.com/s/c/v8miu_GmeZe-AqDAEFfjwd-JnFF5GEkEhKaH0qSAQP5D6DH_lHqAeQioqq2nJpTVf14pUqlU86eBhoMGyaqjBL32ozbsoNjD0UChm9aoGZNLIdRhmxeboxnNONhFYu_JxFwm4EqN80P3rNKitRzox_EXUN-3FVuWhO_lAcT-bo-bPhJiddo8PprLLTZwZC8xLrYvDb7LqgycbgGpd2wGERhVr1C6P-PJYpJBMILsd_Y7wLnBFXhyIynItco_sRhEEWPh5chtTZJr1_TwhZUUlmkgi2PJuUpE-DxR6IV7TvkMBv0o-czXPboTrdXCUpoqiZMBe3ZS-hNpWJRo_MAjQjM9FupU1OSRv3cn_3ZpxMKXHGxfKMLGmcD8KXxN81NaPamwZUwP2L_x7CIHeAqrLjeIN36CicEeITTywEZWKWDFg5eaTP4N_Gj3Uc0WPFOHfEumJx_7_IeEKn8RJqOojcb3RlyOwbb4mLF3Uz_VmrAWZkz8VgPmgMQ6i0nZ8tAnHPoK8-uT0ICapNq1SFxBo6OEuLy_3AQLlP296GNtyTHMpjHfEoPKW38vnz0toxTRQFlUMqT7Fs5NPd21xwm4ww3AUPkcm5C6sOapqVOzxPgmSwc_VQkLwB0nZMcOxVEuzWeOaTvtrfkYyYBowSzEJwg3miuWK9z1RE9JynoYlJhM46gQ/rNGoEOvE8Umaqn7JILYYc_2Dci6sXudi/23) |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                | [Your credit expires September 17 at 11:59 pm PT. Any unused balance can’t be refunded. Terms apply.](https://links.email.claude.com/s/c/rdcqFwNAPVl3mF7gX7SK0ymt9xdjAtr3wZ3RFhFUDSfoSNCkgj0g-W-xJNSoXMKccHgLJfuW-1oUQ0vBR3bVhU3bAL_GeDhpl5jJnMieLPRJy5skaFNHcEnA0PlqF8VXQlJk8HDJEUnD1coFqhkq3Jh8iVB1E74UYdcjuDyYAz_7weETZCSQsORmVAx5G090yDHjul0xBVcMYgeTG66h_h27rM68GvFCnFoCgbVlUnGa8IlDx-1WSy1xVmlS8HZg-N0Ti2Zu-MElDebKKT5U8EFAAKQox8NvcLzwCvLY76dxIFHUutc-4yqvOPyyFo39ujgzlxy_KDlSjc9LrtHRAGEDTSMzEmucNvIRiRUNm9rDeZSFT7sDASaqzasPTsAGWmQtLwWOTKxDIOT5xR6OzOjTw7gtCc5iOyOTHTZCmFbVB5w9a9BKsKQAsUujfira_U3NmmLmnlNKhywXfiEInv6MMy0tJtBmBrPH2b0N0e_4L8atjK9hl2RhMgfDs3TVY9nT6xqwBwBQm0MpmmgCzi5owosb1TifdD_OhR3avMg637tulnU44MLfG36tBClIrptLNSsyKeItda9phathILVsPMn5hpIDYpvZ-sruXYh9TNlAjEjox48WjXrmbAXfBUERuQ8USNR4BMamPUBuhVDg82uAPAMa34maVPiZU00-7c9OjXsBMFfRju2lEzdBMZuR_x3iQXQkVA/GxcYM-ZzD-irvvS-2xJpDMB4Ou_jFUO-/23) |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 This … |                                          |                                          | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 This … |                                          |                                          |                                          |                                          |                                          |                                          |                                          | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 | [This email was sent to arshdeeppalial@gmail.com.](mailto:arshdeeppalial@gmail.com) |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                |                                          |                                          | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 This … |                                          |                                          |                                          |                                          |                                          |                                          |                                          | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 | [This email was sent to arshdeeppalial@gmail.com.](mailto:arshdeeppalial@gmail.com) |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                | Anthropic PBC, 54‌​8 M‌​a‌​r‌​k‌​e‌​t S‌​t, PMB 9‌​0‌​3‌​7‌​5, Sa‌​n F‌​r‌​a‌​n‌​c‌​i‌​s‌​c‌​o, C‌​A 9‌​4‌​1‌​0‌​4 |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                                | [This email was sent to arshdeeppalial@gmail.com.](mailto:arshdeeppalial@gmail.com) |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |                                          |     |     |     |     |     |     |                                          |                                          |                                          |
+                                                  <div />
+                                                    <div />
+                                                      <div />
+                                                        <div id=avWBGd-22 />
+                                                          <table role=presentation />
+                                                            <tbody />
+                                                              <tr />
+                                                                <td />
+                                                                  [182]<input type=text id=avWBGd-23 />
+                                <div />
+                                  <div />
+                                    <div />
+                                      <div />
+                                        <div />
+                                          <div />
+                                            [183]<span id=:p2 role=link tabindex=0>Reply</span>
+                                            [184]<span id=:p4 role=link tabindex=0>Forward</span>
+                                            <div />
+                                              <span />
+                                                [188]<button aria-label=Add reaction />
+                                                  [185]<span />
+                                                  <span />
+                                                    <span />
+                                                      [186]<svg />
+                                                  [187]<div />
+                      <div id=:2 />
+                        <div role=contentinfo />
+                          <div id=:m8 />
+                            <div />
+                              <div />
+                                <div />
+                                  [196]<a href=https://drive.google.com/u/0/settings/storage?hl=en-GB&utm_medium=web&utm_source=gmail&utm_campaign=… />
+                                    [190]<div />
+                                      [189]<div />
+                                    [195]<div />
+                                      [193]<div />
+                                        of used
+                                        [191]<span>0%</span>
+                                        [192]<span>5,120 GB</span>
+                                      [194]<div role=img aria-label=Follow link to manage storage />
+                          <div />
+                            <div id=:m7 />
+                              <div />
+                                <div />
+                                  · ·
+                                  [197]<a href=https://www.google.com/intl/en-GB/policies/terms/>Terms</a>
+                                  [198]<a href=https://www.google.com/intl/en-GB/policies/privacy/>Privacy</a>
+                                  [199]<a href=https://www.google.com/gmail/about/policy/>Programme Policies</a>
+                          <div id=:m5 />
+                            <div />
+                              <div />
+                                <div>Last account activity: 1 hour ago</div>
+                                [200]<span id=:md tabindex=0 role=link>Details</span>
+          <div />
+            <div />
+              <div />
+                <div aria-label=Gemini />
+                  <div />
+                    <div id=ucc-0 />
+                      <div />
+                        <header />
+                          <span />
+                            [208]<button aria-label=More options />
+                              [201]<span />
+                              [202]<span />
+                              [206]<span />
+                                [205]<div />
+                                  [204]<span />
+                                    [203]<svg />
+                              [207]<div />
+                            <div role=tooltip id=tt-c48>More options</div>
+                          <div />
+                            <h2>Gemini</h2>
+                          <div />
+                            <span />
+                              [215]<button aria-label=Close />
+                                [209]<span />
+                                [210]<span />
+                                [213]<span />
+                                  [212]<span />
+                                    [211]<svg />
+                                [214]<div />
+                              <div role=tooltip id=tt-c49>Close</div>
+                        <div />
+                          <div />
+                            <div />
+                              <div role=region />
+                                <div />
+                                  <div />
+                                    <span />
+                                      <svg />
+                                  <div>Couldn’t load your conversations</div>
+                                <span />
+                                  [221]<button aria-label=Close banner />
+                                    [216]<span />
+                                    [217]<span />
+                                    [219]<span />
+                                      [218]<svg />
+                                    [220]<div />
+                                  <div role=tooltip id=tt-c50>Close banner</div>
+                            <div />
+                              <div />
+                                <div>Find information</div>
+                              <div />
+                                <div />
+                                  [222]<ul role=listbox tabindex=0 aria-label=Suggestions />
+                        <footer />
+                          <div tabindex=-1 />
+                            <div />
+                              <div />
+                                <div />
+                                  [223]<div autocomplete=chr-off contenteditable=true tabindex=0 role=combobox aria-label=Ask Gemini aria-expanded=false />
+                                <div />
+                                  <div />
+                                    <div />
+                                      <div />
+                                        <ul role=listbox tabindex=-1 aria-label=Search menu id=ucc-4 />
+                                          <div role=status aria-live=polite>Loading...</div>
+                              <div />
+                                <div />
+                                  <div />
+                                    <div />
+                                      <div />
+                                        <span />
+                                          [230]<button aria-label=Add sources />
+                                            [224]<span />
+                                            [225]<span />
+                                            [228]<span />
+                                              [227]<span />
+                                                [226]<svg />
+                                            [229]<div />
+                                          <div role=tooltip id=tt-c51>Add sources</div>
+                                      <div />
+                                        <div />
+                                          <div />
+                                            <ul role=menu tabindex=-1 />
+                                              <div role=presentation />
+                                                [231]<div role=button tabindex=0 />
+                                                <div />
+                                                  <div />
+                                                    <div role=group />
+                                                      <li role=none />
+                                                        <ul role=none />
+                                                          <div />
+                                                            <div />
+                                                              <div id=c52>Sources</div>
+                                                            <div />
+                                                              <div />
+                                                                <span />
+                                                                  [232]<div role=button tabindex=-1 />
+                                                                    <svg />
+                                                                  <div role=tooltip id=ucc-6>Add sources to get more relevant responses</div>
+                                                    <div role=group />
+                                                      <li role=none />
+                                                        <ul role=none />
+                                                          [242]<li tabindex=-1 role=menuitem />
+                                                            [233]<span />
+                                                            [234]<span />
+                                                            [237]<span />
+                                                              [236]<span />
+                                                                [235]<svg />
+                                                            [239]<span />
+                                                              [238]<span>Add from Drive</span>
+                                                            [240]<span />
+                                                            [241]<span />
+                                                    <div role=group />
+                                                      <li role=none />
+                                                        <ul role=none />
+                                                          <li role=presentation />
+                                                            [259]<div tabindex=-1 role=menuitem aria-haspopup=menu aria-expanded=false />
+                                                              [243]<span />
+                                                              [244]<span />
+                                                              [252]<span />
+                                                                [251]<span />
+                                                                  [250]<div />
+                                                                    [245]<span>Gemini search settings</span>
+                                                                    [249]<div />
+                                                                      [246]<svg />
+                                                                      [247]<svg />
+                                                                      [248]<span>+ 3</span>
+                                                              [254]<span />
+                                                                [253]<span />
+                                                              [257]<span />
+                                                                [256]<span />
+                                                                  [255]<svg />
+                                                              [258]<span />
+                                                            <div />
+                                                              <div id=ucc-7 />
+                                                                <div />
+                                                                  <div />
+                                                                    <ul role=menu tabindex=-1 aria-label=Gemini search settings />
+                                                                      <div role=group />
+                                                                        <li role=none />
+                                                                          <ul role=none />
+                                                                            <div />
+                                                                              <div />
+                                                                                <div id=c60>Where Gemini can search</div>
+                                                                                <div>Select sources that Gemini can use to find information for you.</div>
+                                                                            <div role=group />
+                                                                              <li role=none />
+                                                                                <ul role=none />
+                                                                                  [273]<li tabindex=-1 role=menuitemcheckbox aria-checked=true />
+                                                                                    [260]<span />
+                                                                                    [261]<span />
+                                                                                    [264]<span />
+                                                                                      [263]<span />
+                                                                                        [262]<svg />
+                                                                                    [266]<span />
+                                                                                      [265]<span>Drive</span>
+                                                                                    [271]<span />
+                                                                                      [270]<span />
+                                                                                        [269]<span />
+                                                                                          [268]<span />
+                                                                                            [267]<svg />
+                                                                                    [272]<span />
+                                                                                  [287]<li tabindex=-1 role=menuitemcheckbox aria-checked=true />
+                                                                                    [274]<span />
+                                                                                    [275]<span />
+                                                                                    [278]<span />
+                                                                                      [277]<span />
+                                                                                        [276]<svg />
+                                                                                    [280]<span />
+                                                                                      [279]<span>Gmail</span>
+                                                                                    [285]<span />
+                                                                                      [284]<span />
+                                                                                        [283]<span />
+                                                                                          [282]<span />
+                                                                                            [281]<svg />
+                                                                                    [286]<span />
+                                                                                  [301]<li tabindex=-1 role=menuitemcheckbox aria-checked=true />
+                                                                                    [288]<span />
+                                                                                    [289]<span />
+                                                                                    [292]<span />
+                                                                                      [291]<span />
+                                                                                        [290]<svg />
+                                                                                    [294]<span />
+                                                                                      [293]<span>Chat</span>
+                                                                                    [299]<span />
+                                                                                      [298]<span />
+                                                                                        [297]<span />
+                                                                                          [296]<span />
+                                                                                            [295]<svg />
+                                                                                    [300]<span />
+                                                                                  [315]<li tabindex=-1 role=menuitemcheckbox aria-checked=true />
+                                                                                    [302]<span />
+                                                                                    [303]<span />
+                                                                                    [306]<span />
+                                                                                      [305]<span />
+                                                                                        [304]<svg />
+                                                                                    [308]<span />
+                                                                                      [307]<span>Calendar</span>
+                                                                                    [313]<span />
+                                                                                      [312]<span />
+                                                                                        [311]<span />
+                                                                                          [310]<span />
+                                                                                            [309]<svg />
+                                                                                    [314]<span />
+                                                                                  [329]<li tabindex=-1 role=menuitemcheckbox aria-checked=true />
+                                                                                    [316]<span />
+                                                                                    [317]<span />
+                                                                                    [320]<span />
+                                                                                      [319]<span />
+                                                                                        [318]<svg />
+                                                                                    [322]<span />
+                                                                                      [321]<span>Web</span>
+                                                                                    [327]<span />
+                                                                                      [326]<span />
+                                                                                        [325]<span />
+                                                                                          [324]<span />
+                                                                                            [323]<svg />
+                                                                                    [328]<span />
+                                                [330]<div role=button tabindex=0 />
+                                <div />
+                                  <div />
+                                    <div />
+                                      <div />
+                                        <span />
+                                          [338]<button aria-label=Tools />
+                                            [331]<span />
+                                            [332]<span />
+                                            [335]<span />
+                                              [334]<span />
+                                                [333]<svg />
+                                            [336]<span />
+                                            [337]<span />
+                                          <div role=tooltip id=ucc-15>Tools</div>
+                                      <div />
+                                        <div />
+                                          <div />
+                                            <ul role=menu tabindex=-1 aria-label=Tools />
+                                              <div role=group aria-label=Tools />
+                                                <div />
+                                                  <div>Tools</div>
+                                                [348]<li tabindex=-1 role=menuitemcheckbox />
+                                                  [339]<span />
+                                                  [340]<span />
+                                                  [343]<span />
+                                                    [342]<span />
+                                                      [341]<svg />
+                                                  [345]<span />
+                                                    [344]<span>Create images</span>
+                                                  [346]<span />
+                                                  [347]<span />
+                                                [358]<li tabindex=-1 role=menuitemcheckbox />
+                                                  [349]<span />
+                                                  [350]<span />
+                                                  [353]<span />
+                                                    [352]<span />
+                                                      [351]<svg />
+                                                  [355]<span />
+                                                    [354]<span>Deep Research</span>
+                                                  [356]<span />
+                                                  [357]<span />
+                              <div />
+                                <span />
+                                  <button aria-label=Submit />
+                                    <span />
+                                      <span />
+                                        <svg />
+                                  <div role=tooltip id=tt-c87>Submit</div>
+                          <div />
+                            <span id=XeP4af>Gemini in Workspace can make mistakes.</span>
+                            [359]<a href=https://support.google.com/a/users?p=gw_gemini_responses>Learn more</a>
+              <div />
+                <div />
+                  <div />
+                    <div />
+                      <div />
+                        <div role=tabpanel />
+                          <div />
+                            [361]<div role=button aria-label=Back tabindex=0 aria-disabled=false />
+                              [360]<svg />
+                            <div />
+                              <h2 tabindex=-1>Studio</h2>
+                              <h3 tabindex=-1 id=companion-shell-subtitle-text-id>Loading…</h3>
+                              <div />
+                                [362]<div role=button aria-disabled=true />
+                                [365]<div role=listbox aria-expanded=false aria-haspopup=true aria-disabled=false />
+                                  [364]<div />
+                                    [363]<div id=:ms role=option aria-selected=true />
+                            [367]<div role=button aria-label=Email tabindex=0 aria-disabled=false />
+                              [366]<svg />
+                            [369]<div role=button aria-label=Delete tabindex=0 aria-disabled=false />
+                              [368]<svg />
+                            [371]<div role=button aria-label=Search tabindex=0 aria-disabled=false />
+                              [370]<svg />
+                            [373]<div role=button aria-label=Open in new tab tabindex=0 aria-disabled=false />
+                              [372]<svg />
+                            [375]<div role=button aria-label=Close tabindex=0 />
+                              [374]<svg />
+                            <div />
+                              <div />
+                                <svg />
+                              [376]<input placeholder=Search Studio... aria-label=Search Studio... />
+                              [378]<div aria-label=Cancel role=button tabindex=0 />
+                                [377]<svg />
+                          <div />
+                            <div />
+                              |iframe|[F1]<iframe tabindex=0 title=Studio id=I0_1784888298321 name=I0_1784888298321 src=https://studio.workspace.google.com/u/0/sidepanel/workflows?origin=https%3A%2F%2Fmail.google.com&hai… /> (cross-origin, use: opencli browser frames + browser eval --frame <index>)
+              <div />
+                <div role=complementary aria-label=Side panel />
+                  <div />
+                    [399]<div role=tablist tabindex=0 />
+                      [380]<div id=gsc-gab-6 role=tab aria-label=Calendar aria-disabled=false aria-selected=false />
+                        [379]<div />
+                      [382]<div id=gsc-gab-2 role=tab aria-label=Keep aria-disabled=false aria-selected=false />
+                        [381]<div />
+                      [384]<div id=gsc-gab-4 role=tab aria-label=Tasks aria-disabled=false aria-selected=false />
+                        [383]<div />
+                      [386]<div id=gsc-gab-9 role=tab aria-label=Contacts aria-disabled=false aria-selected=false />
+                        [385]<div />
+                      [391]<div id=gsc-gab-17 role=tab aria-label=Studio aria-disabled=false aria-selected=false />
+                        [387]<div />
+                        [388]<div />
+                        [389]<div />
+                        [390]<div />
+                      [393]<div role=tab aria-label=Get add-ons aria-selected=false id=qJTzr />
+                        [392]<div />
+                      [398]<div role=tab aria-label=More add-ons aria-selected=false aria-expanded=false aria-haspopup=true id=:mx />
+                        [394]<div />
+                        [395]<div />
+                        [396]<div />
+                        [397]<div />
+                  <div />
+                    [400]<div role=button aria-label=About aria-expanded=false aria-haspopup=false aria-disabled=true />
+                      <div />
+                        <svg />
+                <div />
+                  [402]<div role=button aria-label=Hide side panel tabindex=0 />
+                    <div />
+                      [401]<svg id=Layer_1 />
+  <div>Gmail</div>
+  <div>Search</div>
+  <div>Clear search</div>
+  <div>Close search</div>
+  <div>Main menu</div>
+  <div>Google apps</div>
+  <div />
+    <div />
+      <div>Google Account</div>
+      <div>Arshdeep Palial</div>
+      <div>arshdeeppalial@gmail.com</div>
+  <div id=C__HC_94253229 />
+    |iframe|[F2]<iframe tabindex=-1 aria-label=Information card id=I__HC_94253229 name=I__HC_94253229 src=https://contacts.google.com/widget/hovercard/v/2?hl=en-GB&origin=https%3A%2F%2Fmail.google.com&usega… /> (cross-origin, use: opencli browser frames + browser eval --frame <index>)
+  |iframe|[F3]<iframe id=hfcr src=https://accounts.google.com/RotateCookiesPage?og_pid=23&rot=3&origin=https%3A%2F%2Fmail.google.com&exp_id=0 /> (cross-origin, use: opencli browser frames + browser eval --frame <index>)
+  |iframe|<iframe src=/mail/_/bscframe />
+---
+hidden_interactive (2):
+  <div> "Search for all messages with label Inbox" ~0.2 pages above
+  <div> "Remove label Inbox from this conversation" ~0.2 pages above
+---
+interactive: 402 | iframes: 2

@@ -101,13 +101,25 @@ _RESOLVE_SYS = (
     "(prefer freshly-retrieved evidence over prior knowledge), reconcile, and return "
     "the correct answer.")
 
+# Anti-fabrication rule appended to EVERY synthesis operator. Without it the model
+# pads thin real output into a confident, plausible-looking result (invented CLI
+# commands, fake success JSON, a how-to guide for something that never happened).
+_GROUND = (
+    "\n\nGROUNDING (critical): Use ONLY what the outputs below actually contain. NEVER "
+    "invent commands, code, URLs, paths, tool output, or success/JSON results that are not "
+    "present in the outputs. Do not turn a task into a how-to guide of what SHOULD be done. "
+    "If the outputs show the task did not finish — errors, only partial progress (e.g. reached "
+    "a login screen but never logged in), or missing results — report that plainly as the "
+    "outcome. Describe what ACTUALLY happened per the outputs, never a polished version of what "
+    "success would look like.")
+
 
 async def _combine(stage: str, system: str, outputs: list[str], task: str) -> str:
     """Run a terminal combine/resolve LLM call, streaming to the UI token sink."""
     from anet.core.AdaptOrch.stage_models import stage_call, stage_call_stream
     from anet.core.context import on_token
     msgs = [
-        {"role": "system", "content": system},
+        {"role": "system", "content": system + _GROUND},
         {"role": "user", "content": (f"Task: {task}\n\n" if task else "") + _numbered(outputs)},
     ]
     try:

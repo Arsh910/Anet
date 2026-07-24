@@ -1881,20 +1881,19 @@ async def _handle_slash(
                     else:
                         console.print(f"\n  [yellow]No skill named '{target}'.[/yellow]\n")
                 return False
-            sdir = _sm._skills_dir()
-            skill_files = sorted(sdir.glob("*.md")) if (sdir and sdir.exists()) else []
-            if not skill_files:
+            rows = _sm.list_skills()
+            if not rows:
                 console.print("\n  [dim]No skills saved yet — Anet writes them after complex tasks.[/dim]\n")
             else:
                 t = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
                 t.add_column("Skill",      style="bold")
+                t.add_column("Kind",       style="dim")
                 t.add_column("Applies to", style="dim")
                 t.add_column("Used",       justify="right", style="dim")
                 t.add_column("",           style="yellow")  # pin indicator
-                for f in skill_files:
-                    name, applies_to, used = _sm.read_skill_header(f)
-                    pin = "📌" if _sm.is_pinned(f.stem) else ""
-                    t.add_row(name, applies_to or "—", str(used), pin)
+                for r in rows:
+                    pin = "📌" if r["pinned"] else ""
+                    t.add_row(r["name"], r["kind"], r["applies"] or "—", str(r["used"]), pin)
                 console.print()
                 console.print(Panel(t, title="[bold]Skills[/bold]", border_style="accent"))
                 console.print("  [dim]/skills pin <name> to protect a skill from the curator[/dim]\n")
@@ -2826,6 +2825,20 @@ async def main() -> None:
                 _e["tools"] = list(_e.get("tools") or []) + _att.get("tools", [])
                 _e["mcp"]   = list(_e.get("mcp") or []) + _att.get("mcp", [])
             merged_builtins = [dict(a) for a in enabled_agents]
+            # Re-apply anet.config.yaml model/provider/max_steps here (not just at
+            # agents_config import): a /settings edit clears the config cache and
+            # rebuilds via _merge_all, but the module-level AGENTS list keeps its
+            # startup values — so without this, model edits need a restart.
+            try:
+                from anet.core.config_loader import agent_overrides as _ovr
+                _ov = _ovr()
+                for agent in merged_builtins:
+                    _patch = _ov.get(agent["name"], {})
+                    for _k in ("model", "provider", "max_steps"):
+                        if _k in _patch:
+                            agent[_k] = _patch[_k]
+            except Exception:
+                pass
             for agent in merged_builtins:
                 extra = extra_map.get(agent["name"], {})
                 for t in extra.get("tools", []):
@@ -2852,7 +2865,10 @@ async def main() -> None:
             # loaded so a bundle naming an unavailable tool is harmless.
             from anet.AnetTools.toolsets import expand_tools as _expand_tools
             for agent in all_agents:
-                resolved = _expand_tools(agent)
+                # `no_common: True` opts an agent out of even the COMMON baseline —
+                # for a pure-reasoning role (e.g. the checker: verify from the
+                # executor's output, never act) whose context must stay tool-free.
+                resolved = _expand_tools(agent, include_common=not agent.get("no_common", False))
                 agent["tools"] = [t for t in resolved if t in combined_tools]
 
             # ── Configure spawn_tool with live agents + tools ─────────────────

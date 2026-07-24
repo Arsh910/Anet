@@ -29,14 +29,52 @@ except ImportError:
 # how to page for the rest, so nothing is unreachable.
 _MAX_READ_LINES = 2000
 _MAX_READ_CHARS = 40_000
+# Per-line cap. Total-line/char caps don't stop a SINGLE giant line (minified JS,
+# one-line JSON, a base64 blob) from eating the whole char budget and dumping
+# garbage into context that's then resent every step. Clamp each line too.
+_MAX_LINE_LENGTH = 2000
+
+
+# ── Sensitive-file guard ──────────────────────────────────────────────────────
+# Content reads of these land secrets in the agent trajectory, which is then
+# resent to the remote model provider on every subsequent step. Block them.
+# Only very-low-false-positive patterns (ported from kimi-cli's sensitive.py).
+_SENSITIVE_PATTERNS = [
+    ".env", ".env.*",
+    "id_rsa", "id_ed25519", "id_ecdsa",
+    ".aws/credentials", ".gcp/credentials", "credentials",
+]
+_SENSITIVE_EXEMPTIONS = {".env.example", ".env.sample", ".env.template"}
+
+
+def _is_sensitive_file(path: str) -> bool:
+    name = Path(path).name
+    if name in _SENSITIVE_EXEMPTIONS:
+        return False
+    norm = path.replace("\\", "/")
+    for pat in _SENSITIVE_PATTERNS:
+        if "/" in pat:
+            if norm.endswith(pat) or ("/" + pat) in norm:
+                return True
+        elif fnmatch.fnmatch(name, pat):
+            return True
+    return False
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _truncate_line(line: str) -> str:
+    if len(line) <= _MAX_LINE_LENGTH:
+        return line
+    return line[:_MAX_LINE_LENGTH] + f" …[+{len(line) - _MAX_LINE_LENGTH} chars]"
+
+
 def _cap_read(text: str, path: str) -> tuple[str, dict]:
     """Trim an over-long file read to the cap, appending a note telling the
     model how to reach the rest. Returns (text, extra_result_fields)."""
-    lines = text.splitlines()
+    raw_lines = text.splitlines()
+    lines = [_truncate_line(ln) for ln in raw_lines]
+    any_clamped = lines != raw_lines
     total = len(lines)
 
     kept, reason = lines, ""
@@ -52,7 +90,9 @@ def _cap_read(text: str, path: str) -> tuple[str, dict]:
         kept = out.splitlines()
 
     if not reason:
-        return text, {}
+        # No total-cap trip. If a long line was clamped, return the clamped text
+        # (not the raw original) so the clamp holds; otherwise return text verbatim.
+        return (out, {"line_clamped": True}) if any_clamped else (text, {})
 
     shown = len(kept)
     note = (
@@ -79,6 +119,10 @@ _READ_ACTIONS = {
     "read_file", "read_lines", "get_file_info", "list_directory",
     "search_files", "parse_csv", "parse_json",
 }
+
+# Actions that return file *contents* (not just metadata) — the ones that would
+# leak secrets into the trajectory. get_file_info/list_directory are safe.
+_CONTENT_READ_ACTIONS = {"read_file", "read_lines", "parse_csv", "parse_json"}
 
 
 def _resolve_safe_path(path: str, agent: str, *, for_read: bool = False) -> Path:
@@ -363,7 +407,7 @@ def _read_lines(params: dict) -> dict:
         lines = _read_text(p).splitlines()
         s = max(0, start - 1)
         e = min(len(lines), end)
-        selected = lines[s:e]
+        selected = [_truncate_line(ln) for ln in lines[s:e]]
         return {
             "result":       "\n".join(selected),
             "lines_returned": len(selected),
@@ -460,6 +504,14 @@ async def run(params: dict) -> dict:
     if "paths" in params and isinstance(params["paths"], list):
         params["paths"] = [str(_resolve_safe_path(p, agent, for_read=True))
                            for p in params["paths"]]
+
+    # Block content reads of secret files — they'd land in the trajectory and be
+    # resent to the model provider every step. Metadata actions stay allowed.
+    if action in _CONTENT_READ_ACTIONS and _is_sensitive_file(params.get("path", "")):
+        return {"error": (
+            f"Reading '{params.get('path')}' is blocked — it matches a sensitive-file "
+            "pattern (secrets/credentials/keys). Refusing to load it into context."
+        )}
 
     handler = _DISPATCH.get(action)
     if handler is None:

@@ -29,29 +29,29 @@ providers:
 #     mcp: [codegraph]
 
 manager:
-  model: nvidia/nvidia/nemotron-3-ultra-550b-a55b
+  model: groq/qwen/qwen3.6-27b
   provider: omniroute
 
 agents:
   research_agent:
-    model: nvidia/google/gemma-4-31b-it
+    model: groq/openai/gpt-oss-120b
     provider: omniroute
 
-  computer_agent:
-    model: nvidia/qwen/qwen3.5-397b-a17b
-    provider: omniroute
+  # computer_agent:
+  #   model: openai/gpt-5.4-mini
+  #   provider: openrouter
 
   checker_agent:
-    model: nvidia/nvidia/nemotron-3-super-120b-a12b
+    model: groq/qwen/qwen3.6-27b
     provider: omniroute
 
   code_agent:
-    model: siliconflow/moonshotai/Kimi-K2.6
+    model: groq/qwen/qwen3-32b
     provider: omniroute
-    mcp: [ponytail, playwright, gentleman-book, open-design]  # playwright moved here (file_agent retired)
+    mcp: [ponytail, gentleman-book, open-design]  # playwright moved here (file_agent retired)
     task_types:
     - "ponytail mcp"
-    - "playwright mcp"
+    # - "playwright mcp"
     - "gentleman-book"
     - "open-design"
 
@@ -138,4 +138,4 @@ caching:
     # beta: 3             # max inbound edges to one node in one round
 
 orchestration:
-  engine: qweenbee
+  engine: adaptorch

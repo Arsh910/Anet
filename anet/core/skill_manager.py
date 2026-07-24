@@ -229,12 +229,99 @@ def _safe_name(text: str) -> str:
 
 
 # ── Part 2 — Skill injection ───────────────────────────────────────────────────
+#
+# Two skill shapes coexist in skills/:
+#   • Flat  `<name>.md`            — agent-created, curator-managed (see Part 3/4).
+#   • Folder `<name>/.../SKILL.md` — imported (Claude-style) skills with YAML
+#     frontmatter. Read-only reference material: the curator's `glob("*.md")` is
+#     non-recursive so it never sees these, and we never rewrite them here.
+
+# Injected-skill content cap. A SKILL.md can run to hundreds of lines; inject its
+# head and point the agent at the full file + its references dir for the rest, so
+# up to _max_injected skills can't swamp the context window.
+_MAX_SKILL_INJECT_LINES = 160
+_MAX_SKILL_INJECT_CHARS = 6000
+
+
+def _parse_frontmatter(content: str) -> dict:
+    """Cheap YAML-frontmatter reader (name/description/allowed-tools) — no yaml
+    dependency. Returns {} when there is no leading '---' block."""
+    if not content.startswith("---"):
+        return {}
+    end = content.find("\n---", 3)
+    if end == -1:
+        return {}
+    fm: dict = {}
+    for line in content[3:end].splitlines():
+        if ":" in line and not line.startswith((" ", "\t", "-")):
+            k, v = line.split(":", 1)
+            fm[k.strip().lower()] = v.strip()
+    return fm
+
+
+def _cap_skill_content(content: str, ref_note: str) -> str:
+    lines = content.splitlines()
+    if len(lines) <= _MAX_SKILL_INJECT_LINES and len(content) <= _MAX_SKILL_INJECT_CHARS:
+        return content
+    head = "\n".join(lines[:_MAX_SKILL_INJECT_LINES])[:_MAX_SKILL_INJECT_CHARS]
+    return head + f"\n\n[... skill truncated — {ref_note} ...]"
+
+
+def _discover_skills(sdir: Path) -> list[dict]:
+    """Return every skill in sdir as {key, match, inject, is_folder, path}.
+    `match` is the text keyword-scored against the task; `inject` is what gets
+    dropped into the prompt."""
+    entries: list[dict] = []
+
+    # Flat skills — top level only (same surface the curator manages).
+    for f in sdir.glob("*.md"):
+        if not f.is_file():
+            continue
+        try:
+            content = f.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        header = f.stem.replace("_", " ") + " " + "\n".join(content.splitlines()[:3])
+        entries.append({
+            "key": f.stem, "match": header, "inject": content,
+            "is_folder": False, "path": f,
+        })
+
+    # Folder skills — one SKILL.md per skill dir, at any depth.
+    for f in sdir.rglob("SKILL.md"):
+        if not f.is_file() or "archived" in f.relative_to(sdir).parts:
+            continue
+        try:
+            content = f.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        fm = _parse_frontmatter(content)
+        skill_dir = f.parent
+        name = fm.get("name") or skill_dir.name
+        # The frontmatter `description` spells out "use when…" — ideal match text.
+        match = " ".join([
+            skill_dir.name.replace("-", " ").replace("_", " "),
+            name, fm.get("description", ""),
+        ])
+        ref_note = f"read the full skill at {f} (references live in {skill_dir}) via file_tool"
+        inject = (
+            f"[Skill '{name}' — dir: {skill_dir}. "
+            f"Paths like references/… are relative to this dir; read them with file_tool.]\n\n"
+            + _cap_skill_content(content, ref_note)
+        )
+        entries.append({
+            "key": str(f.relative_to(sdir).parent).replace(os.sep, "/"),
+            "match": match, "inject": inject, "is_folder": True, "path": f,
+        })
+
+    return entries
+
 
 def find_relevant_skills(task_text: str) -> str:
     """
-    Keyword-search skills/ for files relevant to task_text.
-    Returns a markdown injection block (empty string if nothing matches).
-    Increments Used count for injected skills.
+    Keyword-search skills/ (flat + folder SKILL.md) for entries relevant to
+    task_text. Returns a markdown injection block (empty string if nothing
+    matches). Bumps the Used count for injected flat skills.
     """
     sdir = _skills_dir()
     if not sdir or not sdir.exists():
@@ -244,21 +331,15 @@ def find_relevant_skills(task_text: str) -> str:
     if not kws:
         return ""
 
-    skill_files = [f for f in sdir.glob("*.md") if f.is_file()]
-    if not skill_files:
+    entries = _discover_skills(sdir)
+    if not entries:
         return ""
 
-    matches: list[tuple[int, Path, str]] = []
-    for sf in skill_files:
-        try:
-            content = sf.read_text(encoding="utf-8")
-        except Exception:
-            continue
-        # Match against filename + first 3 lines
-        header = sf.stem.replace("_", " ") + " " + "\n".join(content.splitlines()[:3])
-        score  = sum(1 for kw in kws if kw in header.lower())
+    matches: list[tuple[int, dict]] = []
+    for e in entries:
+        score = sum(1 for kw in kws if kw in e["match"].lower())
         if score > 0:
-            matches.append((score, sf, content))
+            matches.append((score, e))
 
     if not matches:
         return ""
@@ -266,13 +347,38 @@ def find_relevant_skills(task_text: str) -> str:
     matches.sort(key=lambda x: x[0], reverse=True)
     top = matches[:_max_injected()]
 
-    for _, path, _ in top:
-        _increment_used(path)
-        record_skill_used(path.stem)
+    for _, e in top:
+        record_skill_used(e["key"])
+        if not e["is_folder"]:
+            _increment_used(e["path"])   # imported SKILL.md files stay pristine
 
     block  = "## Relevant Skills from Past Experience\n\n"
-    block += "\n\n---\n\n".join(content for _, _, content in top)
+    block += "\n\n---\n\n".join(e["inject"] for _, e in top)
     return block
+
+
+def list_skills() -> list[dict]:
+    """Display rows for the /skills view and startup count — flat + folder, from
+    the one discovery path so counts never disagree with what actually injects."""
+    sdir = _skills_dir()
+    if not sdir or not sdir.exists():
+        return []
+    rows: list[dict] = []
+    for e in _discover_skills(sdir):
+        rec = get_usage_record(e["key"])
+        if e["is_folder"]:
+            applies = _parse_frontmatter(e["path"].read_text(encoding="utf-8")).get("description", "")
+            used = int(rec.get("use_count") or 0)
+        else:
+            _, applies, used = read_skill_header(e["path"])
+        rows.append({
+            "name": e["key"],
+            "applies": (applies[:80] + "…") if len(applies) > 80 else applies,
+            "used": used,
+            "pinned": bool(rec.get("pinned")),
+            "kind": "folder" if e["is_folder"] else "flat",
+        })
+    return sorted(rows, key=lambda r: r["name"])
 
 
 # ── Model caller (shared by creation + curator) ────────────────────────────────
